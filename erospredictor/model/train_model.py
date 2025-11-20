@@ -7,7 +7,6 @@ from model.predictor import ChampionPredictor, RoleAwareEmbeddingPredictor
 from configs import DIVISION_WEIGHTS, CHAMPION_COUNT, MODELS_DIR
 
 def train_single_model(X_all, y_all, divisions_all, model_name, input_size, epochs=50, batch_size=32, lr=0.001, model_type="standard"):
-    """Train a single model for a specific division"""
     os.makedirs(MODELS_DIR, exist_ok=True)
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     

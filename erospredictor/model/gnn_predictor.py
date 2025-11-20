@@ -125,9 +125,7 @@ def preprocess_matches_for_gnn(data_manager):
     return graphs, divisions
 
 def predict_match_gnn(model, blue_team, red_team, device):
-    """
-    Use trained GNN to predict match outcome
-    """
+
     model.eval()
     with torch.no_grad():
         graph = create_match_graph(blue_team, red_team, blue_win=None)

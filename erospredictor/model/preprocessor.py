@@ -10,13 +10,12 @@ class Preprocessor:
         print(f"Preprocessor initialized with cache path: {self.preprocessed_data_path}")
 
     def _get_cache_path(self, data_type):
-        """Get cache file path for specific data type"""
         os.makedirs(self.preprocessed_data_path, exist_ok=True)
         cache_file = os.path.join(self.preprocessed_data_path, f"{data_type}_preprocessed.pkl")
         return cache_file
 
     def _save_preprocessed_data(self, data, data_type):
-        """Save preprocessed data to cache"""
+
         try:
             cache_path = self._get_cache_path(data_type)
             temp_path = cache_path + ".tmp"
@@ -38,7 +37,7 @@ class Preprocessor:
                 os.remove(temp_path)
 
     def _load_preprocessed_data(self, data_type, use_cache=True):
-        """Load preprocessed data from cache"""
+
         if not use_cache:
             print(f"🔄 Cache loading disabled for {data_type}")
             return None
@@ -73,7 +72,7 @@ class Preprocessor:
         return None
 
     def _is_cache_valid(self, data_type):
-        """Check if cache is valid - simplified version"""
+
         cache_path = self._get_cache_path(data_type)
         
         if not os.path.exists(cache_path):
@@ -89,7 +88,7 @@ class Preprocessor:
         return True
 
     def preprocess_all_matches(self, use_cache=True, always_save_cache=True):
-        """Preprocess roleweighted data with optional caching"""
+
         print(f"\n=== Preprocessing RoleWeighted Data ===")
         print(f"Use cache for loading: {use_cache}")
         print(f"Always save to cache: {always_save_cache}")
@@ -153,7 +152,6 @@ class Preprocessor:
         return result
  
     def preprocess_all_matches_roleaware(self, use_cache=True, always_save_cache=True):
-        """Preprocess roleaware data with optional caching"""
         print(f"\n=== Preprocessing RoleAware Data ===")
         print(f"Use cache for loading: {use_cache}")
         print(f"Always save to cache: {always_save_cache}")
@@ -228,7 +226,6 @@ class Preprocessor:
         return result
 
     def clear_cache(self):
-        """Clear all cached preprocessed data"""
         print(f"\n=== Clearing Cache ===")
         cache_files = [
             self._get_cache_path("roleweighted"),
@@ -251,7 +248,6 @@ class Preprocessor:
             print(f"✅ Cleared {cleared_count} cache files")
             
     def list_cache_files(self):
-        """List all cache files for debugging"""
         print(f"\n=== Cache Files in {self.preprocessed_data_path} ===")
         if os.path.exists(self.preprocessed_data_path):
             files = os.listdir(self.preprocessed_data_path)

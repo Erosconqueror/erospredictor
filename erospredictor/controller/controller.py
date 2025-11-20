@@ -106,7 +106,6 @@ class Controller:
         print(f"   - RoleAware: {len(X_ra)} samples")
 
     def train_specific_model(self, model_type, division, epochs=None, batch_size=None, lr=None, use_cache=True):
-        """Train a specific model type for a specific division with cached data"""
         print(f"=== Training {model_type} for division {division} ===")
         
         self.preprocess_all_training_data(use_cache=use_cache)
@@ -142,7 +141,6 @@ class Controller:
             return
 
     def train_gnn_model_specific(self, division, epochs=100, batch_size=64, lr=0.0003):
-        """Train GNN model for specific division"""
         print("=== Training GNN Model ===")
     
         try:
@@ -234,7 +232,6 @@ class Controller:
             traceback.print_exc()
 
     def clear_preprocessed_cache(self):
-        """Clear all cached preprocessed data"""
         self.preprocessor.clear_cache()
 
     def train_model(self, epochs=50, batch_size=32, lr=0.001, epochs_b=50, batch_size_b=32, lr_b=0.001):
@@ -367,5 +364,4 @@ class Controller:
 
 
     def train_gnn_model(self, epochs=100, batch_size=64, lr=0.0003):
-        """Legacy method - trains general GNN model"""
         self.train_gnn_model_specific("MIXED", epochs, batch_size, lr)
