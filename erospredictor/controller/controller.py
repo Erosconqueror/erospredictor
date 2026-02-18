@@ -73,7 +73,7 @@ class Controller:
             print(f"Saved match {match_id}")
         
 
-        #self.preprocessor.clear_cache()  # don't clear cache here to allow batch fetching
+        #self.preprocessor.clear_cache()  # allow batch fetching
 
     def preprocess_all_training_data(self, use_cache=True):
         print("=== Preprocessing All Training Data ===")
@@ -365,3 +365,49 @@ class Controller:
 
     def train_gnn_model(self, epochs=100, batch_size=64, lr=0.0003):
         self.train_gnn_model_specific("MIXED", epochs, batch_size, lr)
+        
+    def recommend_champions(self, division, blue_team, red_team, next_player_index, banned_champs):
+        from model.gnn_predictor import LeagueGNN, predict_match_gnn
+    
+        device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    
+        gnn_model_path = f"models/{division}_gnn.pth"
+        if not os.path.exists(gnn_model_path):
+            gnn_model_path = "models/gnn_model.pth"
+    
+        if not os.path.exists(gnn_model_path):
+            print("Error: No GGN model for recommendation!")
+            return []
+
+        model = LeagueGNN().to(device)
+        model.load_state_dict(torch.load(gnn_model_path, map_location=device))
+        model.eval()
+        occupied_champs = set(blue_team + red_team + banned_champs)
+    
+        occupied_champs.discard(0) 
+        occupied_champs.discard(-1)
+
+        recommendations = []
+
+        print(f"Recomennding from {CHAMPION_COUNT} champions...")
+    
+        for champ_id in range(CHAMPION_COUNT):
+            if champ_id in occupied_champs:
+                continue
+            
+            temp_blue = blue_team.copy()
+            temp_red = red_team.copy()
+        
+            if next_player_index < 5:
+                temp_blue[next_player_index] = champ_id
+            else:
+                temp_red[next_player_index - 5] = champ_id
+            
+            prob = predict_match_gnn(model, temp_blue, temp_red, device)
+        
+            score = prob if next_player_index < 5 else (1 - prob)
+            recommendations.append((champ_id, score))
+            
+        recommendations.sort(key=lambda x: x[1], reverse=True)
+        print("Found recommendations, filtering top 3...")
+        return recommendations[:3]

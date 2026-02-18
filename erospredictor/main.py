@@ -12,7 +12,8 @@ def main():
         print("4. Train specific model")
         print("5. Predict match outcome")
         print("6. Clear preprocessed data cache")
-        print("7. Exit")
+        print("7. Recommend champions for a match")
+        print("8. Exit")
         
         choice = input("Enter your choice: ").strip()
 
@@ -68,6 +69,24 @@ def main():
             print("Cache cleared!")
         
         elif choice == "7":
+            division = input("Division (pl. DIAMOND): ").strip().upper()
+            
+            print("Give the picks ():")
+            blue = [int(input(f"Blue {i+1}: ")) for i in range(5)]
+            red = [int(input(f"Red {i+1}: ")) for i in range(5)]
+            
+            bans_raw = input("Banned cvhamps: ").strip()
+            bans = [int(x) for x in bans_raw.split(",")] if bans_raw else []
+            
+            next_idx = int(input("Next position: (0-4: Blue, 5-9: Red): "))
+            
+            results = controller.recommend_champions(division, blue, red, next_idx, bans)
+            
+            print("\n=== Recommended champions ===")
+            for i, (cid, score) in enumerate(results):
+                print(f"{i+1}. Champion ID: {cid} | Projected winrate: {score*100:.2f}%")
+        
+        elif choice == "8":
             print("Exiting...")
             break
         
