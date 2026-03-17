@@ -1,51 +1,83 @@
 import json
+import psycopg2
+from psycopg2.extras import Json
 import configs as cfg
 from pathlib import Path
-
+from data_manager import DataManager
 
 class DataManager:
-
     def __init__(self):
-        self.file_path = Path(cfg.FILE_PATH)
-        self.file_path.parent.mkdir(parents=True, exist_ok=True)
-        self.initialize_data_file()
+        self.conn = psycopg2.connect(
+            dbname=getattr(cfg, 'DB_NAME', 'erospredictor'),
+            user=getattr(cfg, 'DB_USER', 'postgres'),
+            password=getattr(cfg, 'DB_PASS', 'Eros'),
+            host=getattr(cfg, 'DB_HOST', 'localhost'),
+            port=getattr(cfg, 'DB_PORT', '5432')
+        )
+        self.create_tables()
 
-    def initialize_data_file(self):
-        if not self.file_path.exists():
-            with open(self.file_path, 'w') as f:
-                json.dump({}, f, indent=2)
-    
-    def load_all(self):
-        self.initialize_data_file()
+    def create_tables(self):
+        with self.conn.cursor() as cur:
+            cur.execute("""
+                CREATE TABLE IF NOT EXISTS matches (
+                    match_id VARCHAR(50) PRIMARY KEY,
+                    region VARCHAR(20),
+                    game_version VARCHAR(20),
+                    division VARCHAR(20),      
+                    data JSONB,                
+                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                );
+            """)
+        self.conn.commit()
+
+    def extract_patch_version(self, data: dict):
         try:
-            with open(self.file_path, 'r') as f:
-                data = json.load(f)
-                if not isinstance(data, dict):
-                    data = {}
-                return data
-        except (json.JSONDecodeError, FileNotFoundError):
-            return {}
+            info_dict = data.get('info', {})
+            version_str = info_dict.get('gameVersion', '')
+            
+            if not version_str:
+                version_str = data.get('gameVersion', '')
+                
+            if version_str:
+                parts = version_str.split('.')
+                if len(parts) >= 2:
+                    return f"{parts[0]}.{parts[1]}"
+            else:
+                print(f"Figyelem! Nincs gameVersion. Info kulcsok: {list(info_dict.keys())[:10]}")
+                
+        except Exception as e:
+            print(f"Hiba a patch verzio kinyeresekor: {e}")
+        
+        return "UNKNOWN"
 
-    def save_all(self, data):
-        with open(self.file_path, 'w') as f:
-            json.dump(data, f, indent=2)
-
-    def save_match(self, match_id: str, region: str, data: dict):
-        all_data = self.load_all()
-        all_data[match_id] = {"region": region, "data": data}
-        self.save_all(all_data)
+    def save_match(self, match_id: str, region: str, data: dict, rank_info: str = None):
+        patch = self.extract_patch_version(data)
+        
+        if rank_info:
+            division = rank_info
+        else:
+            division = data.get("tier", "UNKNOWN")
+            
+        with self.conn.cursor() as cur:
+            cur.execute("""
+                INSERT INTO matches (match_id, region, game_version, division, data)
+                VALUES (%s, %s, %s, %s, %s)
+                ON CONFLICT (match_id) DO NOTHING;
+            """, (match_id, region, patch, division, Json(data)))
+        self.conn.commit()
 
     def get_match(self, match_id: str):
-        all_data = self.load_all()
-        if isinstance(all_data, dict):
-            return all_data.get(match_id)
+        with self.conn.cursor() as cur:
+            cur.execute("SELECT region, data FROM matches WHERE match_id = %s;", (match_id,))
+            row = cur.fetchone()
+            if row:
+                return {"region": row[0], "data": row[1]}
         return None
     
     def get_all_match_ids(self):
-        all_data = self.load_all()
-        if isinstance(all_data, dict):
-            return list(all_data.keys())
-        return []
+        with self.conn.cursor() as cur:
+            cur.execute("SELECT match_id FROM matches;")
+            return [row[0] for row in cur.fetchall()]
 
     def get_champindex_by_id(self, champ_id: int):
         champ_data_path = Path(cfg.CHAMPION_DATA_PATH)
@@ -54,3 +86,7 @@ class DataManager:
         with open(champ_data_path, 'r') as f:
             champ_data = json.load(f)
             return int(champ_data.get(str(champ_id)))
+
+    def close(self):
+        if self.conn:
+            self.conn.close()

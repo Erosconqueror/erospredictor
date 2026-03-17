@@ -1,13 +1,21 @@
-RIOT_API_KEY = "RGAPI-10a04fc3-bd83-4fc7-b43c-3bc003b49785"
+RIOT_API_KEY = "RGAPI-bf316cdd-a5bf-4e0d-ab5d-14d70aa326a6"
 REGION = "eun1"       
 CONTINENT = "europe"
 
-FILE_PATH = "data/matches.json"
+#FILE_PATH = "data/matches.json"
 CHAMPION_DATA_PATH = "data/champion_id.json"
 MODELS_DIR = "models"
 CHAMPION_COUNT = 171
 PREPROCESSED_DATA_PATH = "data/preprocessed"
 
+DB_NAME = "erospredictor"
+DB_USER = "postgres"  
+DB_PASS = "Eros"     
+DB_HOST = "localhost"
+DB_PORT = "5432"
+
+
+#maybe removed l8r
 ROLE_WEIGHTS = {
     "TOP": 1.0,
     "JUNGLE": 0.9,
@@ -23,5 +31,15 @@ DIVISION_WEIGHTS = {
     "GOLD": 0.75,
     "PLATINUM": 0.85,
     "EMERALD": 0.9,
-    "DIAMOND": 1.0
+    "DIAMOND": 1.0,
+    "MASTER": 1.0,
+    "GRANDMASTER": 1.0,
+    "CHALLENGER": 1.0
 }
+
+ALLOWED_PATCHES = ["16.2","16.3","16.4","16.5"]
+
+TARGET_TIERS = ["CHALLENGER", "GRANDMASTER", "MASTER", "DIAMOND", "EMERALD", "PLATINUM", "GOLD", "SILVER", "BRONZE", "IRON"]
+TARGET_DIVISIONS = ["I", "II", "III", "IV"]
+
+

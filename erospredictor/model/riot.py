@@ -23,114 +23,47 @@ class Riot:
 
         except requests.exceptions.HTTPError as err:
             print(f"Error fetching account by Riot ID: {err}")
-            print(f"Response text: {response.text}")
             return None
-    
-    def get_match_data(self, match_id: str):
+            
+    def get_league_exp_players(self, queue_type="RANKED_SOLO_5x5", tier="DIAMOND", division="I", page=1):
         try:
-            raw_data = self.watcher.match.by_id(self.continent, match_id)
-            info = raw_data.get("info", {})
-            metadata = raw_data.get("metadata", {})
+            if tier in ["CHALLENGER", "GRANDMASTER", "MASTER"]:
+                if page > 1 or division != "I":
+                    return []
+                
+                if tier == "CHALLENGER":
+                    league = self.watcher.league.challenger_by_queue(self.region, queue_type)
+                elif tier == "GRANDMASTER":
+                    league = self.watcher.league.grandmaster_by_queue(self.region, queue_type)
+                else:
+                    league = self.watcher.league.master_by_queue(self.region, queue_type)
+                    
+                return league.get("entries", [])
+            else:
+                players = self.watcher.league.entries(self.region, queue_type, tier, division, page=page)
+                return players
+        except ApiError as err:
+            print(f"Error fetching players for {tier} {division} page {page}: {err}")
+            return []
 
-            simplified = {
-                "matchId": metadata.get("matchId"),
-                "gameVersion": info.get("gameVersion"),
-                "gameDuration": info.get("gameDuration"),
-                "queueId": info.get("queueId"),
-                "teams": [
-                    {
-                        "teamId": t["teamId"],
-                        "win": t["win"],
-                    }
-                    for t in info.get("teams", [])
-                ],
-                "participants": [
-                    {
-                        "championId": p["championId"],
-                        "teamId": p["teamId"],
-                        "summonerName": p["summonerName"],
-                        "individualPosition": p.get("individualPosition"),
-                    }
-                    for p in info.get("participants", [])
-                ],
-            }
-            return simplified
-        except Exception as e:
-            print(f"Error fetching match {match_id}: {e}")
-            return None
-
-
-    def get_matches_by_id(self, puuid, match_limit=20, tier=None):
+    def get_match_ids_by_puuid(self, puuid, queue_id=420, match_limit=20):
         try:
             match_ids = self.watcher.match.matchlist_by_puuid(
                 self.continent,
                 puuid,
+                queue=queue_id, # 420 a Ranked Solo/Duo
                 count=match_limit
             )
+            return match_ids
         except ApiError as err:
-            print(f"Error fetching match list: {err}")
+            print(f"Error fetching match IDs for {puuid}: {err}")
             return []
 
-        
-        simplified_matches = []
+    def get_raw_match_data(self, match_id: str):
 
-        for match_id in match_ids:
-            try:
-                match_data = self.watcher.match.by_id(self.continent, match_id)
-                info = match_data.get("info", {})
-                metadata = match_data.get("metadata", {})
-
-                if info.get("queueId") not in [420, 700]:
-                    continue
-
-                patch = "unknown"
-                if "gameVersion" in info:
-                    patch = info["gameVersion"].split(".")
-                    patch = ".".join(patch[:2])
-
-                simplified = {
-                    "matchId": metadata.get("matchId"),
-                    "tier": tier,
-                    "gameVersion": patch,
-                    "gameDuration": info.get("gameDuration"),
-                    "queueId": info.get("queueId"),
-                    "teams": [
-                        {"teamId": t["teamId"], "win": t["win"]}
-                        for t in info.get("teams", [])
-                    ],
-                    "participants": [
-                        {
-                            "championId": p["championId"],
-                            "teamId": p["teamId"],
-                            "individualPosition": p.get("individualPosition")
-                        }
-                        for p in info.get("participants", [])
-                    ],
-                }
-
-                simplified_matches.append(simplified)
-                time.sleep(0.07)  
-
-            except ApiError as e:
-                print(f"Error fetching match {match_id}: {e}")
-                continue
-
-        return simplified_matches
-
-    def get_match_data(self, match_id):
         try:
             match_data = self.watcher.match.by_id(self.continent, match_id)
             return match_data
         except ApiError as err:
-            print(f"An error occurred: {err}")
+            print(f"Error fetching full match data for {match_id}: {err}")
             return None
-    
-    def get_ranked_players(self, queue_type="RANKED_SOLO_5x5", tier="DIAMOND", division="I"):
-        try:
-            ranked_players = self.watcher.league.entries(self.region, queue_type, tier, division)
-            return ranked_players
-        except ApiError as err:
-            print(f"An error occurred: {err}")
-            return None
-    
-    
