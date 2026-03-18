@@ -75,6 +75,27 @@ class DataManager:
             cur.execute("SELECT match_id FROM matches;")
             return [row[0] for row in cur.fetchall()]
 
+    def get_all_matches(self):
+        with self.conn.cursor() as cur:
+            cur.execute("""
+                SELECT match_id, region, patch, tier, blue_win, blue_team, red_team 
+                FROM matches;
+            """)
+            rows = cur.fetchall()
+            
+            matches = []
+            for row in rows:
+                matches.append({
+                    "match_id": row[0],
+                    "region": row[1],
+                    "patch": row[2],
+                    "tier": row[3],
+                    "blue_win": row[4],
+                    "blue_team": row[5],
+                    "red_team": row[6]
+                })
+            return matches
+
     def get_champindex_by_id(self, champ_id: int):
         champ_data_path = Path(cfg.CHAMPION_DATA_PATH)
         if not champ_data_path.exists():
