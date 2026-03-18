@@ -1,6 +1,6 @@
 import numpy as np
-from data_manager import DataManager
 from configs import CHAMPION_COUNT, ALLOWED_PATCHES, ROLE_WEIGHTS
+from model.data_manager import DataManager
 
 class Preprocessor:
     def __init__(self):

@@ -2,7 +2,7 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 from torch_geometric.nn import GCNConv, global_mean_pool
-from torch_geometric.data import Data, Batch
+from torch_geometric.data import Data
 from configs import CHAMPION_COUNT
 
 class LeagueGNN(nn.Module):
@@ -45,7 +45,7 @@ class LeagueGNN(nn.Module):
         x = torch.sigmoid(self.fc2(x))
         return x
 
-def create_match_graph(blue_team, red_team, blue_win=None):
+def create_match_graph(blue_team, red_team, blue_win=None, weight=1.0):
     num_nodes = 10
     node_features = []
     
@@ -56,7 +56,6 @@ def create_match_graph(blue_team, red_team, blue_win=None):
         node_features.append([champ_id, i + 5, 1])
     
     node_features = torch.tensor(node_features, dtype=torch.long)
-    
     edge_list = []
     
     for i in range(10):
@@ -81,10 +80,12 @@ def create_match_graph(blue_team, red_team, blue_win=None):
     
     if blue_win is not None:
         graph_data.y = torch.tensor([[1.0]] if blue_win else [[0.0]], dtype=torch.float32)
+        # ÚJDONSÁG: Eltároljuk a Patch súlyát is a gráfban!
+        graph_data.weight = torch.tensor([[weight]], dtype=torch.float32)
     
     return graph_data
 
-def preprocess_matches_for_gnn(data_manager):
+def preprocess_matches_for_gnn(data_manager, patch_weights):
     match_ids = data_manager.get_all_match_ids()
     graphs = []
     divisions = []
@@ -98,6 +99,10 @@ def preprocess_matches_for_gnn(data_manager):
             
         data = match_data["data"]
         division = data.get("tier", "UNKNOWN")
+        
+        # ÚJDONSÁG: Patch kinyerése és súly megállapítása
+        patch = data_manager.extract_patch_version(data)
+        weight = patch_weights.get(patch, 0.5)
         
         blue_team = []
         red_team = []
@@ -117,7 +122,8 @@ def preprocess_matches_for_gnn(data_manager):
             
         blue_win = data["teams"][0]["win"]
         
-        graph = create_match_graph(blue_team, red_team, blue_win)
+        # Átadjuk a súlyt a gráf generátornak
+        graph = create_match_graph(blue_team, red_team, blue_win, weight)
         graphs.append(graph)
         divisions.append(division)
     
@@ -125,14 +131,12 @@ def preprocess_matches_for_gnn(data_manager):
     return graphs, divisions
 
 def predict_match_gnn(model, blue_team, red_team, device):
-
     model.eval()
     with torch.no_grad():
         graph = create_match_graph(blue_team, red_team, blue_win=None)
         graph = graph.to(device)
         
         batch = torch.zeros(graph.num_nodes, dtype=torch.long, device=device)
-        
         prediction = model(graph.x, graph.edge_index, batch)
         return prediction.item()
 

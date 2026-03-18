@@ -1,20 +1,21 @@
 import time
 from model.riot import Riot
 from model.data_manager import DataManager
-from configs import TARGET_TIERS, TARGET_DIVISIONS, ALLOWED_PATCHES
+import configs as cfg
 
 def run_continuous_scraper():
     riot = Riot()
     db = DataManager()
     
     print("Starting continuous scraper...")
-    print(f"Allowed patches: {ALLOWED_PATCHES}")
+    print(f"Allowed patches: {cfg.ALLOWED_PATCHES}")
     
     while True:
-        for tier in TARGET_TIERS:
-            if tier in ["CHALLENGER", "GRANDMASTER", "MASTER"] and division != "I":
+        for tier in cfg.TARGET_TIERS:
+            
+            for division in cfg.TARGET_DIVISIONS:
+                if tier in ["CHALLENGER", "GRANDMASTER", "MASTER"] and division != "I":
                     continue
-            for division in TARGET_DIVISIONS:
                 page = 1
                 while True:
                     print(f"\n--- Fetching players: {tier} {division} Page {page} ---")
@@ -40,23 +41,23 @@ def run_continuous_scraper():
                                 print(f"  [-] Mar az adatbazisban: {match_id}")
                                 continue
                                 
-                            match_data = riot.get_raw_match_data(match_id)
+                            match_data = riot.get_match_data(match_id, tier)
                             if not match_data:
                                 print(f"  [!] Hiba a letoltesnel: {match_id}")
                                 continue
                                 
-                            patch = db.extract_patch_version(match_data)
+                            patch = match_data.get("patch", "UNKNOWN")
                             
-                            if patch in ALLOWED_PATCHES:
-                                db.save_match(match_id, riot.region, match_data, rank_info=tier)
+                            if patch in cfg.ALLOWED_PATCHES:
+                                if match_data:  
+                                    db.save_match(match_id, cfg.REGION, match_data)
                                 print(f"  [+] MENTVE! {match_id} | Patch: {patch}")
                             else:
                                 print(f"  [x] Kiszurve (rossz patch): {match_id} | Patch: {patch}")
                                 
-                    page += 1
-                    
-        print("Cycle finished. Sleeping for 1 hour...")
-        time.sleep(3600)
+                    #page += 1
+                    time.sleep(1)
+               
 
 if __name__ == "__main__":
     try:

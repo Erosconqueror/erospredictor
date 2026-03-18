@@ -36,7 +36,7 @@ class Riot:
                 elif tier == "GRANDMASTER":
                     league = self.watcher.league.grandmaster_by_queue(self.region, queue_type)
                 else:
-                    league = self.watcher.league.master_by_queue(self.region, queue_type)
+                    league = self.watcher.league.masters_by_queue(self.region, queue_type)
                     
                 return league.get("entries", [])
             else:
@@ -51,7 +51,7 @@ class Riot:
             match_ids = self.watcher.match.matchlist_by_puuid(
                 self.continent,
                 puuid,
-                queue=queue_id, # 420 a Ranked Solo/Duo
+                queue=queue_id,
                 count=match_limit
             )
             return match_ids
@@ -59,11 +59,43 @@ class Riot:
             print(f"Error fetching match IDs for {puuid}: {err}")
             return []
 
-    def get_raw_match_data(self, match_id: str):
-
+    def _extract_minimal_match_data(self, raw_match, tier="UNKNOWN"):
         try:
-            match_data = self.watcher.match.by_id(self.continent, match_id)
-            return match_data
+            info = raw_match.get("info")
+            if not info:
+                return None
+
+            participants = info.get("participants", [])
+            if len(participants) != 10:
+                return None 
+            blue_win = info["teams"][0]["win"]
+            
+            blue_team = [p["championId"] for p in participants[:5]]
+            red_team = [p["championId"] for p in participants[5:]]
+            
+            raw_patch = info.get("gameVersion", "UNKNOWN")
+            patch = ".".join(raw_patch.split(".")[:2]) if raw_patch != "UNKNOWN" else raw_patch
+
+            return {
+                "tier": tier,
+                "patch": patch,
+                "blue_win": blue_win,
+                "blue_team": blue_team,
+                "red_team": red_team
+            }
+        except Exception as e:
+            print(f"Error processing match {e}")
+            return None
+
+    def get_match_data(self, match_id: str, tier: str = "UNKNOWN"):
+        try:
+            raw_match_data = self.watcher.match.by_id(self.continent, match_id)
+            clean_data = self._extract_minimal_match_data(raw_match_data, tier)
+            return clean_data
+            
         except ApiError as err:
             print(f"Error fetching full match data for {match_id}: {err}")
+            return None
+        except Exception as e:
+            print(f"Error with this match: ({match_id}): {e}")
             return None

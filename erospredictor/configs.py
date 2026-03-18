@@ -1,11 +1,12 @@
-RIOT_API_KEY = "RGAPI-bf316cdd-a5bf-4e0d-ab5d-14d70aa326a6"
+RIOT_API_KEY = "RGAPI-4b1f3821-a93e-416e-b978-55da3d6befff"
 REGION = "eun1"       
 CONTINENT = "europe"
 
 #FILE_PATH = "data/matches.json"
 CHAMPION_DATA_PATH = "data/champion_id.json"
+CHAMPION_NAMES_PATH = "data/champion_names.json"
 MODELS_DIR = "models"
-CHAMPION_COUNT = 171
+CHAMPION_COUNT = 172
 PREPROCESSED_DATA_PATH = "data/preprocessed"
 
 DB_NAME = "erospredictor"
@@ -41,5 +42,9 @@ ALLOWED_PATCHES = ["16.2","16.3","16.4","16.5"]
 
 TARGET_TIERS = ["CHALLENGER", "GRANDMASTER", "MASTER", "DIAMOND", "EMERALD", "PLATINUM", "GOLD", "SILVER", "BRONZE", "IRON"]
 TARGET_DIVISIONS = ["I", "II", "III", "IV"]
+
+
+
+
 
 

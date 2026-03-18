@@ -3,6 +3,7 @@ from model.predictor import ChampionPredictor, RoleAwareEmbeddingPredictor
 from configs import CHAMPION_COUNT, MODELS_DIR, ROLE_WEIGHTS
 import os
 
+#this will be moved to legacy code, just for debugging purposes to see if the models are working as expected on some test inputs.
 def debug_predict(blue_team, red_team, division="MIXED"):
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 

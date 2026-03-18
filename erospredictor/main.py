@@ -1,5 +1,5 @@
 from controller.controller import Controller
-
+#this thing will be moving to legacy files soon, due to separating the data collection and model training into different scripts, but for now it is here for ease of use
 def main():
     controller = Controller()
     

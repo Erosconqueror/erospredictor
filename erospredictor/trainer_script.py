@@ -3,6 +3,8 @@ from model.preprocessor import Preprocessor
 from model.train_model import train_single_model
 from model.data_manager import DataManager
 from model.statistical import StatisticalModel
+from model.gnn_predictor import preprocess_matches_for_gnn
+from model.train_model import train_gnn_model
 from configs import CHAMPION_COUNT
 #ezt meg tweakelni kell elegge, hogy a parameterek optimalisak legyenek kulonbozo adatmeretekhez es modellekhez, de egy jo kiindulasi pont lehet az auto-tuninghoz (imadom hogy a copilot hogyan generalja a kommenteim veget :D)
 def calculate_optimal_params(data_size, model_type):
@@ -57,8 +59,8 @@ def run_trainer():
             print("Statisztikai modell megepitve.")
             
         elif choice == "2":
-            print("\n1. RoleWeighted\n2. RoleAware")
-            m_choice = input("Melyik modellt? (1-2): ").strip()
+            print("\n1. RoleWeighted\n2. RoleAware\n3. GNN (Graph Neural Network)")
+            m_choice = input("Melyik modellt? (1-3): ").strip()
             division = input("Divizio (pl. DIAMOND, MIXED): ").strip().upper()
             
             ep = input("Epochs (alap 50): ").strip()
@@ -72,16 +74,23 @@ def run_trainer():
             if m_choice == "1":
                 X, y, divs, w = prep.preprocess_all_matches(use_cache=True)
                 if not X:
-                    print("Nincs a memoriaban adat!")
+                    print("Nincs adat! Futtasd az 1-es opciot elobb.")
                     continue
                 train_single_model(X, y, divs, f"{division}_roleweighted", CHAMPION_COUNT * 2, epochs, batch_size, lr, "standard", w)
             
             elif m_choice == "2":
                 X, y, divs, w = prep.preprocess_all_matches_roleaware(use_cache=True)
                 if not X:
-                    print("Nincs a memoriaban adat!")
+                    print("Nincs adat! Futtasd az 1-es opciot elobb.")
                     continue
                 train_single_model(X, y, divs, f"{division}_roleaware", CHAMPION_COUNT * 10, epochs, batch_size, lr, "roleaware", w)
+
+            elif m_choice == "3":
+                graphs, divs = preprocess_matches_for_gnn(db, prep.patch_weights)
+                if not graphs:
+                    print("Nincs adat a GNN-hez!")
+                    continue
+                train_gnn_model(graphs, f"{division}_gnn", epochs, batch_size, lr)
                 
         elif choice == "3":
             division = input("Divizio (pl. DIAMOND, MIXED): ").strip().upper()
