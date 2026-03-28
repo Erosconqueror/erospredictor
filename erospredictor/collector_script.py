@@ -55,8 +55,12 @@ def run_continuous_scraper():
                             else:
                                 print(f"  [x] Kiszurve (rossz patch): {match_id} | Patch: {patch}")
                                 
-                    #page += 1
-                    time.sleep(1)
+                    page += 1
+                    if page >= 10:  
+                        print("Túl sok oldal, továbblépünk a következő ligára. ")
+                        time.sleep(10)
+                        break
+                    
                
 
 if __name__ == "__main__":

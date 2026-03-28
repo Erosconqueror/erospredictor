@@ -1,5 +1,7 @@
 import numpy as np
-from configs import CHAMPION_COUNT, ALLOWED_PATCHES, ROLE_WEIGHTS
+import json
+from pathlib import Path
+from configs import CHAMPION_COUNT, ALLOWED_PATCHES, ROLE_WEIGHTS, CHAMPION_DATA_PATH
 from model.data_manager import DataManager
 
 class Preprocessor:
@@ -8,6 +10,7 @@ class Preprocessor:
         self.cached_rw = None
         self.cached_ra = None
         self.patch_weights = self._calculate_patch_weights()
+        self.champ_mapping = self._load_champ_mapping() # Beolvassuk a RAM-ba egyszer, hogy gyors legyen!
 
     def _calculate_patch_weights(self):
         weights = {}
@@ -19,6 +22,14 @@ class Preprocessor:
             
         return weights
 
+    def _load_champ_mapping(self):
+        """Betölti a champion ID -> index (0-170) leképezést egyszer a memóriába."""
+        path = Path(CHAMPION_DATA_PATH)
+        if path.exists():
+            with open(path, 'r', encoding='utf-8') as f:
+                return json.load(f)
+        return {}
+
     def clear_cache(self):
         self.cached_rw = None
         self.cached_ra = None
@@ -27,38 +38,32 @@ class Preprocessor:
         if use_cache and self.cached_rw is not None:
             return self.cached_rw
             
-        match_ids = self.data_manager.get_all_match_ids()
+        # Egyetlen villámgyors lekérdezés az összes meccsre!
+        matches = self.data_manager.get_all_matches()
+        if not matches:
+            print("Nincs meccs az adatbázisban!")
+            return [], [], [], []
+            
         X, y, divisions, weights = [], [], [], []
-        
         vex = list(ROLE_WEIGHTS.values())
         
-        for match_id in match_ids:
-            match_data = self.data_manager.get_match(match_id)
-            if not match_data:
-                continue
-                
-            data = match_data["data"]
-            division = data.get("tier", "UNKNOWN")
-            patch = self.data_manager.extract_patch_version(data)
+        for match_data in matches:
+            division = match_data.get("tier", "UNKNOWN")
+            patch = match_data.get("patch", "UNKNOWN")
             weight = self.patch_weights.get(patch, 0.5) 
             
-            blue_team = []
-            red_team = []
+            blue_team_raw = match_data.get("blue_team", [])
+            red_team_raw = match_data.get("red_team", [])
+            blue_win = match_data.get("blue_win", False)
             
-            for i, participant in enumerate(data["participants"]):
-                champ_index = self.data_manager.get_champindex_by_id(participant["championId"])
-                if champ_index is None:
-                    continue
-                if i < 5:
-                    blue_team.append(champ_index)
-                else:
-                    red_team.append(champ_index)
+            # Riot ID-k átváltása a mi belső indexeinkre (a memóriából)
+            blue_team = [int(self.champ_mapping[str(cid)]) for cid in blue_team_raw if str(cid) in self.champ_mapping]
+            red_team = [int(self.champ_mapping[str(cid)]) for cid in red_team_raw if str(cid) in self.champ_mapping]
             
+            # Ha egy hős hiányzik az adatbázisból (pl. új karakter jött be), kihagyjuk a meccset
             if len(blue_team) != 5 or len(red_team) != 5:
                 continue
                 
-            blue_win = data["teams"][0]["win"]
-            
             champions = [0.0] * (CHAMPION_COUNT * 2)
             for i, champ_id in enumerate(blue_team):
                 champions[champ_id] = vex[i]
@@ -79,36 +84,27 @@ class Preprocessor:
         if use_cache and self.cached_ra is not None:
             return self.cached_ra
             
-        match_ids = self.data_manager.get_all_match_ids()
+        matches = self.data_manager.get_all_matches()
+        if not matches:
+            return [], [], [], []
+            
         X, y, divisions, weights = [], [], [], []
         
-        for match_id in match_ids:
-            match_data = self.data_manager.get_match(match_id)
-            if not match_data:
-                continue
-                
-            data = match_data["data"]
-            division = data.get("tier", "UNKNOWN")
-            patch = self.data_manager.extract_patch_version(data)
+        for match_data in matches:
+            division = match_data.get("tier", "UNKNOWN")
+            patch = match_data.get("patch", "UNKNOWN")
             weight = self.patch_weights.get(patch, 0.5)
             
-            blue_team = []
-            red_team = []
+            blue_team_raw = match_data.get("blue_team", [])
+            red_team_raw = match_data.get("red_team", [])
+            blue_win = match_data.get("blue_win", False)
             
-            for i, participant in enumerate(data["participants"]):
-                champ_index = self.data_manager.get_champindex_by_id(participant["championId"])
-                if champ_index is None:
-                    continue
-                if i < 5:
-                    blue_team.append(champ_index)
-                else:
-                    red_team.append(champ_index)
+            blue_team = [int(self.champ_mapping[str(cid)]) for cid in blue_team_raw if str(cid) in self.champ_mapping]
+            red_team = [int(self.champ_mapping[str(cid)]) for cid in red_team_raw if str(cid) in self.champ_mapping]
                     
             if len(blue_team) != 5 or len(red_team) != 5:
                 continue
                 
-            blue_win = data["teams"][0]["win"]
-            
             champions = [0.0] * (CHAMPION_COUNT * 10)
             for i, champ_id in enumerate(blue_team):
                 champions[i * CHAMPION_COUNT + champ_id] = 1.0

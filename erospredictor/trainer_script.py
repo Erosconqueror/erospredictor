@@ -54,8 +54,8 @@ def run_trainer():
             
             X_ra, y_ra, div_ra, w_ra = prep.preprocess_all_matches_roleaware(use_cache=False)
             print(f"RoleAware adatok feldolgozva: {len(X_ra)} minta")
-            
             stat_model.build_from_matches()
+            stat_model.save_cache()
             print("Statisztikai modell megepitve.")
             
         elif choice == "2":
@@ -93,24 +93,63 @@ def run_trainer():
                 train_gnn_model(graphs, f"{division}_gnn", epochs, batch_size, lr)
                 
         elif choice == "3":
-            division = input("Divizio (pl. DIAMOND, MIXED): ").strip().upper()
-            
             X_rw, y_rw, divs_rw, w_rw = prep.preprocess_all_matches(use_cache=True)
             X_ra, y_ra, divs_ra, w_ra = prep.preprocess_all_matches_roleaware(use_cache=True)
             
-            if not X_rw or not X_ra:
-                print("Nincs a memoriaban adat!")
+            print("GNN adatok (grafok) elofeldolgozasa...")
+            graphs, divs_gnn = preprocess_matches_for_gnn(db, prep.patch_weights)
+            
+            if not X_rw or not X_ra or not graphs:
+                print("Nincs a memoriaban eleg adat! Futtasd az 1-es opciot elobb.")
                 continue
                 
-            ep_rw, bs_rw, lr_rw = calculate_optimal_params(len(X_rw), "roleweighted")
-            print(f"\nRoleWeighted Auto-tune -> Epochs: {ep_rw}, Batch: {bs_rw}, LR: {lr_rw}")
-            train_single_model(X_rw, y_rw, divs_rw, f"{division}_roleweighted", CHAMPION_COUNT * 2, ep_rw, bs_rw, lr_rw, "standard", w_rw)
+            unique_divisions = list(set(divs_rw))
+            if "MIXED" not in unique_divisions:
+                unique_divisions.append("MIXED")
             
-            ep_ra, bs_ra, lr_ra = calculate_optimal_params(len(X_ra), "roleaware")
-            print(f"\nRoleAware Auto-tune -> Epochs: {ep_ra}, Batch: {bs_ra}, LR: {lr_ra}")
-            train_single_model(X_ra, y_ra, divs_ra, f"{division}_roleaware", CHAMPION_COUNT * 10, ep_ra, bs_ra, lr_ra, "roleaware", w_ra)
-            
-            print("\nMinden modell sikeresen betanitva")
+            for division in unique_divisions:
+                print(f"\n{'='*50}")
+                print(f">>> TANITAS: {division} DIVIZIO <<<")
+                print(f"{'='*50}")
+                
+                if division == "MIXED":
+                    X_rw_div, y_rw_div, w_rw_div = X_rw, y_rw, w_rw
+                    X_ra_div, y_ra_div, w_ra_div = X_ra, y_ra, w_ra
+                    graphs_div = graphs
+                else:
+                    X_rw_div = [x for x, d in zip(X_rw, divs_rw) if d == division]
+                    y_rw_div = [y for y, d in zip(y_rw, divs_rw) if d == division]
+                    w_rw_div = [w for w, d in zip(w_rw, divs_rw) if d == division]
+                    
+                    X_ra_div = [x for x, d in zip(X_ra, divs_ra) if d == division]
+                    y_ra_div = [y for y, d in zip(y_ra, divs_ra) if d == division]
+                    w_ra_div = [w for w, d in zip(w_ra, divs_ra) if d == division]
+                    
+                    graphs_div = [g for g, d in zip(graphs, divs_gnn) if d == division]
+                    
+                if len(X_rw_div) < 200:
+                    print(f"Nincs eleg adat a(z) {division} diviziohoz ({len(X_rw_div)} meccs). Atugras...")
+                    continue
+                    
+                # RoleWeighted Tanítás
+                ep_rw, bs_rw, lr_rw = calculate_optimal_params(len(X_rw_div), "roleweighted")
+                print(f"\n[ {division} - RoleWeighted ] Epochs: {ep_rw}, Batch: {bs_rw}, LR: {lr_rw}, Meccsek: {len(X_rw_div)}")
+                train_single_model(X_rw_div, y_rw_div, [division]*len(X_rw_div), f"{division}_roleweighted", CHAMPION_COUNT * 2, ep_rw, bs_rw, lr_rw, "standard", w_rw_div)
+                
+                # RoleAware Tanítás
+                ep_ra, bs_ra, lr_ra = calculate_optimal_params(len(X_ra_div), "roleaware")
+                print(f"\n[ {division} - RoleAware ] Epochs: {ep_ra}, Batch: {bs_ra}, LR: {lr_ra}, Meccsek: {len(X_ra_div)}")
+                train_single_model(X_ra_div, y_ra_div, [division]*len(X_ra_div), f"{division}_roleaware", CHAMPION_COUNT * 10, ep_ra, bs_ra, lr_ra, "roleaware", w_ra_div)
+                
+                # GNN Tanítás
+                if len(graphs_div) >= 200:
+                    ep_gnn, bs_gnn, lr_gnn = calculate_optimal_params(len(graphs_div), "gnn")
+                    print(f"\n[ {division} - GNN ] Epochs: {ep_gnn}, Batch: {bs_gnn}, LR: {lr_gnn}, Meccsek: {len(graphs_div)}")
+                    train_gnn_model(graphs_div, f"{division}_gnn", ep_gnn, bs_gnn, lr_gnn)
+                else:
+                    print(f"Nincs eleg adat a GNN-hez a(z) {division} divizioban.")
+                
+            print("\n!!! MINDEN MODELL SIKERESEN BETANITVA !!!")
             
         elif choice == "4":
             break

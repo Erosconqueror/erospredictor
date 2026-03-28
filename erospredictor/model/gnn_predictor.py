@@ -3,7 +3,9 @@ import torch.nn as nn
 import torch.nn.functional as F
 from torch_geometric.nn import GCNConv, global_mean_pool
 from torch_geometric.data import Data
-from configs import CHAMPION_COUNT
+from configs import CHAMPION_COUNT, CHAMPION_DATA_PATH
+import json
+from pathlib import Path
 
 class LeagueGNN(nn.Module):
     def __init__(self, champion_embedding_dim=32, role_embedding_dim=8, hidden_dim=64):  
@@ -80,54 +82,48 @@ def create_match_graph(blue_team, red_team, blue_win=None, weight=1.0):
     
     if blue_win is not None:
         graph_data.y = torch.tensor([[1.0]] if blue_win else [[0.0]], dtype=torch.float32)
-        # ÚJDONSÁG: Eltároljuk a Patch súlyát is a gráfban!
         graph_data.weight = torch.tensor([[weight]], dtype=torch.float32)
     
     return graph_data
 
 def preprocess_matches_for_gnn(data_manager, patch_weights):
-    match_ids = data_manager.get_all_match_ids()
+    matches = data_manager.get_all_matches()
     graphs = []
     divisions = []
     
-    print(f"Preprocessing {len(match_ids)} matches for GNN...")
+    print(f"GNN adatfeldolgozas: {len(matches)} meccsbol grafok epitese...")
     
-    for match_id in match_ids:
-        match_data = data_manager.get_match(match_id)
-        if not match_data:
-            continue
+    champ_mapping = {}
+    path = Path(CHAMPION_DATA_PATH)
+    if path.exists():
+        with open(path, 'r', encoding='utf-8') as f:
+            champ_mapping = json.load(f)
             
-        data = match_data["data"]
-        division = data.get("tier", "UNKNOWN")
-        
-        # ÚJDONSÁG: Patch kinyerése és súly megállapítása
-        patch = data_manager.extract_patch_version(data)
+    for match_data in matches:
+        division = match_data.get("tier", "UNKNOWN")
+        patch = match_data.get("patch", "UNKNOWN")
         weight = patch_weights.get(patch, 0.5)
         
-        blue_team = []
-        red_team = []
+        blue_team_raw = match_data.get("blue_team", [])
+        red_team_raw = match_data.get("red_team", [])
+        blue_win = match_data.get("blue_win", False)
         
-        for i, participant in enumerate(data["participants"]):
-            champ_id = participant["championId"]
-            champ_index = data_manager.get_champindex_by_id(champ_id)
-            
-            if champ_index is not None:
-                if i < 5:
-                    blue_team.append(champ_index)
-                else:
-                    red_team.append(champ_index)
+        if isinstance(blue_team_raw, str):
+            blue_team_raw = blue_team_raw.strip("{}").split(",")
+        if isinstance(red_team_raw, str):
+            red_team_raw = red_team_raw.strip("{}").split(",")
+
+        blue_team = [int(champ_mapping[str(cid)]) for cid in blue_team_raw if str(cid) in champ_mapping]
+        red_team = [int(champ_mapping[str(cid)]) for cid in red_team_raw if str(cid) in champ_mapping]
         
         if len(blue_team) != 5 or len(red_team) != 5:
             continue
             
-        blue_win = data["teams"][0]["win"]
-        
-        # Átadjuk a súlyt a gráf generátornak
         graph = create_match_graph(blue_team, red_team, blue_win, weight)
         graphs.append(graph)
         divisions.append(division)
     
-    print(f"Successfully created {len(graphs)} graphs")
+    print(f"Sikeresen felepitve {len(graphs)} graf.")
     return graphs, divisions
 
 def predict_match_gnn(model, blue_team, red_team, device):
