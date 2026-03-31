@@ -120,3 +120,66 @@ class Preprocessor:
         if always_save_cache:
             self.cached_ra = result
         return result
+    
+    def generate_meta_champs(self):
+        """
+        Kiválogatja a gyakran játszott hősöket divíziónként és pozíciónként.
+        Feltétel: Legalább 500 pick VAGY 1%-os pick rate (az összes pickhez képest az adott role-on).
+        """
+        print("\nMeta hősök szűrése és JSON generálása folyamatban (belső ID-k alapján)...")
+        matches = self.data_manager.get_all_matches()
+        if not matches:
+            print("Nincs meccs az adatbázisban a meta generáláshoz!")
+            return
+
+        stats = {}
+        totals = {}
+
+        for match in matches:
+            tier = match.get("tier", "UNKNOWN")
+            blue_raw = match.get("blue_team", [])
+            red_raw = match.get("red_team", [])
+
+            blue = [int(self.champ_mapping[str(cid)]) for cid in blue_raw if str(cid) in self.champ_mapping]
+            red = [int(self.champ_mapping[str(cid)]) for cid in red_raw if str(cid) in self.champ_mapping]
+
+            if len(blue) != 5 or len(red) != 5:
+                continue
+
+ 
+            for div in [tier, "MIXED"]:
+                if div not in totals:
+                    totals[div] = 0
+                    stats[div] = {i: {} for i in range(5)} 
+                
+                totals[div] += 1
+
+                for i, cid in enumerate(blue):
+                    stats[div][i][cid] = stats[div][i].get(cid, 0) + 1
+                for i, cid in enumerate(red):
+                    stats[div][i][cid] = stats[div][i].get(cid, 0) + 1
+
+        meta_champs = {}
+        
+        for div, total_matches in totals.items():
+            meta_champs[div] = {}
+            total_role_picks = total_matches * 2 
+            
+            for role_idx in range(5):
+                valid_champs = []
+                for cid, count in stats[div][role_idx].items():
+                    pick_rate = count / total_role_picks if total_role_picks > 0 else 0
+                    
+                    if count >= 500 or pick_rate >= 0.01:
+                        valid_champs.append(cid)
+                
+                meta_champs[div][str(role_idx)] = valid_champs
+
+        out_path = Path("data/meta_champs.json")
+        out_path.parent.mkdir(parents=True, exist_ok=True)
+        
+        with open(out_path, "w", encoding="utf-8") as f:
+            json.dump(meta_champs, f, indent=4)
+        
+        print(f"✅ Meta hősök sikeresen kimentve ({out_path})!")
+       # print(f"   A MIXED kategóriában a Mid (2) role-ra {len(meta_champs.get('MIXED', {}).get('2', []))} hős felelt meg.")

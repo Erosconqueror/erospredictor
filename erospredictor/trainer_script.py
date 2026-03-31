@@ -58,6 +58,10 @@ def run_trainer():
             stat_model.save_cache()
             print("Statisztikai modell megepitve.")
             
+            print("meta champek kigyujtese...")
+            prep.generate_meta_champs()
+            print("meta champek kigyujtbe")
+            
         elif choice == "2":
             print("\n1. RoleWeighted\n2. RoleAware\n3. GNN (Graph Neural Network)")
             m_choice = input("Melyik modellt? (1-3): ").strip()
