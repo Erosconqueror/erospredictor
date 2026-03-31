@@ -7,7 +7,7 @@ class MainWindow(QMainWindow):
     def __init__(self, champion_names):
         super().__init__()
         self.setWindowTitle("Eros Predictor - ML E-sport Elemző")
-        self.setMinimumSize(850, 650)
+        self.setMinimumSize(850, 750) # Kicsit megnöveltük a magasságot a banok miatt
         self.champion_names = champion_names
         
         main_widget = QWidget()
@@ -31,6 +31,41 @@ class MainWindow(QMainWindow):
         rank_layout.addStretch()
         main_layout.addLayout(rank_layout)
 
+        # ==========================================
+        # ÚJ RÉSZ: TILTÁSOK (BANS) SZEKCIÓ
+        # ==========================================
+        bans_group = QGroupBox("🚫 Kitiltott hősök (Bans)")
+        bans_group.setStyleSheet("font-weight: bold;")
+        bans_layout = QVBoxLayout()
+        
+        blue_bans_layout = QHBoxLayout()
+        blue_bans_label = QLabel("Kék tiltások:")
+        blue_bans_label.setStyleSheet("color: blue;")
+        blue_bans_layout.addWidget(blue_bans_label)
+        self.blue_ban_combos = []
+        for _ in range(5):
+            combo = self.create_searchable_combo()
+            self.blue_ban_combos.append(combo)
+            blue_bans_layout.addWidget(combo)
+            
+        red_bans_layout = QHBoxLayout()
+        red_bans_label = QLabel("Piros tiltások:")
+        red_bans_label.setStyleSheet("color: red;")
+        red_bans_layout.addWidget(red_bans_label)
+        self.red_ban_combos = []
+        for _ in range(5):
+            combo = self.create_searchable_combo()
+            self.red_ban_combos.append(combo)
+            red_bans_layout.addWidget(combo)
+            
+        bans_layout.addLayout(blue_bans_layout)
+        bans_layout.addLayout(red_bans_layout)
+        bans_group.setLayout(bans_layout)
+        main_layout.addWidget(bans_group)
+
+        # ==========================================
+        # CSAPATOK SZEKCIÓ
+        # ==========================================
         teams_layout = QHBoxLayout()
         
         # Kék csapat
@@ -73,16 +108,14 @@ class MainWindow(QMainWindow):
         main_layout.addLayout(teams_layout)
         
         # ==========================================
-        # ÚJ RÉSZ: PREDIKTOR ÉS AJÁNLÓ PANELEK
+        # PREDIKTOR ÉS AJÁNLÓ PANELEK
         # ==========================================
         controls_layout = QHBoxLayout()
         
-        # Bal oldal: Csak egy nagy Predikció gomb
         self.predict_btn = QPushButton("🏆 Predikció Indítása")
         self.predict_btn.setStyleSheet("font-size: 16px; font-weight: bold; padding: 15px; background-color: #4CAF50; color: white; min-width: 200px;")
         controls_layout.addWidget(self.predict_btn)
         
-        # Jobb oldal: Okos Ajánló doboz
         rec_group = QGroupBox("💡 Hős Ajánló Rendszer")
         rec_group.setStyleSheet("font-weight: bold;")
         rec_layout = QVBoxLayout()
@@ -154,11 +187,32 @@ class MainWindow(QMainWindow):
                 team_ids.append(0)
         return team_ids
 
+    def get_all_unavailable_ids(self):
+        """Összegyűjti az összes jelenleg foglalt hős ID-ját (pickek + banok)"""
+        blue_ids = self.get_team_ids(self.blue_combos)
+        red_ids = self.get_team_ids(self.red_combos)
+        blue_ban_ids = self.get_team_ids(self.blue_ban_combos)
+        red_ban_ids = self.get_team_ids(self.red_ban_combos)
+        
+        picked = [i for i in blue_ids + red_ids if i > 0]
+        banned = [i for i in blue_ban_ids + red_ban_ids if i > 0]
+        return set(picked), set(banned)
+
     def on_predict_clicked(self):
         if not self.controller: return
-        division = self.rank_combo.currentText()
+        
+        # Validáció: Egy hős csak egyszer szerepelhet
         blue_team = self.get_team_ids(self.blue_combos)
         red_team = self.get_team_ids(self.red_combos)
+        blue_bans = self.get_team_ids(self.blue_ban_combos)
+        red_bans = self.get_team_ids(self.red_ban_combos)
+        
+        all_ids = [i for i in blue_team + red_team + blue_bans + red_bans if i > 0]
+        if len(all_ids) != len(set(all_ids)):
+            self.result_label.setText("⚠️ HIBA: Egy hős csak egyszer szerepelhet a pickek és tiltások között!")
+            return
+
+        division = self.rank_combo.currentText()
         
         self.result_label.setText("Predikció számítása... Kérlek várj!")
         QApplication.instance().processEvents() 
@@ -172,17 +226,34 @@ class MainWindow(QMainWindow):
 
     def on_recommend_clicked(self):
         if not self.controller: return
-        division = self.rank_combo.currentText()
+        
+        # Validáció: Egy hős csak egyszer szerepelhet
         blue_team = self.get_team_ids(self.blue_combos)
         red_team = self.get_team_ids(self.red_combos)
+        blue_bans = self.get_team_ids(self.blue_ban_combos)
+        red_bans = self.get_team_ids(self.red_ban_combos)
+        
+        all_ids = [i for i in blue_team + red_team + blue_bans + red_bans if i > 0]
+        if len(all_ids) != len(set(all_ids)):
+            self.result_label.setText("⚠️ HIBA: Kérlek javítsd a duplikált hősöket az ajánlás előtt!")
+            return
+
+        division = self.rank_combo.currentText()
+        picked, banned = self.get_all_unavailable_ids()
+        all_bans = list(banned)
         
         picking_team = "blue" if self.rec_team_combo.currentIndex() == 0 else "red"
-        picking_index = self.rec_role_combo.currentIndex() # 0:Top, 1:Jgl, 2:Mid stb.
+        picking_index = self.rec_role_combo.currentIndex()
+        
+        # Validáció: Foglalt helyre nem ajánlunk
+        current_id = blue_team[picking_index] if picking_team == "blue" else red_team[picking_index]
+        if current_id > 0:
+            self.result_label.setText(f"⚠️ Erre a pozícióra ({self.rec_role_combo.currentText()}) már választottál hőst! Töröld ki az ajánláshoz.")
+            return
         
         # Meta szűrő logika
         allowed_champs = None
         if self.meta_checkbox.isChecked() and self.meta_champs:
-            # Ha nincs elég adat az adott divízióhoz, a MIXED-ből vesszük az adatokat
             lookup_div = division if division in self.meta_champs else "MIXED"
             role_str = str(picking_index)
             
@@ -193,7 +264,7 @@ class MainWindow(QMainWindow):
         QApplication.instance().processEvents()
         
         recommendations = self.controller.recommend_champions(
-            division, blue_team, red_team, bans=[], 
+            division, blue_team, red_team, bans=all_bans, 
             picking_team=picking_team, picking_index=picking_index, 
             top_k=3, allowed_champs=allowed_champs
         )

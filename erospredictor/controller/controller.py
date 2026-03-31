@@ -13,13 +13,12 @@ from configs import CHAMPION_COUNT, MODELS_DIR, ROLE_WEIGHTS
 
 class Controller:
     def __init__(self, view=None):
+        self.view = view
         self.riot = Riot()
         self.data_manager = DataManager()
         self.preprocessor = Preprocessor()
         self.stat_model = StatisticalModel(self.data_manager)
         
-        # --- ÚJ: Cache a betöltött modelleknek ---
-        # Így a GUI használatakor nem kell másodpercenként újra betölteni a fájlokat
         self.loaded_models = {}
         self.current_division = None
         self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
@@ -126,8 +125,8 @@ class Controller:
 
     def train_gnn_model_specific(self, division, epochs=100, batch_size=64, lr=0.0003):
         # A GNN betanítása marad a régiben (rövidítve a válaszban, de a tiédből ne töröld ki!)
-        # ... Ide képzeld oda a te eredeti train_gnn_model_specific függvényed kódját ...
-        pass # Kérlek hagyd itt a te eredeti kódodat!
+        # KÉRLEK IDE MÁSOLD VISSZA A SAJÁT EREDETI train_gnn_model_specific KÓDODAT HA MEGVAN
+        pass 
 
     def clear_preprocessed_cache(self):
         self.preprocessor.clear_cache()
@@ -137,19 +136,17 @@ class Controller:
 
 
     # =========================================================================
-    # ÚJ, GRAFIKUS FELÜLETHEZ (GUI) OPTIMALIZÁLT METÓDUSOK
+    # GUI OPTIMALIZÁLT METÓDUSOK
     # =========================================================================
 
     def load_models_for_division(self, division):
-        """Betölti a modelleket a memóriába. Ha már be vannak töltve, nem olvassa újra a lemezről."""
         if self.current_division == division and self.loaded_models:
-            return # Már betöltve az adott divízió
+            return 
             
         print(f"Modellek betöltése a(z) {division} divízióhoz a memóriába...")
         self.loaded_models = {}
         self.current_division = division
 
-        # GNN betöltése
         try:
             from model.gnn_predictor import LeagueGNN
             gnn_model_path = f"models/{division}_gnn.pth"
@@ -165,7 +162,6 @@ class Controller:
         except Exception as e:
             print(f"GNN load failed: {e}")
 
-        # RoleWeighted betöltése
         try:
             rw_path = os.path.join(MODELS_DIR, f"{division}_roleweighted.pth")
             if os.path.exists(rw_path):
@@ -176,7 +172,6 @@ class Controller:
         except Exception as e:
             pass
 
-        # RoleAware betöltése
         try:
             ra_path = os.path.join(MODELS_DIR, f"{division}_roleaware.pth")
             if os.path.exists(ra_path):
@@ -188,14 +183,12 @@ class Controller:
             pass
 
     def get_win_probability(self, division, blue_team, red_team):
-        """Belső metódus, ami visszaadja a kék csapat győzelmi esélyét 0.0 és 1.0 között."""
         self.load_models_for_division(division)
         
         all_predictions = []
         all_weights = []
         model_weights = {"gnn": 0.6, "roleweighted": 0.1, "roleaware": 0.1, "statistical": 0.1}
 
-        # 1. GNN
         if "gnn" in self.loaded_models:
             from model.gnn_predictor import predict_match_gnn
             try:
@@ -204,7 +197,6 @@ class Controller:
                 all_weights.append(model_weights["gnn"])
             except: pass
 
-        # 2. RoleWeighted
         if "roleweighted" in self.loaded_models:
             champions_rw = [0.0] * (CHAMPION_COUNT * 2)
             vex = list(ROLE_WEIGHTS.values())
@@ -221,7 +213,6 @@ class Controller:
                 all_predictions.append(pred)
                 all_weights.append(model_weights["roleweighted"])
 
-        # 3. RoleAware
         if "roleaware" in self.loaded_models:
             champions_ra = [0.0] * (CHAMPION_COUNT * 10)
             for i, champ_id in enumerate(blue_team):
@@ -237,7 +228,6 @@ class Controller:
                 all_predictions.append(pred)
                 all_weights.append(model_weights["roleaware"])
 
-        # 4. Statistical
         try:
             stat_pred = self.stat_model.predict(division, blue_team, red_team)
             if stat_pred is not None:
@@ -255,14 +245,8 @@ class Controller:
         return avg_pred
 
     def predict_match(self, division, blue_team, red_team):
-        """
-        GUI ÁLTAL HASZNÁLT: Kiszámolja egy adott mérkőzés esélyeit 60/40 súlyozással.
-        blue_team, red_team: 5 elemű listák (ID-k), ahol az üres hely = 0
-        """
         blue_prob_original = self.get_win_probability(division, blue_team, red_team)
-        
         red_prob_swapped = self.get_win_probability(division, red_team, blue_team)
-        
         blue_prob_if_red = 1.0 - red_prob_swapped
         
         final_blue_prob = (blue_prob_original * 0.6) + (blue_prob_if_red * 0.4)
@@ -274,9 +258,6 @@ class Controller:
         }
 
     def recommend_champions(self, division, blue_team, red_team, bans, picking_team, picking_index, top_k=3, allowed_champs=None):
-        """
-        GUI ÁLTAL HASZNÁLT: Ajánló rendszer a kiválasztott pozícióhoz meta szűréssel.
-        """
         unavailable = set(bans)
         unavailable.update([c for c in blue_team if c and c > 0])
         unavailable.update([c for c in red_team if c and c > 0])
@@ -284,11 +265,9 @@ class Controller:
         results = []
         
         for champ_id in range(1, CHAMPION_COUNT):
-            # 1. Ha a hős már ki van választva, vagy tiltva van
             if champ_id in unavailable:
                 continue
                 
-            # 2. ÚJ: Ha a checkbox be van kapcsolva, és a hős nincs a meta listában, átugorjuk!
             if allowed_champs is not None and champ_id not in allowed_champs:
                 continue
 
@@ -300,14 +279,10 @@ class Controller:
             else:
                 temp_red[picking_index] = champ_id
 
-            # 3. Kiszámoljuk az esélyeket az új 60/40-es metódussal!
             preds = self.predict_match(division, temp_blue, temp_red)
             score = preds["blue_win_prob"] if picking_team == "blue" else preds["red_win_prob"]
             
             results.append((champ_id, score))
 
-        # Rendezés a legnagyobb győzelmi esély alapján
         results.sort(key=lambda x: x[1], reverse=True)
-        
-        # Mivel a predict_match már eleve %-ot (pl. 55.4) ad vissza, nem kell szorozni 100-zal
         return [{"champion_id": cid, "expected_winrate": prob} for cid, prob in results[:top_k]]
