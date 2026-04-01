@@ -62,15 +62,8 @@ def create_match_graph(blue_team, red_team, blue_win=None, weight=1.0):
     
     for i in range(10):
         for j in range(i + 1, 10):
-            same_team = (i < 5 and j < 5) or (i >= 5 and j >= 5)
-            if same_team:
-                edge_list.append([i, j])
-                edge_list.append([j, i])
-    
-    lane_opponents = [(0, 5), (1, 6), (2, 7), (3, 8), (4, 9)]
-    for blue_idx, red_idx in lane_opponents:
-        edge_list.append([blue_idx, red_idx])
-        edge_list.append([red_idx, blue_idx])
+            edge_list.append([i, j])
+            edge_list.append([j, i])
     
     edge_index = torch.tensor(edge_list, dtype=torch.long).t().contiguous()
     
