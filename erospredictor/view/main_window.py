@@ -1,6 +1,6 @@
 import os
 from PyQt6.QtWidgets import (QMainWindow, QWidget, QVBoxLayout, QHBoxLayout, 
-                             QPushButton, QLabel, QComboBox, QApplication, QCheckBox, QGroupBox)
+                             QPushButton, QLabel, QComboBox, QApplication, QCheckBox, QGroupBox, QProgressBar, QFrame, QButtonGroup)
 from PyQt6.QtCore import Qt, QSize
 from PyQt6.QtGui import QIcon
 from configs import TARGET_TIERS
@@ -8,30 +8,47 @@ from configs import TARGET_TIERS
 class MainWindow(QMainWindow):
     def __init__(self, champion_names, name_to_id): 
         super().__init__()
-        self.setWindowTitle("Eros Predictor - ML E-sport Elemző")
-        self.setMinimumSize(950, 850) # Kicsit nagyobbra vettük, hogy minden kényelmesen elférjen
+        
+        # === ABLAK ALAPBEÁLLÍTÁSOK ===
+        self.setWindowTitle("Erospredictor")
+        self.setFixedSize(1280, 880) 
+        
+        icon_path = os.path.abspath("assets/mainicon.png")
+        if os.path.exists(icon_path):
+            self.setWindowIcon(QIcon(icon_path))
+            
         self.champion_names = champion_names
         self.name_to_id = name_to_id 
         
+        # ==========================================
+        # MODERN SÖTÉT TÉMA
+        # ==========================================
         self.setStyleSheet("""
-            QMainWindow, QWidget {
-                background-color: #1E1E24;
-                color: #FFFFFF;
-                font-family: 'Segoe UI', Arial, sans-serif;
+            * {
+                font-family: 'Segoe UI', 'Roboto', 'Helvetica Neue', sans-serif;
+            }
+            QWidget#centralwidget {
+                /* A jobb alsó sarok sötétebb lett (#262633) */
+                background: qlineargradient(x1:0, y1:0, x2:1, y2:1, stop:0 #14141A, stop:1 #262633);
             }
             QLabel { color: #E0E0E0; }
             QComboBox {
                 background-color: #2D2D36;
-                border: 1px solid #555;
+                border: 1px solid #444;
                 border-radius: 6px;
                 padding: 4px;
                 color: white;
             }
             QComboBox::drop-down { border: none; }
             QComboBox QAbstractItemView {
-                background-color: #2D2D36;
+                background-color: #1A1A22; 
                 color: white;
-                selection-background-color: #4CAF50;
+                selection-background-color: #3949AB;
+                border-radius: 4px;
+            }
+            QComboBox[isBan="true"] {
+                border: 2px solid #E53935; 
+                background-color: #2A1D20;
             }
             QGroupBox {
                 border: 2px solid #3A3A45;
@@ -40,52 +57,94 @@ class MainWindow(QMainWindow):
                 padding-top: 15px;
                 font-weight: bold;
                 color: #A0A0B5;
+                background-color: transparent;
             }
             QGroupBox::title {
                 subcontrol-origin: margin;
                 left: 10px;
                 padding: 0 5px;
             }
-            /* A Kitiltott hősök panel piros kerete */
             QGroupBox#bansGroup {
-                border: 2px solid #E57373;
-                color: #E57373;
+                border: none; 
+                color: #A0A0B5;
+                background-color: transparent;
             }
-            QCheckBox { color: #E0E0E0; }
+            QCheckBox { color: #E0E0E0; font-size: 14px; }
+            
+            QProgressBar {
+                background: qlineargradient(x1:0, y1:0, x2:1, y2:0, stop:0 #EF5350, stop:1 #C62828);
+                border-radius: 12px;
+                border: 2px solid #BDBDBD; 
+                text-align: center;
+                color: transparent; 
+            }
+            QProgressBar::chunk {
+                background: qlineargradient(x1:0, y1:0, x2:1, y2:0, stop:0 #1976D2, stop:1 #42A5F5);
+                border-top-left-radius: 10px;
+                border-bottom-left-radius: 10px;
+                border-top-right-radius: 0px; 
+                border-bottom-right-radius: 0px;
+                border-right: none; 
+            }
+            
+            QFrame#centerDashboard {
+                background-color: rgba(30, 30, 40, 200);
+                border: 1px solid #444;
+                border-radius: 12px;
+            }
+            
+            QPushButton.toggleBtn {
+                background-color: #2D2D36;
+                color: #A0A0B5;
+                border: 1px solid #444;
+                border-radius: 6px;
+                padding: 8px;
+                font-weight: bold;
+                text-align: left;
+                padding-left: 10px;
+            }
+            QPushButton.toggleBtn:checked {
+                background-color: #3949AB;
+                color: white;
+                border: 1px solid #5C6BC0;
+            }
+            QPushButton.teamBlueBtn:checked { background-color: #1E88E5; border-color: #42A5F5; color: white;}
+            QPushButton.teamRedBtn:checked { background-color: #E53935; border-color: #EF5350; color: white;}
+            QPushButton.teamBlueBtn { text-align: center; padding-left: 0; }
+            QPushButton.teamRedBtn { text-align: center; padding-left: 0; }
         """)
         
         main_widget = QWidget()
+        main_widget.setObjectName("centralwidget")
         self.setCentralWidget(main_widget)
         main_layout = QVBoxLayout(main_widget)
 
-        title = QLabel("League of Legends Mérkőzés Prediktor és Ajánló")
-        title.setStyleSheet("font-size: 24px; font-weight: bold; margin: 10px; color: #4CAF50;")
+        title = QLabel("League of Legends Drafting Assistance")
+        title.setStyleSheet("font-size: 28px; font-weight: 900; letter-spacing: 1px; margin: 10px; color: #FFFFFF;")
         title.setAlignment(Qt.AlignmentFlag.AlignCenter)
         main_layout.addWidget(title)
         
-
+        # ==========================================
+        # RANG VÁLASZTÓ
+        # ==========================================
         rank_layout = QHBoxLayout()
         rank_label = QLabel("Modell / Divízió:")
         rank_label.setStyleSheet("font-weight: bold; font-size: 14px;")
         
         self.rank_combo = QComboBox()
-        self.rank_combo.setMinimumWidth(200)
+        self.rank_combo.setMinimumWidth(220) 
         self.rank_combo.setIconSize(QSize(24, 24))
         self.rank_combo.setStyleSheet("font-size: 15px; padding: 5px; height: 35px;")
         
-
         all_ranks_icon = os.path.abspath("assets/ranks/All Ranks.png")
         if os.path.exists(all_ranks_icon):
             self.rank_combo.addItem(QIcon(all_ranks_icon), "ALL RANKS")
         else:
             self.rank_combo.addItem("ALL RANKS")
             
-
         for tier in TARGET_TIERS:
- 
             tier_formatted = tier.capitalize() 
             icon_path = os.path.abspath(f"assets/ranks/{tier_formatted}.png")
-            
             if os.path.exists(icon_path):
                 self.rank_combo.addItem(QIcon(icon_path), tier)
             else:
@@ -96,27 +155,31 @@ class MainWindow(QMainWindow):
         rank_layout.addStretch()
         main_layout.addLayout(rank_layout)
 
+        # ==========================================
+        # TILTÁSOK (BANS) SZEKCIÓ
+        # ==========================================
         bans_group = QGroupBox("Kitiltott hősök (Bans)")
-        bans_group.setObjectName("bansGroup") 
+        bans_group.setObjectName("bansGroup")
         bans_layout = QVBoxLayout()
+        bans_layout.setAlignment(Qt.AlignmentFlag.AlignHCenter) 
         
         blue_bans_layout = QHBoxLayout()
         blue_bans_label = QLabel("Kék tiltások:")
-        blue_bans_label.setStyleSheet("color: #64B5F6; font-weight: bold;") 
+        blue_bans_label.setStyleSheet("color: #42A5F5; font-weight: bold;") 
         blue_bans_layout.addWidget(blue_bans_label)
         self.blue_ban_combos = []
         for _ in range(5):
-            combo = self.create_searchable_combo()
+            combo = self.create_searchable_combo(is_ban=True)
             self.blue_ban_combos.append(combo)
             blue_bans_layout.addWidget(combo)
             
         red_bans_layout = QHBoxLayout()
         red_bans_label = QLabel("Piros tiltások:")
-        red_bans_label.setStyleSheet("color: #E57373; font-weight: bold;")
+        red_bans_label.setStyleSheet("color: #EF5350; font-weight: bold;")
         red_bans_layout.addWidget(red_bans_label)
         self.red_ban_combos = []
         for _ in range(5):
-            combo = self.create_searchable_combo()
+            combo = self.create_searchable_combo(is_ban=True)
             self.red_ban_combos.append(combo)
             red_bans_layout.addWidget(combo)
             
@@ -125,103 +188,192 @@ class MainWindow(QMainWindow):
         bans_group.setLayout(bans_layout)
         main_layout.addWidget(bans_group)
 
-   
+        # ==========================================
+        # 3 OSZLOPOS SZEKCIÓ
+        # ==========================================
         teams_layout = QHBoxLayout()
         
+        # --- BAL OSZLOP: KÉK CSAPAT ---
         blue_layout = QVBoxLayout()
         blue_label = QLabel("Kék Csapat (Blue Team)")
-        blue_label.setStyleSheet("color: #64B5F6; font-weight: bold; font-size: 18px; padding-bottom: 5px;")
+        blue_label.setStyleSheet("color: #42A5F5; font-weight: bold; font-size: 18px; padding-bottom: 5px;")
+        blue_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
         blue_layout.addWidget(blue_label)
         
         self.blue_combos = []
-        roles = ["Top", "Jungle", "Mid", "ADC", "Support"]
+        self.roles_list = ["Top", "Jungle", "Mid", "ADC", "Support"]
         for i in range(5):
             row_layout = QHBoxLayout()
-            role_lbl = QLabel(roles[i] + ":")
+            role_lbl = QLabel(self.roles_list[i] + ":")
             role_lbl.setFixedWidth(65)
-            role_lbl.setMinimumHeight(45) # Magasabb felirat
-            role_lbl.setStyleSheet("font-weight: bold; color: #888; font-size: 14px;")
-            combo = self.create_searchable_combo()
+            role_lbl.setMinimumHeight(50) 
+            role_lbl.setStyleSheet("font-weight: bold; color: #9E9E9E; font-size: 15px;")
+            combo = self.create_searchable_combo(is_ban=False)
             self.blue_combos.append(combo)
             row_layout.addWidget(role_lbl)
             row_layout.addWidget(combo)
             blue_layout.addLayout(row_layout)
             
+        teams_layout.addLayout(blue_layout, stretch=1)
+        
+        # --- KÖZÉPSŐ OSZLOP: MŰSZERFAL ---
+        self.center_dashboard = QFrame()
+        self.center_dashboard.setObjectName("centerDashboard")
+        self.center_dashboard.setFixedWidth(460) # Szélesebb lett, hogy az egy soros cím tuti kiférjen!
+        
+        dash_layout = QVBoxLayout(self.center_dashboard)
+        dash_layout.setAlignment(Qt.AlignmentFlag.AlignTop)
+        dash_layout.setContentsMargins(1, 15, 1, 0)
+        
+        self.dash_title_lbl = QLabel("Válassz hősöket a draftoláshoz!")
+        self.dash_title_lbl.setStyleSheet("font-size: 18px; font-weight: bold; color: #FFFFFF;")
+        self.dash_title_lbl.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self.dash_title_lbl.setWordWrap(True)
+        dash_layout.addWidget(self.dash_title_lbl)
+        
+        self.winrate_labels = QWidget()
+        wl_layout = QHBoxLayout(self.winrate_labels)
+        wl_layout.setContentsMargins(10, 80, 10, 5)
+        self.blue_wr_lbl = QLabel("Kék: 50.0%")
+        self.blue_wr_lbl.setStyleSheet("color: #64B5F6; font-weight: bold; font-size: 20px;")
+        self.red_wr_lbl = QLabel("Piros: 50.0%")
+        self.red_wr_lbl.setStyleSheet("color: #E57373; font-weight: bold; font-size: 20px;")
+        self.red_wr_lbl.setAlignment(Qt.AlignmentFlag.AlignRight)
+        wl_layout.addWidget(self.blue_wr_lbl)
+        wl_layout.addWidget(self.red_wr_lbl)
+        dash_layout.addWidget(self.winrate_labels)
+        self.winrate_labels.hide()
+        
+        self.winrate_bar = QProgressBar()
+        self.winrate_bar.setFixedHeight(28)
+        self.winrate_bar.setRange(0, 100)
+        self.winrate_bar.setValue(50)
+        dash_layout.addWidget(self.winrate_bar)
+        self.winrate_bar.hide()
+        
+        self.dash_rec_lbl = QLabel("")
+        self.dash_rec_lbl.setAlignment(Qt.AlignmentFlag.AlignTop | Qt.AlignmentFlag.AlignHCenter)
+        dash_layout.addWidget(self.dash_rec_lbl)
+        self.dash_rec_lbl.hide()
+        
+        dash_layout.addStretch() # Lenyomja a tartalmat, ha kevesebb
+        teams_layout.addWidget(self.center_dashboard)
+        
+        # --- JOBB OSZLOP: PIROS CSAPAT ---
         red_layout = QVBoxLayout()
         red_label = QLabel("Piros Csapat (Red Team)")
-        red_label.setStyleSheet("color: #E57373; font-weight: bold; font-size: 18px; padding-bottom: 5px;")
+        red_label.setStyleSheet("color: #EF5350; font-weight: bold; font-size: 18px; padding-bottom: 5px;")
+        red_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
         red_layout.addWidget(red_label)
         
         self.red_combos = []
         for i in range(5):
             row_layout = QHBoxLayout()
-            role_lbl = QLabel(roles[i] + ":")
+            role_lbl = QLabel(self.roles_list[i] + ":")
             role_lbl.setFixedWidth(65)
-            role_lbl.setMinimumHeight(45) # Magasabb felirat
-            role_lbl.setStyleSheet("font-weight: bold; color: #888; font-size: 14px;")
-            combo = self.create_searchable_combo()
+            role_lbl.setMinimumHeight(50) 
+            role_lbl.setStyleSheet("font-weight: bold; color: #9E9E9E; font-size: 15px;")
+            combo = self.create_searchable_combo(is_ban=False)
             self.red_combos.append(combo)
             row_layout.addWidget(role_lbl)
             row_layout.addWidget(combo)
             red_layout.addLayout(row_layout)
             
-        teams_layout.addLayout(blue_layout)
-        teams_layout.addLayout(red_layout)
+        teams_layout.addLayout(red_layout, stretch=1)
         main_layout.addLayout(teams_layout)
         
-
-        controls_layout = QHBoxLayout()
+        # ==========================================
+        # ALSÓ VEZÉRLŐK
+        # ==========================================
+        bottom_container = QWidget()
+        bottom_layout = QVBoxLayout(bottom_container)
+        bottom_layout.setAlignment(Qt.AlignmentFlag.AlignHCenter)
+        bottom_layout.setSpacing(15) 
         
         self.predict_btn = QPushButton("PREDIKCIÓ INDÍTÁSA")
+        self.predict_btn.setFixedSize(300, 55) 
         self.predict_btn.setStyleSheet("""
             QPushButton {
-                font-size: 16px; font-weight: bold; padding: 15px; 
-                background-color: #4CAF50; color: white; border-radius: 6px; min-width: 200px;
+                font-size: 18px; font-weight: bold; letter-spacing: 1px;
+                background: qlineargradient(x1:0, y1:0, x2:1, y2:0, stop:0 #43A047, stop:1 #2E7D32); 
+                color: white; border-radius: 8px;
             }
-            QPushButton:hover { background-color: #45a049; }
+            QPushButton:hover { background: #388E3C; }
         """)
-        controls_layout.addWidget(self.predict_btn)
+        bottom_layout.addWidget(self.predict_btn, alignment=Qt.AlignmentFlag.AlignHCenter)
         
         rec_group = QGroupBox("Okos Ajánló Rendszer")
+        rec_group.setFixedWidth(700) 
         rec_layout = QVBoxLayout()
         
-        rec_row1 = QHBoxLayout()
-        self.rec_team_combo = QComboBox()
-        self.rec_team_combo.addItems(["Kék Csapatba", "Piros Csapatba"])
-        self.rec_team_combo.setStyleSheet("height: 30px;")
-        self.rec_role_combo = QComboBox()
-        self.rec_role_combo.addItems(["Top", "Jungle", "Mid", "ADC", "Support"])
-        self.rec_role_combo.setStyleSheet("height: 30px;")
-        rec_row1.addWidget(QLabel("Hova:"))
-        rec_row1.addWidget(self.rec_team_combo)
-        rec_row1.addWidget(self.rec_role_combo)
+        team_switch_layout = QHBoxLayout()
+        team_switch_layout.setAlignment(Qt.AlignmentFlag.AlignHCenter)
+        self.team_btn_group = QButtonGroup(self)
         
-        rec_row2 = QHBoxLayout()
+        self.btn_blue_team = QPushButton("Kék Csapat (Blue)")
+        self.btn_blue_team.setCheckable(True)
+        self.btn_blue_team.setChecked(True)
+        self.btn_blue_team.setFixedSize(160, 35)
+        self.btn_blue_team.setProperty("class", "toggleBtn teamBlueBtn")
+        
+        self.btn_red_team = QPushButton("Piros Csapat (Red)")
+        self.btn_red_team.setCheckable(True)
+        self.btn_red_team.setFixedSize(160, 35)
+        self.btn_red_team.setProperty("class", "toggleBtn teamRedBtn")
+        
+        self.team_btn_group.addButton(self.btn_blue_team, 0)
+        self.team_btn_group.addButton(self.btn_red_team, 1)
+        
+        team_switch_layout.addWidget(self.btn_blue_team)
+        team_switch_layout.addWidget(self.btn_red_team)
+        rec_layout.addLayout(team_switch_layout)
+        
+        role_switch_layout = QHBoxLayout()
+        role_switch_layout.setAlignment(Qt.AlignmentFlag.AlignHCenter)
+        self.role_btn_group = QButtonGroup(self)
+        
+        role_file_map = {"Mid": "Middle", "ADC": "Bottom"}
+        
+        for i, role in enumerate(self.roles_list):
+            btn = QPushButton(f" {role}")
+            btn.setCheckable(True)
+            btn.setFixedSize(115, 38)
+            btn.setProperty("class", "toggleBtn")
+            
+            role_icon_name = role_file_map.get(role, role)
+            icon_path = os.path.abspath(f"assets/roles/{role_icon_name}_icon.png")
+            if os.path.exists(icon_path):
+                btn.setIcon(QIcon(icon_path))
+                btn.setIconSize(QSize(20, 20))
+                
+            if i == 0: btn.setChecked(True) 
+            self.role_btn_group.addButton(btn, i)
+            role_switch_layout.addWidget(btn)
+            
+        rec_layout.addLayout(role_switch_layout)
+        
+        rec_row3 = QHBoxLayout()
+        rec_row3.setAlignment(Qt.AlignmentFlag.AlignHCenter)
         self.meta_checkbox = QCheckBox("Csak 'Meta' hősök (min. 500 pick / 1%)")
         self.meta_checkbox.setChecked(True)
-        self.recommend_btn = QPushButton("Top 3 Ajánlása")
+        self.recommend_btn = QPushButton("TOP 5 HŐS AJÁNLÁSA")
+        self.recommend_btn.setFixedSize(250, 40)
         self.recommend_btn.setStyleSheet("""
             QPushButton {
-                font-weight: bold; background-color: #2196F3; color: white; padding: 10px; border-radius: 4px;
+                font-weight: bold; font-size: 14px;
+                background: qlineargradient(x1:0, y1:0, x2:1, y2:0, stop:0 #1E88E5, stop:1 #1565C0); 
+                color: white; border-radius: 6px;
             }
-            QPushButton:hover { background-color: #1976D2; }
+            QPushButton:hover { background: #1976D2; }
         """)
-        rec_row2.addWidget(self.meta_checkbox)
-        rec_row2.addWidget(self.recommend_btn)
+        rec_row3.addWidget(self.meta_checkbox)
+        rec_row3.addWidget(self.recommend_btn)
         
-        rec_layout.addLayout(rec_row1)
-        rec_layout.addLayout(rec_row2)
+        rec_layout.addLayout(rec_row3)
         rec_group.setLayout(rec_layout)
         
-        controls_layout.addWidget(rec_group)
-        main_layout.addLayout(controls_layout)
-        
-        self.result_label = QLabel("Készen áll a draftolásra! Válassz hősöket és divíziót!")
-        self.result_label.setStyleSheet("font-size: 16px; padding: 15px; border: 2px dashed #4CAF50; border-radius: 8px; background-color: #25252D;")
-        self.result_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        self.result_label.setWordWrap(True)
-        self.result_label.setMinimumHeight(240) 
-        main_layout.addWidget(self.result_label)
+        bottom_layout.addWidget(rec_group, alignment=Qt.AlignmentFlag.AlignHCenter)
+        main_layout.addWidget(bottom_container)
 
         self.predict_btn.clicked.connect(self.on_predict_clicked)
         self.recommend_btn.clicked.connect(self.on_recommend_clicked)
@@ -232,19 +384,24 @@ class MainWindow(QMainWindow):
     def set_meta_data(self, meta_data):
         self.meta_champs = meta_data
 
-    def create_searchable_combo(self):
+    def create_searchable_combo(self, is_ban=False):
         combo = QComboBox()
-        combo.setFixedWidth(145)  
-        combo.setMinimumHeight(45)
-        combo.setIconSize(QSize(36, 36))
+        if is_ban:
+            combo.setFixedWidth(110)   
+            combo.setMinimumHeight(35) 
+            combo.setIconSize(QSize(24, 24)) 
+            combo.setProperty("isBan", True)
+        else:
+            combo.setFixedWidth(135)   
+            combo.setMinimumHeight(50) 
+            combo.setIconSize(QSize(42, 42)) 
+            
         combo.setStyleSheet("font-size: 14px; padding: 3px;")
-        
         combo.addItem(QIcon(), "") 
         
         for name in self.champion_names:
             champ_id = self.name_to_id.get(name)
             icon_abs = os.path.abspath(f"assets/icons/{champ_id}.png")
-            
             if os.path.exists(icon_abs):
                 combo.addItem(QIcon(icon_abs), name)
             else:
@@ -256,8 +413,13 @@ class MainWindow(QMainWindow):
         combo.setInsertPolicy(QComboBox.InsertPolicy.NoInsert)
         combo.completer().setCompletionMode(combo.completer().CompletionMode.PopupCompletion)
         combo.completer().setFilterMode(Qt.MatchFlag.MatchContains)
+        combo.editTextChanged.connect(lambda text, cb=combo: self.handle_combo_text_change(cb, text))
         
         return combo
+
+    def handle_combo_text_change(self, combo, text):
+        if text.strip() == "":
+            combo.setCurrentIndex(0)
 
     def set_controller_and_mapping(self, controller, name_to_id_dict):
         self.controller = controller
@@ -282,24 +444,50 @@ class MainWindow(QMainWindow):
         banned = [i for i in blue_ban_ids + red_ban_ids if i > 0]
         return set(picked), set(banned)
 
+    def reset_dashboard(self):
+        self.dash_title_lbl.show()
+        self.winrate_labels.hide()
+        self.winrate_bar.hide()
+        self.dash_rec_lbl.hide()
+
+    def validate_draft(self):
+        blue_picks = [i for i in self.get_team_ids(self.blue_combos) if i > 0]
+        red_picks = [i for i in self.get_team_ids(self.red_combos) if i > 0]
+        blue_bans = [i for i in self.get_team_ids(self.blue_ban_combos) if i > 0]
+        red_bans = [i for i in self.get_team_ids(self.red_ban_combos) if i > 0]
+
+        if len(blue_bans) != len(set(blue_bans)): 
+            return False, "A Kék csapat nem bannolhatja ugyanazt a hőst kétszer!"
+        if len(red_bans) != len(set(red_bans)): 
+            return False, "A Piros csapat nem bannolhatja ugyanazt a hőst kétszer!"
+
+        all_picks = blue_picks + red_picks
+        if len(all_picks) != len(set(all_picks)): 
+            return False, "Egy hős csak egyszer lehet kiválasztva (pick)!"
+
+        all_bans = set(blue_bans + red_bans)
+        for pick in all_picks:
+            if pick in all_bans:
+                return False, "Kiválasztott hős nem lehet a tiltólistán!"
+
+        return True, ""
+
     def on_predict_clicked(self):
         if not self.controller: return
+        self.reset_dashboard()
         
-        blue_team = self.get_team_ids(self.blue_combos)
-        red_team = self.get_team_ids(self.red_combos)
-        blue_bans = self.get_team_ids(self.blue_ban_combos)
-        red_bans = self.get_team_ids(self.red_ban_combos)
-        
-        all_ids = [i for i in blue_team + red_team + blue_bans + red_bans if i > 0]
-        if len(all_ids) != len(set(all_ids)):
-            self.result_label.setText("<h3 style='color: #EF5350;'>HIBA: Egy hős csak egyszer szerepelhet!</h3>")
+        is_valid, error_msg = self.validate_draft()
+        if not is_valid:
+            self.dash_title_lbl.setText(f"<span style='color: #EF5350;'>HIBA: {error_msg}</span>")
             return
 
-        division_ui = self.rank_combo.currentText()
+        blue_team = self.get_team_ids(self.blue_combos)
+        red_team = self.get_team_ids(self.red_combos)
 
+        division_ui = self.rank_combo.currentText()
         division_backend = "MIXED" if division_ui == "ALL RANKS" else division_ui
         
-        self.result_label.setText("<h3>Predikció számítása... Kérlek várj!</h3>")
+        self.dash_title_lbl.setText("Számítás folyamatban...")
         QApplication.instance().processEvents() 
         
         result = self.controller.predict_match(division_backend, blue_team, red_team)
@@ -307,58 +495,47 @@ class MainWindow(QMainWindow):
         blue_w = result['blue_win_prob']
         red_w = result['red_win_prob']
         
-
-        text = f"""
-        <div style='text-align: center;'>
-            <h2 style='color: #E0E0E0; margin-bottom: 15px;'>Predikció Eredmény ({division_ui})</h2>
-            
-            <table width="100%" height="45" cellspacing="0" cellpadding="0" style="border-radius: 8px;">
-                <tr>
-                    <td width="{blue_w}%" style="background-color: #64B5F6; text-align: center; font-size: 20px; font-weight: bold; color: #1E1E24;">
-                        Kék: {blue_w:.1f}%
-                    </td>
-                    <td width="{red_w}%" style="background-color: #E57373; text-align: center; font-size: 20px; font-weight: bold; color: #1E1E24;">
-                        Piros: {red_w:.1f}%
-                    </td>
-                </tr>
-            </table>
-        </div>
-        """
-        self.result_label.setText(text)
+        self.dash_title_lbl.setText(f"<span style='color: #FFFFFF; font-size: 20px;'>Predikció Eredmény ({division_ui})</span>")
+        
+        self.blue_wr_lbl.setText(f"Kék: {blue_w:.1f}%")
+        self.red_wr_lbl.setText(f"Piros: {red_w:.1f}%")
+        self.winrate_bar.setValue(int(blue_w)) 
+        
+        self.winrate_labels.show()
+        self.winrate_bar.show()
 
     def get_winrate_color(self, wr):
-        """Dinamikusan színezi a winratet. Zöldebb a jó, pirosabb a rossz."""
-        if wr >= 54.0: return "#43A047"      
-        elif wr >= 51.5: return "#66BB6A"    
+        if wr >= 57.0: return "#00E676"      
+        elif wr >= 54.0: return "#66BB6A"    
+        elif wr >= 51.5: return "#A5D6A7"    
         elif wr >= 48.5: return "#E0E0E0"    
-        elif wr >= 46.0: return "#E57373"    
-        else: return "#E53935"               
+        elif wr >= 46.0: return "#EF9A9A"    
+        elif wr >= 43.0: return "#EF5350"    
+        else: return "#D32F2F"               
 
     def on_recommend_clicked(self):
         if not self.controller: return
+        self.reset_dashboard()
         
-        blue_team = self.get_team_ids(self.blue_combos)
-        red_team = self.get_team_ids(self.red_combos)
-        blue_bans = self.get_team_ids(self.blue_ban_combos)
-        red_bans = self.get_team_ids(self.red_ban_combos)
-        
-        all_ids = [i for i in blue_team + red_team + blue_bans + red_bans if i > 0]
-        if len(all_ids) != len(set(all_ids)):
-            self.result_label.setText("<h3 style='color: #EF5350;'>HIBA: Kérlek javítsd a duplikált hősöket az ajánlás előtt!</h3>")
+        is_valid, error_msg = self.validate_draft()
+        if not is_valid:
+            self.dash_title_lbl.setText(f"<span style='color: #EF5350;'>HIBA: {error_msg}</span>")
             return
 
         division_ui = self.rank_combo.currentText()
         division_backend = "MIXED" if division_ui == "ALL RANKS" else division_ui
         
+        blue_team = self.get_team_ids(self.blue_combos)
+        red_team = self.get_team_ids(self.red_combos)
         picked, banned = self.get_all_unavailable_ids()
         all_bans = list(banned)
         
-        picking_team = "blue" if self.rec_team_combo.currentIndex() == 0 else "red"
-        picking_index = self.rec_role_combo.currentIndex()
+        picking_team = "blue" if self.team_btn_group.checkedId() == 0 else "red"
+        picking_index = self.role_btn_group.checkedId()
         
         current_id = blue_team[picking_index] if picking_team == "blue" else red_team[picking_index]
         if current_id > 0:
-            self.result_label.setText(f"<h3 style='color: #FFCA28;'>Erre a pozícióra már választottál! Töröld ki az ajánláshoz.</h3>")
+            self.dash_title_lbl.setText("<span style='color: #FFCA28;'>Erre a pozícióra már választottál hőst!</span>")
             return
         
         allowed_champs = None
@@ -368,43 +545,52 @@ class MainWindow(QMainWindow):
             if lookup_div in self.meta_champs and role_str in self.meta_champs[lookup_div]:
                 allowed_champs = set(self.meta_champs[lookup_div][role_str])
         
-        self.result_label.setText(f"<h3>Szimuláció futtatása... Várj egy kicsit!</h3>")
+        self.dash_title_lbl.setText("Szimuláció futtatása...")
         QApplication.instance().processEvents()
         
         recommendations = self.controller.recommend_champions(
             division_backend, blue_team, red_team, bans=all_bans, 
             picking_team=picking_team, picking_index=picking_index, 
-            top_k=3, allowed_champs=allowed_champs
+            top_k=5, allowed_champs=allowed_champs
         )
         
         id_to_name = {v: k for k, v in self.name_to_id.items()}
-        csapat_nev = "Kék (Blue)" if picking_team == "blue" else "Piros (Red)"
-        role_nev = self.rec_role_combo.currentText()
+        csapat_nev = "Kék" if picking_team == "blue" else "Piros"
+        role_nev = self.roles_list[picking_index]
         
-        res_text = f"<h2 style='color: #2196F3; margin-bottom: 5px;'>Ajánlott hősök: {csapat_nev} - {role_nev}</h2>"
-        if allowed_champs:
-            res_text += f"<p style='color: #A0A0B5; font-style: italic;'>(Csak {division_ui} Meta hősökből szűrve)</p>"
+        role_file_map = {"Mid": "Middle", "ADC": "Bottom"}
+        role_icon_name = role_file_map.get(role_nev, role_nev)
+        role_icon_path = os.path.abspath(f"assets/roles/{role_icon_name}_icon.png").replace("\\", "/")
+        
+        role_img_tag = f'<img src="file:///{role_icon_path}" width="28" height="28" style="vertical-align: middle; margin-left: 8px;">' if os.path.exists(os.path.abspath(f"assets/roles/{role_icon_name}_icon.png")) else ''
+        
+        self.dash_title_lbl.setText(f"<div style='text-align: center;'><span style='color: #FFFFFF; font-size: 20px; font-weight: bold;'>Ajánlott hősök: {csapat_nev} - {role_nev} {role_img_tag}</span></div>")
         
         if not recommendations:
-            res_text += "<h3 style='color: #EF5350;'>Nem található megfelelő hős a feltételek alapján!</h3>"
+            self.dash_rec_lbl.setText("<h3 style='color: #EF5350;'>Nem található megfelelő hős!</h3>")
         else:
-            res_text += "<table cellpadding='8'>"
+            res_text = "<table width='100%' cellspacing='0' cellpadding='8' align='center' style='margin-top: 10px;'>"
+            
+            fade_colors = ["#323242", "#2C2C3A", "#262632", "#20202A", "#1A1A22"]
+            
             for i, rec in enumerate(recommendations):
                 cid = rec['champion_id']
                 wr = rec['expected_winrate']
                 champ_name = id_to_name.get(cid, "Ismeretlen")
-                
                 wr_color = self.get_winrate_color(wr)
                 
                 icon_path = os.path.abspath(f"assets/icons/{cid}.png").replace("\\", "/")
-                img_tag = f'<img src="file:///{icon_path}" width="42" height="42" style="border-radius: 6px;">' if os.path.exists(os.path.abspath(f"assets/icons/{cid}.png")) else '❓'
+                img_tag = f'<img src="file:///{icon_path}" width="38" height="38" style="border-radius: 6px;">' if os.path.exists(os.path.abspath(f"assets/icons/{cid}.png")) else ''
                 
-                res_text += f"<tr>"
-                res_text += f"<td style='font-size: 20px; font-weight: bold; color: #888;'>{i+1}.</td>"
-                res_text += f"<td>{img_tag}</td>"
-                res_text += f"<td style='font-size: 20px; font-weight: bold; width: 160px;'>{champ_name}</td>"
-                res_text += f"<td style='font-size: 18px;'>Győzelmi esély: <span style='color: {wr_color}; font-weight: bold;'>{wr:.2f}%</span></td>"
+                bg_color = fade_colors[i]
+                
+                res_text += f"<tr bgcolor='{bg_color}'>"
+                res_text += f"<td style='width: 45px;'>{img_tag}</td>"
+                res_text += f"<td style='font-size: 18px; font-weight: bold; color: #FFFFFF; text-align: left;'>{champ_name}</td>"
+                res_text += f"<td style='font-size: 18px; color: {wr_color}; font-weight: bold; text-align: right;'>{wr:.2f}%</td>"
                 res_text += f"</tr>"
+                
             res_text += "</table>"
             
-        self.result_label.setText(res_text)
+            self.dash_rec_lbl.setText(res_text)
+            self.dash_rec_lbl.show()
