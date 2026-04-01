@@ -42,10 +42,12 @@ class MainWindow(QMainWindow):
                 color: white;
                 selection-background-color: #3949AB;
                 border-radius: 4px;
+                width: 0px;           
             }
             QComboBox[isBan="true"] {
                 border: 2px solid #E53935; 
                 background-color: #2A1D20;
+                
             }
             QGroupBox {
                 border: 2px solid #3A3A45;
@@ -155,25 +157,43 @@ class MainWindow(QMainWindow):
         bans_layout = QVBoxLayout()
         bans_layout.setAlignment(Qt.AlignmentFlag.AlignHCenter) 
         
+        # --- KÉK TILTÁSOK ---
         blue_bans_layout = QHBoxLayout()
+        blue_bans_layout.setAlignment(Qt.AlignmentFlag.AlignHCenter) 
+        
         blue_bans_label = QLabel("Kék tiltások:")
+        blue_bans_label.setFixedWidth(90) # Fix szélesség a bal oldalon
         blue_bans_label.setStyleSheet("color: #42A5F5; font-weight: bold;") 
         blue_bans_layout.addWidget(blue_bans_label)
+        
         self.blue_ban_combos = []
         for _ in range(5):
             combo = self.create_searchable_combo(is_ban=True)
             self.blue_ban_combos.append(combo)
             blue_bans_layout.addWidget(combo)
             
+        dummy_blue = QLabel("") 
+        dummy_blue.setFixedWidth(90)
+        blue_bans_layout.addWidget(dummy_blue)
+            
+        # --- PIROS TILTÁSOK ---
         red_bans_layout = QHBoxLayout()
+        red_bans_layout.setAlignment(Qt.AlignmentFlag.AlignHCenter)
+        
         red_bans_label = QLabel("Piros tiltások:")
+        red_bans_label.setFixedWidth(90) 
         red_bans_label.setStyleSheet("color: #EF5350; font-weight: bold;")
         red_bans_layout.addWidget(red_bans_label)
+        
         self.red_ban_combos = []
         for _ in range(5):
             combo = self.create_searchable_combo(is_ban=True)
             self.red_ban_combos.append(combo)
             red_bans_layout.addWidget(combo)
+            
+        dummy_red = QLabel("") 
+        dummy_red.setFixedWidth(90)
+        red_bans_layout.addWidget(dummy_red)
             
         bans_layout.addLayout(blue_bans_layout)
         bans_layout.addLayout(red_bans_layout)
@@ -374,12 +394,12 @@ class MainWindow(QMainWindow):
     def create_searchable_combo(self, is_ban=False):
         combo = QComboBox()
         if is_ban:
-            combo.setFixedWidth(110)   
+            combo.setFixedWidth(130)   
             combo.setMinimumHeight(35) 
             combo.setIconSize(QSize(24, 24)) 
             combo.setProperty("isBan", True)
         else:
-            combo.setFixedWidth(135)   
+            combo.setFixedWidth(150)   
             combo.setMinimumHeight(50) 
             combo.setIconSize(QSize(42, 42)) 
             
