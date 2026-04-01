@@ -135,17 +135,14 @@ def run_trainer():
                     print(f"Nincs eleg adat a(z) {division} diviziohoz ({len(X_rw_div)} meccs). Atugras...")
                     continue
                     
-                # RoleWeighted Tanítás
                 ep_rw, bs_rw, lr_rw = calculate_optimal_params(len(X_rw_div), "roleweighted")
                 print(f"\n[ {division} - RoleWeighted ] Epochs: {ep_rw}, Batch: {bs_rw}, LR: {lr_rw}, Meccsek: {len(X_rw_div)}")
                 train_single_model(X_rw_div, y_rw_div, [division]*len(X_rw_div), f"{division}_roleweighted", CHAMPION_COUNT * 2, ep_rw, bs_rw, lr_rw, "standard", w_rw_div)
                 
-                # RoleAware Tanítás
                 ep_ra, bs_ra, lr_ra = calculate_optimal_params(len(X_ra_div), "roleaware")
                 print(f"\n[ {division} - RoleAware ] Epochs: {ep_ra}, Batch: {bs_ra}, LR: {lr_ra}, Meccsek: {len(X_ra_div)}")
                 train_single_model(X_ra_div, y_ra_div, [division]*len(X_ra_div), f"{division}_roleaware", CHAMPION_COUNT * 10, ep_ra, bs_ra, lr_ra, "roleaware", w_ra_div)
                 
-                # GNN Tanítás
                 if len(graphs_div) >= 200:
                     ep_gnn, bs_gnn, lr_gnn = calculate_optimal_params(len(graphs_div), "gnn")
                     print(f"\n[ {division} - GNN ] Epochs: {ep_gnn}, Batch: {bs_gnn}, LR: {lr_gnn}, Meccsek: {len(graphs_div)}")

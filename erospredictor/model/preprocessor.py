@@ -10,7 +10,7 @@ class Preprocessor:
         self.cached_rw = None
         self.cached_ra = None
         self.patch_weights = self._calculate_patch_weights()
-        self.champ_mapping = self._load_champ_mapping() # Beolvassuk a RAM-ba egyszer, hogy gyors legyen!
+        self.champ_mapping = self._load_champ_mapping()
 
     def _calculate_patch_weights(self):
         weights = {}
@@ -38,7 +38,6 @@ class Preprocessor:
         if use_cache and self.cached_rw is not None:
             return self.cached_rw
             
-        # Egyetlen villámgyors lekérdezés az összes meccsre!
         matches = self.data_manager.get_all_matches()
         if not matches:
             print("Nincs meccs az adatbázisban!")
@@ -56,11 +55,9 @@ class Preprocessor:
             red_team_raw = match_data.get("red_team", [])
             blue_win = match_data.get("blue_win", False)
             
-            # Riot ID-k átváltása a mi belső indexeinkre (a memóriából)
             blue_team = [int(self.champ_mapping[str(cid)]) for cid in blue_team_raw if str(cid) in self.champ_mapping]
             red_team = [int(self.champ_mapping[str(cid)]) for cid in red_team_raw if str(cid) in self.champ_mapping]
             
-            # Ha egy hős hiányzik az adatbázisból (pl. új karakter jött be), kihagyjuk a meccset
             if len(blue_team) != 5 or len(red_team) != 5:
                 continue
                 

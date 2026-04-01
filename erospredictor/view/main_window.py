@@ -9,7 +9,7 @@ class MainWindow(QMainWindow):
     def __init__(self, champion_names, name_to_id): 
         super().__init__()
         
-        # === ABLAK ALAPBEÁLLÍTÁSOK ===
+        #ABLAK ALAPBEÁLLÍTÁSOK
         self.setWindowTitle("Erospredictor")
         self.setFixedSize(1280, 880) 
         
@@ -20,15 +20,12 @@ class MainWindow(QMainWindow):
         self.champion_names = champion_names
         self.name_to_id = name_to_id 
         
-        # ==========================================
         # MODERN SÖTÉT TÉMA
-        # ==========================================
         self.setStyleSheet("""
             * {
                 font-family: 'Segoe UI', 'Roboto', 'Helvetica Neue', sans-serif;
             }
             QWidget#centralwidget {
-                /* A jobb alsó sarok sötétebb lett (#262633) */
                 background: qlineargradient(x1:0, y1:0, x2:1, y2:1, stop:0 #14141A, stop:1 #262633);
             }
             QLabel { color: #E0E0E0; }
@@ -119,16 +116,14 @@ class MainWindow(QMainWindow):
         self.setCentralWidget(main_widget)
         main_layout = QVBoxLayout(main_widget)
 
-        title = QLabel("League of Legends Drafting Assistance")
+        title = QLabel("League of Legends Hősválasztási Segítő")
         title.setStyleSheet("font-size: 28px; font-weight: 900; letter-spacing: 1px; margin: 10px; color: #FFFFFF;")
         title.setAlignment(Qt.AlignmentFlag.AlignCenter)
         main_layout.addWidget(title)
         
-        # ==========================================
         # RANG VÁLASZTÓ
-        # ==========================================
         rank_layout = QHBoxLayout()
-        rank_label = QLabel("Modell / Divízió:")
+        rank_label = QLabel("Rang Divízió")
         rank_label.setStyleSheet("font-weight: bold; font-size: 14px;")
         
         self.rank_combo = QComboBox()
@@ -154,10 +149,7 @@ class MainWindow(QMainWindow):
         rank_layout.addWidget(self.rank_combo)
         rank_layout.addStretch()
         main_layout.addLayout(rank_layout)
-
-        # ==========================================
         # TILTÁSOK (BANS) SZEKCIÓ
-        # ==========================================
         bans_group = QGroupBox("Kitiltott hősök (Bans)")
         bans_group.setObjectName("bansGroup")
         bans_layout = QVBoxLayout()
@@ -188,12 +180,10 @@ class MainWindow(QMainWindow):
         bans_group.setLayout(bans_layout)
         main_layout.addWidget(bans_group)
 
-        # ==========================================
         # 3 OSZLOPOS SZEKCIÓ
-        # ==========================================
         teams_layout = QHBoxLayout()
         
-        # --- BAL OSZLOP: KÉK CSAPAT ---
+        # BAL OSZLOP: KÉK CSAPAT
         blue_layout = QVBoxLayout()
         blue_label = QLabel("Kék Csapat (Blue Team)")
         blue_label.setStyleSheet("color: #42A5F5; font-weight: bold; font-size: 18px; padding-bottom: 5px;")
@@ -216,10 +206,10 @@ class MainWindow(QMainWindow):
             
         teams_layout.addLayout(blue_layout, stretch=1)
         
-        # --- KÖZÉPSŐ OSZLOP: MŰSZERFAL ---
+        # KÖZÉPSŐ OSZLOP: MŰSZERFAL 
         self.center_dashboard = QFrame()
         self.center_dashboard.setObjectName("centerDashboard")
-        self.center_dashboard.setFixedWidth(460) # Szélesebb lett, hogy az egy soros cím tuti kiférjen!
+        self.center_dashboard.setFixedWidth(460)
         
         dash_layout = QVBoxLayout(self.center_dashboard)
         dash_layout.setAlignment(Qt.AlignmentFlag.AlignTop)
@@ -256,10 +246,10 @@ class MainWindow(QMainWindow):
         dash_layout.addWidget(self.dash_rec_lbl)
         self.dash_rec_lbl.hide()
         
-        dash_layout.addStretch() # Lenyomja a tartalmat, ha kevesebb
+        dash_layout.addStretch()
         teams_layout.addWidget(self.center_dashboard)
         
-        # --- JOBB OSZLOP: PIROS CSAPAT ---
+        #JOBB OSZLOP: PIROS CSAPAT
         red_layout = QVBoxLayout()
         red_label = QLabel("Piros Csapat (Red Team)")
         red_label.setStyleSheet("color: #EF5350; font-weight: bold; font-size: 18px; padding-bottom: 5px;")
@@ -281,16 +271,13 @@ class MainWindow(QMainWindow):
             
         teams_layout.addLayout(red_layout, stretch=1)
         main_layout.addLayout(teams_layout)
-        
-        # ==========================================
         # ALSÓ VEZÉRLŐK
-        # ==========================================
         bottom_container = QWidget()
         bottom_layout = QVBoxLayout(bottom_container)
         bottom_layout.setAlignment(Qt.AlignmentFlag.AlignHCenter)
         bottom_layout.setSpacing(15) 
         
-        self.predict_btn = QPushButton("PREDIKCIÓ INDÍTÁSA")
+        self.predict_btn = QPushButton("PREDIKCIÓ")
         self.predict_btn.setFixedSize(300, 55) 
         self.predict_btn.setStyleSheet("""
             QPushButton {
@@ -302,7 +289,7 @@ class MainWindow(QMainWindow):
         """)
         bottom_layout.addWidget(self.predict_btn, alignment=Qt.AlignmentFlag.AlignHCenter)
         
-        rec_group = QGroupBox("Okos Ajánló Rendszer")
+        rec_group = QGroupBox("Hős Ajánló")
         rec_group.setFixedWidth(700) 
         rec_layout = QVBoxLayout()
         
@@ -354,9 +341,9 @@ class MainWindow(QMainWindow):
         
         rec_row3 = QHBoxLayout()
         rec_row3.setAlignment(Qt.AlignmentFlag.AlignHCenter)
-        self.meta_checkbox = QCheckBox("Csak 'Meta' hősök (min. 500 pick / 1%)")
+        self.meta_checkbox = QCheckBox("Off-Meta hősök szűrése")
         self.meta_checkbox.setChecked(True)
-        self.recommend_btn = QPushButton("TOP 5 HŐS AJÁNLÁSA")
+        self.recommend_btn = QPushButton("AJÁNLÁS")
         self.recommend_btn.setFixedSize(250, 40)
         self.recommend_btn.setStyleSheet("""
             QPushButton {
@@ -495,7 +482,7 @@ class MainWindow(QMainWindow):
         blue_w = result['blue_win_prob']
         red_w = result['red_win_prob']
         
-        self.dash_title_lbl.setText(f"<span style='color: #FFFFFF; font-size: 20px;'>Predikció Eredmény ({division_ui})</span>")
+        self.dash_title_lbl.setText(f"<span style='color: #FFFFFF; font-size: 20px;'>Prediktált Győzelmi Arány ({division_ui})</span>")
         
         self.blue_wr_lbl.setText(f"Kék: {blue_w:.1f}%")
         self.red_wr_lbl.setText(f"Piros: {red_w:.1f}%")

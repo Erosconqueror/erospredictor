@@ -16,7 +16,7 @@ class ChampionPredictor(nn.Module):
         self.bn2 = nn.BatchNorm1d(hidden_size // 2)
 
     def forward(self, x):
-        x = self.input_norm(x) #check if good
+        x = self.input_norm(x) #check if good - is good probably xd
         x = F.relu(self.bn1(self.fc1(x)))
         x = self.dropout(x)
         x = F.relu(self.bn2(self.fc2(x)))

@@ -18,7 +18,7 @@ class StatisticalModel:
         return {}
 
     def build_from_matches(self):
-        """Végigpörgeti az SQL-t, és kiszámolja a winrate-eket."""
+        """Az összes hős az összes másik elleni winrate-jet számolja ki adott roleon és divizioban, továbbá tárolja el egy jsonban"""
         matches = self.data_manager.get_all_matches()
         if not matches:
             print("Nincs adat az adatbázisban a statisztikákhoz!")
@@ -35,21 +35,17 @@ class StatisticalModel:
             red_team_raw = match.get("red_team", [])
             blue_win = match.get("blue_win", False)
             
-            # Golyóálló konverzió (ha véletlen stringként jönne az SQL-ből)
             if isinstance(blue_team_raw, str):
                 blue_team_raw = blue_team_raw.strip("{}").split(",")
             if isinstance(red_team_raw, str):
                 red_team_raw = red_team_raw.strip("{}").split(",")
 
-            # Riot ID -> Belső Index
             blue_team = [str(self.champ_mapping.get(str(cid), "-1")) for cid in blue_team_raw]
             red_team = [str(self.champ_mapping.get(str(cid), "-1")) for cid in red_team_raw]
             
-            # Ha hiányos a csapat, vagy ismeretlen a hős
             if len(blue_team) != 5 or len(red_team) != 5 or "-1" in blue_team or "-1" in red_team:
                 continue
-
-            # Szótár struktúra felépítése
+            
             if division not in self.matchups:
                 self.matchups[division] = {r: {} for r in roles}
 

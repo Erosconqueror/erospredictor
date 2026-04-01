@@ -1,4 +1,4 @@
-RIOT_API_KEY = "RGAPI-c3d498f9-c7a6-4add-88a5-a2c5c12e7844"
+RIOT_API_KEY = "RGAPI-c3d498f9-c7a6-4add-88a5-a2c5c12e7844" #ezt nem kéne megadni itt
 REGION = "eun1"       
 CONTINENT = "europe"
 
