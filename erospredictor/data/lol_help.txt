@@ -1,0 +1,17 @@
+# Mi az a League of Legends?
+
+A **League of Legends (LoL)** a világ egyik legnépszerűbb videójátéka. Egy online felülnézetes stratégiai csapatjáték (MOBA), amelyet a Riot Games fejleszt.
+
+**A játék alapjai:**
+* 5 az 5 elleni csapatjáték, ahol a játékosok egy térképen harcolnak egymás ellen.
+* A cél az ellenfél bázisában található **Nexus** elpusztítása, de vannak a térképen más fontos objektívek is amelyek segítenek e cél eléréseben.
+* A játék folyamán a játéksok aranyat és tapasztalati pontokat tudnak gyűjteni, hogy tárgyakat vásárolhassanak és szintet léphessenek, erősítve ezzel karakterüket.
+* A játékosok újraélednek a bázisukon, ha meghalnak, és nem veszítik el az eddigi előrehaladásukat.
+
+
+**A Pozíciók (Role-ok):**
+Minden csapatban a játékosok 5 specifikus szerepkört töltenek be játékban, és a térképen eltöltött pozíciójukról lettek elnevezve: **Top**, **Jungle**, **Mid**, **ADC/Alsó**, és **Support**. Minden szerepkörnek megvannak a saját feladatai és felelősségei a meccs során.
+
+
+**A Draft (Kiválasztási fázis):**
+Jelenleg több mint 170 különböző karakter közül lehet választani, melyek mindegyike egyedi képességekkel rendelkezik. A mérkőzések előtt a csapatok tiltanak, majd felváltva választanak hősöket. Ez a program ennek a mára már stratégiai fázissá vált részben próbál segítséget nyújtani.

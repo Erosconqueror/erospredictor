@@ -1,6 +1,6 @@
 import os
 from PyQt6.QtWidgets import (QMainWindow, QWidget, QVBoxLayout, QHBoxLayout, 
-                             QPushButton, QLabel, QComboBox, QApplication, QCheckBox, QGroupBox, QProgressBar, QFrame, QButtonGroup)
+                             QPushButton, QLabel, QComboBox, QApplication, QCheckBox, QGroupBox, QProgressBar, QFrame, QButtonGroup, QDialog, QTextEdit)
 from PyQt6.QtCore import Qt, QSize
 from PyQt6.QtGui import QIcon
 from configs import TARGET_TIERS
@@ -11,7 +11,8 @@ class MainWindow(QMainWindow):
         
         #ABLAK ALAPBEÁLLÍTÁSOK
         self.setWindowTitle("Erospredictor")
-        self.setFixedSize(1280, 880) 
+        self.setFixedSize(1280, 880)
+
         
         icon_path = os.path.abspath("assets/mainicon.png")
         if os.path.exists(icon_path):
@@ -118,10 +119,31 @@ class MainWindow(QMainWindow):
         self.setCentralWidget(main_widget)
         main_layout = QVBoxLayout(main_widget)
 
-        title = QLabel("League of Legends Hősválasztási Segítő")
+        header_widget = QWidget()
+        header_layout = QHBoxLayout(header_widget)
+        header_layout.setContentsMargins(0, 0, 0, 0)
+        
+        space_balancer = QWidget()
+        space_balancer.setFixedWidth(270)
+        header_layout.addWidget(space_balancer)
+        
+        title = QLabel("League of Legends Hősválasztási Segédprogram")
         title.setStyleSheet("font-size: 28px; font-weight: 900; letter-spacing: 1px; margin: 10px; color: #FFFFFF;")
         title.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        main_layout.addWidget(title)
+        header_layout.addWidget(title, alignment=Qt.AlignmentFlag.AlignCenter)
+        
+        self.help_btn = QPushButton("Súgó")
+        self.help_btn.setFixedSize(80, 35)
+        self.help_btn.setStyleSheet("""
+            QPushButton {
+                background-color: #3A3A45; color: #E0E0E0; font-weight: bold; border-radius: 6px; font-size: 14px;
+            }
+            QPushButton:hover { background-color: #4A4A55; }
+        """)
+        self.help_btn.clicked.connect(self.show_help_dialog)
+        header_layout.addWidget(self.help_btn, alignment=Qt.AlignmentFlag.AlignRight)
+        
+        main_layout.addWidget(header_widget)
         
         # RANG VÁLASZTÓ
         rank_layout = QHBoxLayout()
@@ -601,3 +623,95 @@ class MainWindow(QMainWindow):
             
             self.dash_rec_lbl.setText(res_text)
             self.dash_rec_lbl.show()
+            
+    def show_help_dialog(self):
+        dialog = HelpDialog(self)
+        dialog.exec()
+            
+class HelpDialog(QDialog):
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.setWindowTitle("Súgó")
+        self.setFixedSize(650, 600)
+        
+        self.setStyleSheet("""
+            QDialog {
+                background: qlineargradient(x1:0, y1:0, x2:1, y2:1, stop:0 #14141A, stop:1 #262633);
+            }
+            QTextEdit {
+                background-color: #1E1E24;
+                color: #E0E0E0;
+                border: 1px solid #444;
+                border-radius: 8px;
+                padding: 15px;
+                font-size: 15px;
+                font-family: 'Segoe UI', sans-serif;
+            }
+            QPushButton.toggleBtn {
+                background-color: #2D2D36;
+                color: #A0A0B5;
+                border: 1px solid #444;
+                border-radius: 6px;
+                padding: 8px;
+                font-weight: bold;
+                font-size: 14px;
+            }
+            QPushButton.toggleBtn:checked {
+                background-color: #3949AB;
+                color: white;
+                border: 1px solid #5C6BC0;
+            }
+        """)
+        
+        layout = QVBoxLayout(self)
+        
+
+        btn_layout = QHBoxLayout()
+        btn_layout.setAlignment(Qt.AlignmentFlag.AlignHCenter)
+        self.btn_group = QButtonGroup(self)
+        
+        self.btn_lol = QPushButton("Mi is az a LoL?")
+        self.btn_lol.setCheckable(True)
+        self.btn_lol.setChecked(True)
+        self.btn_lol.setFixedSize(200, 40)
+        self.btn_lol.setProperty("class", "toggleBtn")
+        
+        self.btn_prog = QPushButton("E program használata")
+        self.btn_prog.setCheckable(True)
+        self.btn_prog.setFixedSize(200, 40)
+        self.btn_prog.setProperty("class", "toggleBtn")
+        
+        self.btn_group.addButton(self.btn_lol, 0)
+        self.btn_group.addButton(self.btn_prog, 1)
+        
+        btn_layout.addWidget(self.btn_lol)
+        btn_layout.addWidget(self.btn_prog)
+        layout.addLayout(btn_layout)
+        
+        self.text_area = QTextEdit()
+        self.text_area.setReadOnly(True)
+        layout.addWidget(self.text_area)
+
+        close_btn = QPushButton("Visszatérés")
+        close_btn.setFixedSize(120, 35)
+        close_btn.setStyleSheet("""
+            QPushButton {
+                background-color: #E53935; color: white; font-weight: bold; border-radius: 6px;
+            }
+            QPushButton:hover { background-color: #C62828; }
+        """)
+        close_btn.clicked.connect(self.accept)
+        layout.addWidget(close_btn, alignment=Qt.AlignmentFlag.AlignHCenter)
+        
+        self.btn_group.idClicked.connect(self.load_text)
+        
+        self.load_text(0)
+
+    def load_text(self, btn_id):
+        file_path = "data/lol_help.txt" if btn_id == 0 else "data/predictor_help.txt"
+        try:
+            with open(file_path, "r", encoding="utf-8") as f:
+                content = f.read()
+                self.text_area.setMarkdown(content)
+        except FileNotFoundError:
+            self.text_area.setText(f"Hiba: A '{file_path}' fájl nem található a mappában!")
