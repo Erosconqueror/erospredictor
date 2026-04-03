@@ -157,12 +157,12 @@ class MainWindow(QMainWindow):
         bans_layout = QVBoxLayout()
         bans_layout.setAlignment(Qt.AlignmentFlag.AlignHCenter) 
         
-        # --- KÉK TILTÁSOK ---
+        # KÉK TILTÁSOK
         blue_bans_layout = QHBoxLayout()
         blue_bans_layout.setAlignment(Qt.AlignmentFlag.AlignHCenter) 
         
         blue_bans_label = QLabel("Kék tiltások:")
-        blue_bans_label.setFixedWidth(90) # Fix szélesség a bal oldalon
+        blue_bans_label.setFixedWidth(90) 
         blue_bans_label.setStyleSheet("color: #42A5F5; font-weight: bold;") 
         blue_bans_layout.addWidget(blue_bans_label)
         
@@ -176,7 +176,7 @@ class MainWindow(QMainWindow):
         dummy_blue.setFixedWidth(90)
         blue_bans_layout.addWidget(dummy_blue)
             
-        # --- PIROS TILTÁSOK ---
+        #  PIROS TILTÁSOK
         red_bans_layout = QHBoxLayout()
         red_bans_layout.setAlignment(Qt.AlignmentFlag.AlignHCenter)
         
