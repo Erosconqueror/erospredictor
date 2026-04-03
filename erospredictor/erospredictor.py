@@ -1,4 +1,5 @@
 import sys
+import ctypes
 import json
 import os
 from pathlib import Path
@@ -11,6 +12,12 @@ os.environ["KMP_DUPLICATE_LIB_OK"] = "TRUE"
 
 def run_predictor():
     app = QApplication(sys.argv)
+    
+    try:
+        myappid = 'erosconqueror.erospredictor.app.1.0'
+        ctypes.windll.shell32.SetCurrentProcessExplicitAppUserModelID(myappid)
+    except AttributeError:
+        pass
     
     dm = DataManager()
     champ_dict = dm.get_champion_names()
