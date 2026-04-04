@@ -1,182 +1,115 @@
-import numpy as np
 import json
-from pathlib import Path
 from configs import CHAMPION_COUNT, ALLOWED_PATCHES, ROLE_WEIGHTS, CHAMPION_DATA_PATH
 from model.data_manager import DataManager
 
 class Preprocessor:
+    """Prepares and transforms match data for ML model training."""
+    
     def __init__(self):
-        self.data_manager = DataManager()
-        self.cached_rw = None
-        self.cached_ra = None
-        self.patch_weights = self._calculate_patch_weights()
-        self.champ_mapping = self._load_champ_mapping()
-
-    def _calculate_patch_weights(self):
-        weights = {}
-        decay_factor = 0.2
+        self.db = DataManager()
+        self.c_rw = None
+        self.c_ra = None
+        self.weights = self._calc_weights()
         
-        for i, patch in enumerate(reversed(ALLOWED_PATCHES)):
-            weight = max(0.1, 1.0 - (i * decay_factor))
-            weights[patch] = weight
-            
-        return weights
+        with open(CHAMPION_DATA_PATH, 'r', encoding='utf-8') as f:
+            self.c_map = json.load(f)
 
-    def _load_champ_mapping(self):
-        """Betölti a champion ID -> index (0-170) leképezést egyszer a memóriába."""
-        path = Path(CHAMPION_DATA_PATH)
-        if path.exists():
-            with open(path, 'r', encoding='utf-8') as f:
-                return json.load(f)
-        return {}
+    def _calc_weights(self) -> dict:
+        w_map = {}
+        for i, p in enumerate(reversed(ALLOWED_PATCHES)):
+            w_map[p] = max(0.1, 1.0 - (i * 0.2))
+        return w_map
 
     def clear_cache(self):
-        self.cached_rw = None
-        self.cached_ra = None
+        """Clears memory variables for preprocessed data."""
+        self.c_rw = None
+        self.c_ra = None
 
-    def preprocess_all_matches(self, use_cache=True, always_save_cache=True):
-        if use_cache and self.cached_rw is not None:
-            return self.cached_rw
-            
-        matches = self.data_manager.get_all_matches()
-        if not matches:
-            print("Nincs meccs az adatbázisban!")
-            return [], [], [], []
-            
-        X, y, divisions, weights = [], [], [], []
-        vex = list(ROLE_WEIGHTS.values())
+    def process_matches(self, use_cache: bool = True) -> tuple:
+        """Preprocesses matches using role-based weighting arrays."""
+        if use_cache and self.c_rw: return self.c_rw
         
-        for match_data in matches:
-            division = match_data.get("tier", "UNKNOWN")
-            patch = match_data.get("patch", "UNKNOWN")
-            weight = self.patch_weights.get(patch, 0.5) 
+        matches = self.db.get_all_matches()
+        if not matches: return [], [], [], []
             
-            blue_team_raw = match_data.get("blue_team", [])
-            red_team_raw = match_data.get("red_team", [])
-            blue_win = match_data.get("blue_win", False)
+        x_lst, y_lst, d_lst, w_lst = [], [], [], []
+        v_weights = list(ROLE_WEIGHTS.values())
+        
+        for m in matches:
+            b_raw, r_raw = m.get("blue_team", []), m.get("red_team", [])
+            b_team = [int(self.c_map[str(c)]) for c in b_raw if str(c) in self.c_map]
+            r_team = [int(self.c_map[str(c)]) for c in r_raw if str(c) in self.c_map]
             
-            blue_team = [int(self.champ_mapping[str(cid)]) for cid in blue_team_raw if str(cid) in self.champ_mapping]
-            red_team = [int(self.champ_mapping[str(cid)]) for cid in red_team_raw if str(cid) in self.champ_mapping]
-            
-            if len(blue_team) != 5 or len(red_team) != 5:
-                continue
+            if len(b_team) != 5 or len(r_team) != 5: continue
                 
-            champions = [0.0] * (CHAMPION_COUNT * 2)
-            for i, champ_id in enumerate(blue_team):
-                champions[champ_id] = vex[i]
-            for i, champ_id in enumerate(red_team):
-                champions[champ_id + CHAMPION_COUNT] = vex[i]
+            champs = [0.0] * (CHAMPION_COUNT * 2)
+            for i, cid in enumerate(b_team): champs[cid] = v_weights[i]
+            for i, cid in enumerate(r_team): champs[cid + CHAMPION_COUNT] = v_weights[i]
                 
-            X.append(champions)
-            y.append(1.0 if blue_win else 0.0)
-            divisions.append(division)
-            weights.append(weight)
+            x_lst.append(champs)
+            y_lst.append(1.0 if m.get("blue_win") else 0.0)
+            d_lst.append(m.get("tier", "UNKNOWN"))
+            w_lst.append(self.weights.get(m.get("patch", "UNKNOWN"), 0.5))
             
-        result = (X, y, divisions, weights)
-        if always_save_cache:
-            self.cached_rw = result
-        return result
+        self.c_rw = (x_lst, y_lst, d_lst, w_lst)
+        return self.c_rw
 
-    def preprocess_all_matches_roleaware(self, use_cache=True, always_save_cache=True):
-        if use_cache and self.cached_ra is not None:
-            return self.cached_ra
+    def process_matches_ra(self, use_cache: bool = True) -> tuple:
+        """Preprocesses matches as flattened positional one-hot arrays."""
+        if use_cache and self.c_ra: return self.c_ra
             
-        matches = self.data_manager.get_all_matches()
-        if not matches:
-            return [], [], [], []
+        matches = self.db.get_all_matches()
+        if not matches: return [], [], [], []
             
-        X, y, divisions, weights = [], [], [], []
-        
-        for match_data in matches:
-            division = match_data.get("tier", "UNKNOWN")
-            patch = match_data.get("patch", "UNKNOWN")
-            weight = self.patch_weights.get(patch, 0.5)
-            
-            blue_team_raw = match_data.get("blue_team", [])
-            red_team_raw = match_data.get("red_team", [])
-            blue_win = match_data.get("blue_win", False)
-            
-            blue_team = [int(self.champ_mapping[str(cid)]) for cid in blue_team_raw if str(cid) in self.champ_mapping]
-            red_team = [int(self.champ_mapping[str(cid)]) for cid in red_team_raw if str(cid) in self.champ_mapping]
+        x_lst, y_lst, d_lst, w_lst = [], [], [], []
+        for m in matches:
+            b_raw, r_raw = m.get("blue_team", []), m.get("red_team", [])
+            b_team = [int(self.c_map[str(c)]) for c in b_raw if str(c) in self.c_map]
+            r_team = [int(self.c_map[str(c)]) for c in r_raw if str(c) in self.c_map]
                     
-            if len(blue_team) != 5 or len(red_team) != 5:
-                continue
+            if len(b_team) != 5 or len(r_team) != 5: continue
                 
-            champions = [0.0] * (CHAMPION_COUNT * 10)
-            for i, champ_id in enumerate(blue_team):
-                champions[i * CHAMPION_COUNT + champ_id] = 1.0
-            for i, champ_id in enumerate(red_team):
-                champions[(i + 5) * CHAMPION_COUNT + champ_id] = 1.0
+            champs = [0.0] * (CHAMPION_COUNT * 10)
+            for i, cid in enumerate(b_team): champs[i * CHAMPION_COUNT + cid] = 1.0
+            for i, cid in enumerate(r_team): champs[(i + 5) * CHAMPION_COUNT + cid] = 1.0
                 
-            X.append(champions)
-            y.append(1.0 if blue_win else 0.0)
-            divisions.append(division)
-            weights.append(weight)
+            x_lst.append(champs)
+            y_lst.append(1.0 if m.get("blue_win") else 0.0)
+            d_lst.append(m.get("tier", "UNKNOWN"))
+            w_lst.append(self.weights.get(m.get("patch", "UNKNOWN"), 0.5))
             
-        result = (X, y, divisions, weights)
-        if always_save_cache:
-            self.cached_ra = result
-        return result
+        self.c_ra = (x_lst, y_lst, d_lst, w_lst)
+        return self.c_ra
     
-    def generate_meta_champs(self):
-        """
-        Kiválogatja a gyakran játszott hősöket divíziónként és pozíciónként.
-        Feltétel: Legalább 500 pick VAGY 1%-os pick rate (az összes pickhez képest az adott role-on).
-        """
-        print("\nMeta hősök szűrése és JSON generálása folyamatban (belső ID-k alapján)...")
-        matches = self.data_manager.get_all_matches()
-        if not matches:
-            print("Nincs meccs az adatbázisban a meta generáláshoz!")
-            return
+    def gen_meta_champs(self):
+        """Generates a JSON configuration of frequently played meta champions."""
+        matches = self.db.get_all_matches()
+        if not matches: return
 
-        stats = {}
-        totals = {}
+        totals, stats = {}, {}
+        for m in matches:
+            tier = m.get("tier", "UNKNOWN")
+            b_team = [int(self.c_map[str(c)]) for c in m.get("blue_team", []) if str(c) in self.c_map]
+            r_team = [int(self.c_map[str(c)]) for c in m.get("red_team", []) if str(c) in self.c_map]
 
-        for match in matches:
-            tier = match.get("tier", "UNKNOWN")
-            blue_raw = match.get("blue_team", [])
-            red_raw = match.get("red_team", [])
+            if len(b_team) != 5 or len(r_team) != 5: continue
 
-            blue = [int(self.champ_mapping[str(cid)]) for cid in blue_raw if str(cid) in self.champ_mapping]
-            red = [int(self.champ_mapping[str(cid)]) for cid in red_raw if str(cid) in self.champ_mapping]
-
-            if len(blue) != 5 or len(red) != 5:
-                continue
-
- 
             for div in [tier, "MIXED"]:
                 if div not in totals:
                     totals[div] = 0
                     stats[div] = {i: {} for i in range(5)} 
                 
                 totals[div] += 1
+                for i, cid in enumerate(b_team): stats[div][i][cid] = stats[div][i].get(cid, 0) + 1
+                for i, cid in enumerate(r_team): stats[div][i][cid] = stats[div][i].get(cid, 0) + 1
 
-                for i, cid in enumerate(blue):
-                    stats[div][i][cid] = stats[div][i].get(cid, 0) + 1
-                for i, cid in enumerate(red):
-                    stats[div][i][cid] = stats[div][i].get(cid, 0) + 1
+        meta = {}
+        for div, t_match in totals.items():
+            meta[div] = {}
+            t_picks = t_match * 2 
+            for r_idx in range(5):
+                val_c = [c for c, count in stats[div][r_idx].items() if count >= 500 or (count / t_picks) >= 0.01]
+                meta[div][str(r_idx)] = val_c
 
-        meta_champs = {}
-        
-        for div, total_matches in totals.items():
-            meta_champs[div] = {}
-            total_role_picks = total_matches * 2 
-            
-            for role_idx in range(5):
-                valid_champs = []
-                for cid, count in stats[div][role_idx].items():
-                    pick_rate = count / total_role_picks if total_role_picks > 0 else 0
-                    
-                    if count >= 500 or pick_rate >= 0.01:
-                        valid_champs.append(cid)
-                
-                meta_champs[div][str(role_idx)] = valid_champs
-
-        out_path = Path("data/meta_champs.json")
-        out_path.parent.mkdir(parents=True, exist_ok=True)
-        
-        with open(out_path, "w", encoding="utf-8") as f:
-            json.dump(meta_champs, f, indent=4)
-        
-        print(f"✅ Meta hősök sikeresen kimentve ({out_path})!")
-       # print(f"   A MIXED kategóriában a Mid (2) role-ra {len(meta_champs.get('MIXED', {}).get('2', []))} hős felelt meg.")
+        with open("data/meta_champs.json", "w", encoding="utf-8") as f:
+            json.dump(meta, f, indent=4)

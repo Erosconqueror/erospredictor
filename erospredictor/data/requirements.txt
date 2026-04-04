@@ -1,0 +1,11 @@
+numpy<2
+--extra-index-url https://download.pytorch.org/whl/cpu
+PyQt6
+PyQt6-sip
+torch
+torchvision
+torchaudio
+torch-geometric
+psycopg2-binary
+riotwatcher
+requests

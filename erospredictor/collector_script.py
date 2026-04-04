@@ -1,9 +1,10 @@
 import time
+import configs as cfg
 from model.riot import Riot
 from model.data_manager import DataManager
-import configs as cfg
 
-def run_continuous_scraper():
+def run_scraper():
+    """Continuously scrapes matches from Riot API based on config criteria."""
     riot = Riot()
     db = DataManager()
     
@@ -12,59 +13,55 @@ def run_continuous_scraper():
     
     while True:
         for tier in cfg.TARGET_TIERS:
-            
-            for division in cfg.TARGET_DIVISIONS:
-                if tier in ["CHALLENGER", "GRANDMASTER", "MASTER"] and division != "I":
+            for div in cfg.TARGET_DIVISIONS:
+                if tier in ["CHALLENGER", "GRANDMASTER", "MASTER"] and div != "I":
                     continue
+                    
                 page = 1
                 while True:
-                    print(f"\n--- Fetching players: {tier} {division} Page {page} ---")
-                    players = riot.get_league_exp_players(tier=tier, division=division, page=page)
+                    print(f"\n--- Fetching players: {tier} {div} Page {page} ---")
+                    players = riot.get_league_exp_players(tier=tier, div=div, page=page)
                     
                     if not players:
-                        print("Nincs tobb jatekos ezen az oldalon.")
+                        print("No more players on this page")
                         break
                         
-                    for player in players:
-                        puuid = player.get("puuid")
-                        summoner_name = player.get("summonerName", "Unknown")
+                    for p in players:
+                        puuid = p.get("puuid")
+                        name = p.get("summonerName", "Unknown")
                         
                         if not puuid:
                             continue
                             
-                        print(f"\nJatekos: {summoner_name} | PUUID: {puuid[:15]}...")
-                        match_ids = riot.get_match_ids_by_puuid(puuid)
-                        print(f"  Talalt meccsek: {len(match_ids)} db -> {match_ids[:3]}...")
+                        print(f"\nNew Player --- ")
+                        m_ids = riot.get_match_ids(puuid)
+                        print(f"  FOUND MATCHES: {len(m_ids)} item(s)  -> {m_ids[:3]}...")
                         
-                        for match_id in match_ids:
-                            if db.get_match(match_id):
-                                print(f"  [-] Mar az adatbazisban: {match_id}")
+                        for m_id in m_ids:
+                            if db.get_match(m_id):
+                                print(f"  [-] Already in database: {m_id}")
                                 continue
                                 
-                            match_data = riot.get_match_data(match_id, tier)
-                            if not match_data:
-                                print(f"  [!] Hiba a letoltesnel: {match_id}")
+                            m_data = riot.get_match_data(m_id, tier)
+                            if not m_data:
+                                print(f"  [!] Hiba a letoltesnel: {m_id}")
                                 continue
                                 
-                            patch = match_data.get("patch", "UNKNOWN")
-                            
+                            patch = m_data.get("patch", "UNKNOWN")
                             if patch in cfg.ALLOWED_PATCHES:
-                                if match_data:  
-                                    db.save_match(match_id, cfg.REGION, match_data)
-                                print(f"  [+] MENTVE! {match_id} | Patch: {patch}")
+                                db.save_match(m_id, cfg.REGION, m_data)
+                                print(f"  [+] SAVED MATCH {m_id} | Patch: {patch}")
                             else:
-                                print(f"  [x] Kiszurve (rossz patch): {match_id} | Patch: {patch}")
+                                print(f"  [x] WRONG PATCH: {m_id} | Patch: {patch}")
                                 
                     page += 1
                     if page >= 10:  
-                        print("Túl sok oldal, továbblépünk a következő ligára. ")
+                        print("Too many pages read, moving to the next tier")
                         time.sleep(10)
                         break
-                    
-               
 
 if __name__ == "__main__":
     try:
-        run_continuous_scraper()
+        run_scraper()
     except KeyboardInterrupt:
         print("\nScraper stopped by user.")

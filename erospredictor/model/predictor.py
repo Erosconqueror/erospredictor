@@ -4,65 +4,53 @@ import torch.nn.functional as F
 from configs import CHAMPION_COUNT
 
 class ChampionPredictor(nn.Module):
-    def __init__(self, input_size=CHAMPION_COUNT*2, hidden_size=256, dropout_rate=0.2):
-        super(ChampionPredictor, self).__init__()
-        self.input_norm = nn.BatchNorm1d(input_size) #check if good
-
+    """Standard multi-layer perceptron for match prediction."""
+    
+    def __init__(self, input_size: int = CHAMPION_COUNT * 2, hidden_size: int = 256, drop_rate: float = 0.2):
+        super().__init__()
+        self.norm = nn.BatchNorm1d(input_size)
         self.fc1 = nn.Linear(input_size, hidden_size)
         self.fc2 = nn.Linear(hidden_size, hidden_size // 2)
         self.fc3 = nn.Linear(hidden_size // 2, 1)
-        self.dropout = nn.Dropout(dropout_rate)
+        self.drop = nn.Dropout(drop_rate)
         self.bn1 = nn.BatchNorm1d(hidden_size)
         self.bn2 = nn.BatchNorm1d(hidden_size // 2)
 
     def forward(self, x):
-        x = self.input_norm(x) #check if good - is good probably xd
+        x = self.norm(x)
         x = F.relu(self.bn1(self.fc1(x)))
-        x = self.dropout(x)
+        x = self.drop(x)
         x = F.relu(self.bn2(self.fc2(x)))
-        x = self.dropout(x)
-        x = torch.sigmoid(self.fc3(x))
-        return x
+        x = self.drop(x)
+        return torch.sigmoid(self.fc3(x))
 
 class RoleAwareEmbeddingPredictor(nn.Module):
-    def __init__(self, champion_count=CHAMPION_COUNT, role_count=10, embedding_dim=64, hidden_dim=256):
-        super(RoleAwareEmbeddingPredictor, self).__init__()
+    """Predictor utilizing embeddings for both champions and roles."""
+    
+    def __init__(self, champ_count: int = CHAMPION_COUNT, role_count: int = 10, emb_dim: int = 64, hid_dim: int = 256):
+        super().__init__()
+        self.c_emb = nn.Embedding(champ_count, emb_dim)
+        self.r_emb = nn.Embedding(role_count, emb_dim)
         
-        self.champ_embedding = nn.Embedding(champion_count, embedding_dim)
-        self.role_embedding = nn.Embedding(role_count, embedding_dim)
+        self.fc1 = nn.Linear(10 * emb_dim, hid_dim)
+        self.fc2 = nn.Linear(hid_dim, hid_dim // 2)
+        self.fc3 = nn.Linear(hid_dim // 2, 1)
         
-        self.fc1 = nn.Linear(10 * embedding_dim, hidden_dim)
-        self.fc2 = nn.Linear(hidden_dim, hidden_dim // 2)
-        self.fc3 = nn.Linear(hidden_dim // 2, 1)
-        
-        self.dropout = nn.Dropout(0.3)
-        self.bn1 = nn.BatchNorm1d(hidden_dim)
-        self.bn2 = nn.BatchNorm1d(hidden_dim // 2)
+        self.drop = nn.Dropout(0.3)
+        self.bn1 = nn.BatchNorm1d(hid_dim)
+        self.bn2 = nn.BatchNorm1d(hid_dim // 2)
 
     def forward(self, x):
-        batch_size = x.size(0)
-        device = x.device
-        
-        team_embeddings = []
+        bs, device = x.size(0), x.device
+        embs = []
         
         for i in range(10): 
-
-            role_idx = i
-            role_embedding = self.role_embedding(torch.tensor([role_idx], device=device)).expand(batch_size, -1)
-            
-            start_idx = i * CHAMPION_COUNT
-            end_idx = start_idx + CHAMPION_COUNT
-            position_slice = x[:, start_idx:end_idx]
-            
-            champ_indices = torch.argmax(position_slice, dim=1)
-            champ_embedding = self.champ_embedding(champ_indices)
-            
-            combined = champ_embedding + role_embedding
-            team_embeddings.append(combined)
+            r_tensor = self.r_emb(torch.tensor([i], device=device)).expand(bs, -1)
+            c_idx = torch.argmax(x[:, i * CHAMPION_COUNT : (i + 1) * CHAMPION_COUNT], dim=1)
+            embs.append(self.c_emb(c_idx) + r_tensor)
         
-        x = torch.cat(team_embeddings, dim=1)
+        x = torch.cat(embs, dim=1)
         x = F.relu(self.bn1(self.fc1(x)))
-        x = self.dropout(x)
+        x = self.drop(x)
         x = F.relu(self.bn2(self.fc2(x)))
-        x = torch.sigmoid(self.fc3(x))
-        return x
+        return torch.sigmoid(self.fc3(x))

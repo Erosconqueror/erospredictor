@@ -1,111 +1,79 @@
 import json
 import os
-from pathlib import Path
 from configs import CHAMPION_DATA_PATH
 
 class StatisticalModel:
-    def __init__(self, data_manager):
-        self.data_manager = data_manager
+    """Predicts match outcomes purely based on historical champion matchup winrates."""
+    
+    def __init__(self, db):
+        self.db = db
         self.matchups = {}
-        self.champ_mapping = self._load_champ_mapping()
-        
-    def _load_champ_mapping(self):
-        """Betölti a hős indexeket, hogy szinkronban legyen a PyTorch-al."""
-        path = Path(CHAMPION_DATA_PATH)
-        if path.exists():
-            with open(path, 'r', encoding='utf-8') as f:
-                return json.load(f)
-        return {}
+        with open(CHAMPION_DATA_PATH, 'r', encoding='utf-8') as f:
+            self.c_map = json.load(f)
 
-    def build_from_matches(self):
-        """Az összes hős az összes másik elleni winrate-jet számolja ki adott roleon és divizioban, továbbá tárolja el egy jsonban"""
-        matches = self.data_manager.get_all_matches()
-        if not matches:
-            print("Nincs adat az adatbázisban a statisztikákhoz!")
-            return
+    def build_stats(self):
+        """Builds lookup tables for champion matchup statistics based on historical data."""
+        matches = self.db.get_all_matches()
+        if not matches: return
 
         self.matchups = {}
         roles = ["TOP", "JUNGLE", "MIDDLE", "BOTTOM", "UTILITY"]
         
-        feldolgozott = 0
-        
-        for match in matches:
-            division = match.get("tier", "UNKNOWN")
-            blue_team_raw = match.get("blue_team", [])
-            red_team_raw = match.get("red_team", [])
-            blue_win = match.get("blue_win", False)
+        for m in matches:
+            div = m.get("tier", "UNKNOWN")
+            b_raw, r_raw = m.get("blue_team", []), m.get("red_team", [])
             
-            if isinstance(blue_team_raw, str):
-                blue_team_raw = blue_team_raw.strip("{}").split(",")
-            if isinstance(red_team_raw, str):
-                red_team_raw = red_team_raw.strip("{}").split(",")
+            if isinstance(b_raw, str): b_raw = b_raw.strip("{}").split(",")
+            if isinstance(r_raw, str): r_raw = r_raw.strip("{}").split(",")
 
-            blue_team = [str(self.champ_mapping.get(str(cid), "-1")) for cid in blue_team_raw]
-            red_team = [str(self.champ_mapping.get(str(cid), "-1")) for cid in red_team_raw]
+            b_team = [str(self.c_map.get(str(c), "-1")) for c in b_raw]
+            r_team = [str(self.c_map.get(str(c), "-1")) for c in r_raw]
             
-            if len(blue_team) != 5 or len(red_team) != 5 or "-1" in blue_team or "-1" in red_team:
+            if len(b_team) != 5 or len(r_team) != 5 or "-1" in b_team or "-1" in r_team:
                 continue
             
-            if division not in self.matchups:
-                self.matchups[division] = {r: {} for r in roles}
+            if div not in self.matchups:
+                self.matchups[div] = {r: {} for r in roles}
 
-            for i, role in enumerate(roles):
-                bc = blue_team[i]
-                rc = red_team[i]
+            for i, r in enumerate(roles):
+                bc, rc = b_team[i], r_team[i]
+                if bc not in self.matchups[div][r]: self.matchups[div][r][bc] = {}
+                if rc not in self.matchups[div][r][bc]: self.matchups[div][r][bc][rc] = {"w": 0, "m": 0}
 
-                if bc not in self.matchups[division][role]:
-                    self.matchups[division][role][bc] = {}
-                if rc not in self.matchups[division][role][bc]:
-                    self.matchups[division][role][bc][rc] = {"wins": 0, "matches": 0}
+                self.matchups[div][r][bc][rc]["m"] += 1
+                if m.get("blue_win", False): self.matchups[div][r][bc][rc]["w"] += 1
 
-                self.matchups[division][role][bc][rc]["matches"] += 1
-                if blue_win:
-                    self.matchups[division][role][bc][rc]["wins"] += 1
-            
-            feldolgozott += 1
-
-        print(f"Statisztika megepitve! Feldolgozott meccsek: {feldolgozott} / {len(matches)}")
-
-    def save_cache(self, filepath="data/stats_cache.json"):
-        """Kimenti a kiszámolt statisztikákat egy JSON fájlba."""
-        os.makedirs(os.path.dirname(filepath), exist_ok=True)
-        with open(filepath, "w", encoding="utf-8") as f:
+    def save_cache(self, path: str = "data/stats_cache.json"):
+        """Saves generated matchups to disk."""
+        os.makedirs(os.path.dirname(path), exist_ok=True)
+        with open(path, "w", encoding="utf-8") as f:
             json.dump(self.matchups, f, indent=4)
-        print(f"Statisztikák gyorsítótárazva ide: {filepath}")
 
-    def load_cache(self, filepath="data/stats_cache.json"):
-        """Betölti a statisztikákat a JSON-ből."""
-        if os.path.exists(filepath):
-            with open(filepath, "r", encoding="utf-8") as f:
+    def load_cache(self, path: str = "data/stats_cache.json") -> bool:
+        """Loads matchups from disk into memory."""
+        if os.path.exists(path):
+            with open(path, "r", encoding="utf-8") as f:
                 self.matchups = json.load(f)
-            print(f"Statisztikák betöltve a gyorsítótárból ({filepath}).")
             return True
         return False
 
-    def predict(self, division, blue_team, red_team):
-        roles = ["TOP", "JUNGLE", "MIDDLE", "BOTTOM", "UTILITY"]
-        probabilities = []
-        
-        for i, role in enumerate(roles):
-            blue_champ = str(blue_team[i])
-            red_champ = str(red_team[i])
+    def predict(self, div: str, blue: list, red: list) -> float:
+        """Predicts probability of blue team win using aggregated statistics."""
+        probs = []
+        for i, r in enumerate(["TOP", "JUNGLE", "MIDDLE", "BOTTOM", "UTILITY"]):
+            bc, rc = str(blue[i]), str(red[i])
             
-            if division == "MIXED":
-                champ_stats = {"wins": 0, "matches": 0}
-                for div_stats in self.matchups.values():
-                    div_role_stats = div_stats.get(role, {})
-                    stats = div_role_stats.get(blue_champ, {}).get(red_champ)
-                    if stats:
-                        champ_stats["wins"] += stats["wins"]
-                        champ_stats["matches"] += stats["matches"]
+            if div == "MIXED":
+                c_stats = {"w": 0, "m": 0}
+                for d_stat in self.matchups.values():
+                    s = d_stat.get(r, {}).get(bc, {}).get(rc)
+                    if s:
+                        c_stats["w"] += s["w"]
+                        c_stats["m"] += s["m"]
             else:
-                role_stats = self.matchups.get(division, {}).get(role, {})
-                champ_stats = role_stats.get(blue_champ, {}).get(red_champ)
+                c_stats = self.matchups.get(div, {}).get(r, {}).get(bc, {}).get(rc)
             
-            if champ_stats and champ_stats["matches"] > 0:
-                probabilities.append(champ_stats["wins"] / champ_stats["matches"])
+            if c_stats and c_stats["m"] > 0:
+                probs.append(c_stats["w"] / c_stats["m"])
 
-        if not probabilities:
-            return 0.50
-        
-        return sum(probabilities) / len(probabilities)
+        return sum(probs) / len(probs) if probs else 0.50

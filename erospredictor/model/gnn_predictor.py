@@ -1,137 +1,101 @@
+import json
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
 from torch_geometric.nn import GCNConv, global_mean_pool
 from torch_geometric.data import Data
 from configs import CHAMPION_COUNT, CHAMPION_DATA_PATH
-import json
-from pathlib import Path
 
 class LeagueGNN(nn.Module):
-    def __init__(self, champion_embedding_dim=32, role_embedding_dim=8, hidden_dim=64):  
-        super(LeagueGNN, self).__init__()
+    """Graph Neural Network model for League of Legends matches."""
+    
+    def __init__(self, champ_dim: int = 32, role_dim: int = 8, hid_dim: int = 64):  
+        super().__init__()
         
-        self.champ_embedding = nn.Embedding(CHAMPION_COUNT, champion_embedding_dim)
-        self.role_embedding = nn.Embedding(10, role_embedding_dim)
+        self.champ_emb = nn.Embedding(CHAMPION_COUNT, champ_dim)
+        self.role_emb = nn.Embedding(10, role_dim)
         
-        node_dim = champion_embedding_dim + role_embedding_dim + 1
-        self.conv1 = GCNConv(node_dim, hidden_dim)
-        self.conv2 = GCNConv(hidden_dim, hidden_dim)
+        node_dim = champ_dim + role_dim + 1
+        self.conv1 = GCNConv(node_dim, hid_dim)
+        self.conv2 = GCNConv(hid_dim, hid_dim)
         
-        self.fc1 = nn.Linear(hidden_dim, hidden_dim // 2)
-        self.fc2 = nn.Linear(hidden_dim // 2, 1)
+        self.fc1 = nn.Linear(hid_dim, hid_dim // 2)
+        self.fc2 = nn.Linear(hid_dim // 2, 1)
         
         self.dropout = nn.Dropout(0.5)  
-        self.bn1 = nn.BatchNorm1d(hidden_dim)
-        self.bn2 = nn.BatchNorm1d(hidden_dim // 2)
+        self.bn1 = nn.BatchNorm1d(hid_dim)
+        self.bn2 = nn.BatchNorm1d(hid_dim // 2)
 
-    def forward(self, x, edge_index, batch):
-        champ_ids = x[:, 0]
-        role_ids = x[:, 1]
-        team_ids = x[:, 2].float().unsqueeze(1)
+    def forward(self, x, edge_idx, batch):
+        c_ids, r_ids, t_ids = x[:, 0], x[:, 1], x[:, 2].float().unsqueeze(1)
         
-        champ_emb = self.champ_embedding(champ_ids)
-        role_emb = self.role_embedding(role_ids)
+        x = torch.cat([self.champ_emb(c_ids), self.role_emb(r_ids), t_ids], dim=1)
         
-        x = torch.cat([champ_emb, role_emb, team_ids], dim=1)
-        
-        x = F.relu(self.bn1(self.conv1(x, edge_index)))
+        x = F.relu(self.bn1(self.conv1(x, edge_idx)))
         x = self.dropout(x)
-        x = F.relu(self.conv2(x, edge_index))
+        x = F.relu(self.conv2(x, edge_idx))
         x = self.dropout(x)
         
         x = global_mean_pool(x, batch)
-        
         x = F.relu(self.bn2(self.fc1(x)))
         x = self.dropout(x)
-        x = torch.sigmoid(self.fc2(x))
-        return x
+        return torch.sigmoid(self.fc2(x))
 
-def create_match_graph(blue_team, red_team, blue_win=None, weight=1.0):
-    num_nodes = 10
-    node_features = []
+def create_graph(blue: list, red: list, win: bool = None, weight: float = 1.0) -> Data:
+    """Constructs a graph representation of a match."""
+    nodes = []
+    for i, cid in enumerate(blue):
+        nodes.append([cid, i, 0])
+    for i, cid in enumerate(red):
+        nodes.append([cid, i + 5, 1])
     
-    for i, champ_id in enumerate(blue_team):
-        node_features.append([champ_id, i, 0])
-    
-    for i, champ_id in enumerate(red_team):
-        node_features.append([champ_id, i + 5, 1])
-    
-    node_features = torch.tensor(node_features, dtype=torch.long)
-    edge_list = []
-    
+    edges = []
     for i in range(10):
         for j in range(i + 1, 10):
-            edge_list.append([i, j])
-            edge_list.append([j, i])
+            edges.extend([[i, j], [j, i]])
     
-    edge_index = torch.tensor(edge_list, dtype=torch.long).t().contiguous()
+    x = torch.tensor(nodes, dtype=torch.long)
+    edge_idx = torch.tensor(edges, dtype=torch.long).t().contiguous()
     
-    graph_data = Data(
-        x=node_features,
-        edge_index=edge_index,
-        num_nodes=num_nodes
-    )
+    graph = Data(x=x, edge_index=edge_idx, num_nodes=10)
     
-    if blue_win is not None:
-        graph_data.y = torch.tensor([[1.0]] if blue_win else [[0.0]], dtype=torch.float32)
-        graph_data.weight = torch.tensor([[weight]], dtype=torch.float32)
+    if win is not None:
+        graph.y = torch.tensor([[1.0]] if win else [[0.0]], dtype=torch.float32)
+        graph.weight = torch.tensor([[weight]], dtype=torch.float32)
     
-    return graph_data
+    return graph
 
-def preprocess_matches_for_gnn(data_manager, patch_weights):
-    matches = data_manager.get_all_matches()
-    graphs = []
-    divisions = []
+def prep_gnn_matches(db, p_weights: dict) -> tuple:
+    """Prepares all matches from the database into PyTorch geometric graphs."""
+    matches = db.get_all_matches()
+    graphs, divs = [], []
     
-    print(f"GNN adatfeldolgozas: {len(matches)} meccsbol grafok epitese...")
+    print(f"GNN data prep: Building graphs from {len(matches)} matches...")
     
-    champ_mapping = {}
-    path = Path(CHAMPION_DATA_PATH)
-    if path.exists():
-        with open(path, 'r', encoding='utf-8') as f:
-            champ_mapping = json.load(f)
+    with open(CHAMPION_DATA_PATH, 'r', encoding='utf-8') as f:
+        c_map = json.load(f)
             
-    for match_data in matches:
-        division = match_data.get("tier", "UNKNOWN")
-        patch = match_data.get("patch", "UNKNOWN")
-        weight = patch_weights.get(patch, 0.5)
-        
-        blue_team_raw = match_data.get("blue_team", [])
-        red_team_raw = match_data.get("red_team", [])
-        blue_win = match_data.get("blue_win", False)
-        
-        if isinstance(blue_team_raw, str):
-            blue_team_raw = blue_team_raw.strip("{}").split(",")
-        if isinstance(red_team_raw, str):
-            red_team_raw = red_team_raw.strip("{}").split(",")
+    for m in matches:
+        b_raw, r_raw = m.get("blue_team", []), m.get("red_team", [])
+        if isinstance(b_raw, str): b_raw = b_raw.strip("{}").split(",")
+        if isinstance(r_raw, str): r_raw = r_raw.strip("{}").split(",")
 
-        blue_team = [int(champ_mapping[str(cid)]) for cid in blue_team_raw if str(cid) in champ_mapping]
-        red_team = [int(champ_mapping[str(cid)]) for cid in red_team_raw if str(cid) in champ_mapping]
+        b_team = [int(c_map[str(cid)]) for cid in b_raw if str(cid) in c_map]
+        r_team = [int(c_map[str(cid)]) for cid in r_raw if str(cid) in c_map]
         
-        if len(blue_team) != 5 or len(red_team) != 5:
+        if len(b_team) != 5 or len(r_team) != 5:
             continue
             
-        graph = create_match_graph(blue_team, red_team, blue_win, weight)
-        graphs.append(graph)
-        divisions.append(division)
+        w = p_weights.get(m.get("patch", "UNKNOWN"), 0.5)
+        graphs.append(create_graph(b_team, r_team, m.get("blue_win", False), w))
+        divs.append(m.get("tier", "UNKNOWN"))
     
-    print(f"Sikeresen felepitve {len(graphs)} graf.")
-    return graphs, divisions
+    return graphs, divs
 
-def predict_match_gnn(model, blue_team, red_team, device):
+def predict_gnn(model, blue: list, red: list, device) -> float:
+    """Runs a prediction using the GNN model."""
     model.eval()
     with torch.no_grad():
-        graph = create_match_graph(blue_team, red_team, blue_win=None)
-        graph = graph.to(device)
-        
+        graph = create_graph(blue, red).to(device)
         batch = torch.zeros(graph.num_nodes, dtype=torch.long, device=device)
-        prediction = model(graph.x, graph.edge_index, batch)
-        return prediction.item()
-
-def load_gnn_model(device, model_path="models/gnn_model.pth"):
-    model = LeagueGNN()
-    model.load_state_dict(torch.load(model_path, map_location=device))
-    model.to(device)
-    model.eval()
-    return model
+        return model(graph.x, graph.edge_index, batch).item()

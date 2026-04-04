@@ -1,130 +1,94 @@
-import requests
-import urllib.parse
-from riotwatcher import LolWatcher, ApiError
-from configs import RIOT_API_KEY, REGION, CONTINENT
 import time
+import urllib.parse
+import requests
+from riotwatcher import LolWatcher
+from configs import RIOT_API_KEY, REGION, CONTINENT
 
 class Riot:
-    def __init__(self):
-        self.watcher = LolWatcher(RIOT_API_KEY)
-        self.region = REGION
-        self.continent = CONTINENT
+    """Handles Riot API requests and data extraction."""
     
-    def get_account_by_riot_id(self, game_name: str, tag_line: str):
+    def __init__(self):
+        self.api = LolWatcher(RIOT_API_KEY)
+        self.region = REGION
+        self.cont = CONTINENT
+    
+    def get_account(self, name: str, tag: str) -> dict:
+        """Fetches Riot account details."""
         try:
-            encoded_game_name = urllib.parse.quote(game_name)
-            encoded_tag_line = urllib.parse.quote(tag_line)
-            url = f"https://{self.continent}.api.riotgames.com/riot/account/v1/accounts/by-riot-id/{encoded_game_name}/{encoded_tag_line}"
-            headers = {"X-Riot-Token": RIOT_API_KEY}
-
-            response = requests.get(url, headers=headers)
-            response.raise_for_status()
-            return response.json()
-
-        except requests.exceptions.ConnectionError as err:
-            print(f"Hálózati megszakadás a fiók lekérésekor: {err}")
-            time.sleep(3)
-            return None
-        except requests.exceptions.HTTPError as err:
-            print(f"Error fetching account by Riot ID: {err}")
-            return None
+            q_name = urllib.parse.quote(name)
+            q_tag = urllib.parse.quote(tag)
+            url = f"https://{self.cont}.api.riotgames.com/riot/account/v1/accounts/by-riot-id/{q_name}/{q_tag}"
+            res = requests.get(url, headers={"X-Riot-Token": RIOT_API_KEY})
+            res.raise_for_status()
+            return res.json()
         except Exception as e:
-            print(f"Váratlan hiba a fiók lekérésekor: {e}")
+            print(f"Account fetch error: {e}")
             return None
             
-    def get_league_exp_players(self, queue_type="RANKED_SOLO_5x5", tier="DIAMOND", division="I", page=1):
+    def get_league_exp_players(self, tier: str, div: str, q_type: str = "RANKED_SOLO_5x5", page: int = 1) -> list:
+        """Fetches players from a specific ranked division."""
         try:
             if tier in ["CHALLENGER", "GRANDMASTER", "MASTER"]:
-                if page > 1 or division != "I":
+                if page > 1 or div != "I":
                     return []
                 
                 if tier == "CHALLENGER":
-                    league = self.watcher.league.challenger_by_queue(self.region, queue_type)
+                    league = self.api.league.challenger_by_queue(self.region, q_type)
                 elif tier == "GRANDMASTER":
-                    league = self.watcher.league.grandmaster_by_queue(self.region, queue_type)
+                    league = self.api.league.grandmaster_by_queue(self.region, q_type)
                 else:
-                    league = self.watcher.league.masters_by_queue(self.region, queue_type)
+                    league = self.api.league.masters_by_queue(self.region, q_type)
                     
                 return league.get("entries", [])
-            else:
-                players = self.watcher.league.entries(self.region, queue_type, tier, division, page=page)
-                return players
-        except ApiError as err:
-            print(f"Riot API hiba a játékosok lekérésekor ({tier} {division}): {err}")
-            return []
-        except requests.exceptions.ConnectionError as err:
-            print(f"Hálózati megszakadás (ConnectionReset)! Később újrapróbáljuk... ({err})")
-            time.sleep(15)  
+            return self.api.league.entries(self.region, q_type, tier, div, page=page)
+        except requests.exceptions.ConnectionError:
+            time.sleep(15)
             return []
         except Exception as e:
-            print(f"Váratlan hiba a játékosok lekérésekor: {e}")
+            print(f"Player fetch error: {e}")
             return []
 
-    def get_match_ids_by_puuid(self, puuid, queue_id=420, match_limit=20):
+    def get_match_ids(self, puuid: str, q_id: int = 420, limit: int = 20) -> list:
+        """Fetches match IDs for a specific player."""
         try:
-            match_ids = self.watcher.match.matchlist_by_puuid(
-                self.continent,
-                puuid,
-                queue=queue_id, 
-                count=match_limit
-            )
-            return match_ids
-        except ApiError as err:
-            print(f"Error fetching match IDs for {puuid}: {err}")
-            return []
+            return self.api.match.matchlist_by_puuid(self.cont, puuid, queue=q_id, count=limit)
         except requests.exceptions.ConnectionError:
-            print(f"Hálózati megszakadás a meccs ID-k lekérésekor ({puuid}). Átugrás.")
             time.sleep(3)
             return []
         except Exception as e:
-            print(f"Váratlan hiba a meccs ID-k lekérésekor: {e}")
+            print(f"Match ID fetch error: {e}")
             return []
 
-    def _extract_minimal_match_data(self, raw_match, tier="UNKNOWN"):
-        """Kivágja a felesleget a Riot JSON-ből, és csak a ML számára fontosat hagyja meg."""
-        try:
-            info = raw_match.get("info")
-            if not info:
-                return None
-
-            participants = info.get("participants", [])
-            if len(participants) != 10:
-                return None 
-
-            blue_win = info["teams"][0]["win"]
-            
-            blue_team = [p["championId"] for p in participants[:5]]
-            red_team = [p["championId"] for p in participants[5:]]
-            
-            raw_patch = info.get("gameVersion", "UNKNOWN")
-            patch = ".".join(raw_patch.split(".")[:2]) if raw_patch != "UNKNOWN" else raw_patch
-
-            return {
-                "tier": tier,
-                "patch": patch,
-                "blue_win": blue_win,
-                "blue_team": blue_team,
-                "red_team": red_team
-            }
-        except Exception as e:
-            print(f"Hiba a meccs feldolgozásakor: {e}")
+    def _clean_data(self, raw: dict, tier: str) -> dict:
+        """Extracts minimal required data from raw Riot JSON."""
+        info = raw.get("info")
+        if not info or len(info.get("participants", [])) != 10:
             return None
 
-    def get_match_data(self, match_id: str, tier: str = "UNKNOWN"):
-        """Lekéri a meccset, minimalizálja az adatot, majd visszatér vele."""
+        parts = info["participants"]
+        blue_win = info["teams"][0]["win"]
+        b_team = [p["championId"] for p in parts[:5]]
+        r_team = [p["championId"] for p in parts[5:]]
+        
+        raw_patch = info.get("gameVersion", "UNKNOWN")
+        patch = ".".join(raw_patch.split(".")[:2]) if raw_patch != "UNKNOWN" else "UNKNOWN"
+
+        return {
+            "tier": tier,
+            "patch": patch,
+            "blue_win": blue_win,
+            "blue_team": b_team,
+            "red_team": r_team
+        }
+
+    def get_match_data(self, match_id: str, tier: str = "UNKNOWN") -> dict:
+        """Fetches and cleans a single match by ID."""
         try:
-            raw_match_data = self.watcher.match.by_id(self.continent, match_id)
-            
-            clean_data = self._extract_minimal_match_data(raw_match_data, tier)
-            return clean_data
-            
-        except ApiError as err:
-            print(f"Error fetching full match data for {match_id}: {err}")
-            return None
+            raw = self.api.match.by_id(self.cont, match_id)
+            return self._clean_data(raw, tier)
         except requests.exceptions.ConnectionError:
-            print(f"Hálózati megszakadás meccs ({match_id}) lekérése közben. Átugrás.")
             time.sleep(3)
             return None
         except Exception as e:
-            print(f"Váratlan hiba a meccs lekérésekor ({match_id}): {e}")
+            print(f"Match fetch error ({match_id}): {e}")
             return None
