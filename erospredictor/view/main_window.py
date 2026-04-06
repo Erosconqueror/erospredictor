@@ -45,7 +45,7 @@ class MainWindow(QMainWindow):
             QComboBox[isBan="true"] { border: 2px solid #E53935; background-color: #2A1D20; }
             QGroupBox { border: 2px solid #3A3A45; border-radius: 8px; margin-top: 15px; padding-top: 15px; font-weight: bold; color: #A0A0B5; background-color: transparent; }
             QGroupBox::title { subcontrol-origin: margin; left: 10px; padding: 0 5px; }
-            QGroupBox#bansGroup { border: none; }
+            QGroupBox#bansGroup { border: none; margin-top: 0px; padding-top: 0px; }
             QCheckBox { color: #E0E0E0; font-size: 14px; }
             QProgressBar { background: qlineargradient(x1:0, y1:0, x2:1, y2:0, stop:0 #EF5350, stop:1 #C62828); border-radius: 12px; border: 2px solid #BDBDBD; color: transparent; }
             QProgressBar::chunk { background: qlineargradient(x1:0, y1:0, x2:1, y2:0, stop:0 #1976D2, stop:1 #42A5F5); border-top-left-radius: 10px; border-bottom-left-radius: 10px; }
@@ -69,7 +69,7 @@ class MainWindow(QMainWindow):
         """Builds the header widget containing title and help button."""
         header = QWidget()
         layout = QHBoxLayout(header)
-        layout.setContentsMargins(0, 0, 0, 0)
+        layout.setContentsMargins(0, 3, 10, 0)
         
         spacer = QWidget()
         spacer.setFixedWidth(270)
@@ -91,7 +91,7 @@ class MainWindow(QMainWindow):
         """Builds the division selection layout."""
         layout = QHBoxLayout()
         
-        lbl_rank = QLabel("Rang Divízió")
+        lbl_rank = QLabel("Rang (Tier)")
         lbl_rank.setStyleSheet("font-weight: bold; font-size: 14px;")
         
         self.cb_rank = QComboBox()
@@ -111,10 +111,14 @@ class MainWindow(QMainWindow):
 
     def _create_bans(self) -> QGroupBox:
         """Builds the ban selection area."""
-        group = QGroupBox("Kitiltott hősök (Bans)")
+        group = QGroupBox()
         group.setObjectName("bansGroup")
         layout = QVBoxLayout(group)
         layout.setAlignment(Qt.AlignmentFlag.AlignHCenter) 
+        
+        lbl_title = QLabel("Kitiltott hősök (Bans)")
+        lbl_title.setStyleSheet("color: #A0A0B5; font-weight: bold; font-size: 15px;")
+        layout.addWidget(lbl_title, alignment=Qt.AlignmentFlag.AlignHCenter)
         
         self.blue_bans = []
         blue_layout = QHBoxLayout()
@@ -259,6 +263,10 @@ class MainWindow(QMainWindow):
         self.btn_predict.clicked.connect(self._on_predict)
         layout.addWidget(self.btn_predict, alignment=Qt.AlignmentFlag.AlignHCenter)
         
+        bottom_area = QHBoxLayout()
+        
+        bottom_area.addStretch(1)
+
         group_rec = QGroupBox("Hős Ajánló")
         group_rec.setFixedWidth(700) 
         rec_layout = QVBoxLayout(group_rec)
@@ -316,7 +324,23 @@ class MainWindow(QMainWindow):
         row_action.addWidget(self.btn_rec)
         rec_layout.addLayout(row_action)
         
-        layout.addWidget(group_rec, alignment=Qt.AlignmentFlag.AlignHCenter)
+
+        bottom_area.addWidget(group_rec)
+        
+        right_panel = QVBoxLayout()
+        right_panel.addStretch() 
+        
+        self.btn_clear = QPushButton("Új Draft")
+        self.btn_clear.setFixedSize(80, 35)
+        self.btn_clear.setStyleSheet("QPushButton { font-size: 14px; background-color: #1A1A15; font-weight: bold; color: #D0D0D0; border: 1px solid #444; border-radius: 6px; } QPushButton:hover { background-color: #3A3A45; color: white; }")
+        self.btn_clear.clicked.connect(self._on_clear_all)
+
+        right_panel.addWidget(self.btn_clear, alignment=Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignBottom)
+        
+        bottom_area.addLayout(right_panel, 1)
+
+        layout.addLayout(bottom_area)
+
         return container
 
     def _create_combo(self, is_ban: bool = False) -> QComboBox:
@@ -405,6 +429,14 @@ class MainWindow(QMainWindow):
         elif wr >= 46.0: return "#EF9A9A"    
         elif wr >= 43.0: return "#EF5350"    
         return "#D32F2F"               
+
+    def _on_clear_all(self):
+        """Clears all champion selections and resets the UI."""
+        for combo in self.blue_picks + self.red_picks + self.blue_bans + self.red_bans:
+            combo.setCurrentIndex(0)
+            
+        self._reset_dash()
+        self.lbl_dash_title.setText("Válassz hősöket a draftoláshoz!")
 
     def _on_predict(self):
         """Handles predict button click."""
