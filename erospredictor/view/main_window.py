@@ -191,7 +191,19 @@ class MainWindow(QMainWindow):
         
         dash_layout = QVBoxLayout(self.dashboard)
         dash_layout.setAlignment(Qt.AlignmentFlag.AlignTop)
-        dash_layout.setContentsMargins(1, 15, 1, 0)
+        dash_layout.setContentsMargins(1, 15, 1, 15)
+        
+        self.lbl_dash_title = QLabel("Válassz hősöket a draftoláshoz!")
+        self.lbl_dash_title.setStyleSheet("font-size: 18px; font-weight: bold; color: #FFFFFF;")
+        self.lbl_dash_title.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        dash_layout.addWidget(self.lbl_dash_title)
+        
+        self.dashboard = QFrame()
+        self.dashboard.setObjectName("centerDashboard")
+        self.dashboard.setFixedWidth(460)
+        
+        dash_layout = QVBoxLayout(self.dashboard)
+        dash_layout.setContentsMargins(1, 15, 1, 5) 
         
         self.lbl_dash_title = QLabel("Válassz hősöket a draftoláshoz!")
         self.lbl_dash_title.setStyleSheet("font-size: 18px; font-weight: bold; color: #FFFFFF;")
@@ -226,7 +238,6 @@ class MainWindow(QMainWindow):
         self.scroll_recommend.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
         self.scroll_recommend.setFrameShape(QFrame.Shape.NoFrame)
         self.scroll_recommend.setStyleSheet("background: transparent;")
-        self.scroll_recommend.setFixedHeight(300) 
         
         self.lbl_recommend = QLabel("")
         self.lbl_recommend.setAlignment(Qt.AlignmentFlag.AlignTop | Qt.AlignmentFlag.AlignHCenter)
@@ -234,8 +245,9 @@ class MainWindow(QMainWindow):
         
         self.scroll_recommend.setWidget(self.lbl_recommend)
         self.scroll_recommend.hide()
-        dash_layout.addWidget(self.scroll_recommend)
         
+        dash_layout.addWidget(self.scroll_recommend, 100) 
+        dash_layout.addStretch(1) 
         dash_layout.addStretch()
         layout.addWidget(self.dashboard)
         
@@ -539,6 +551,7 @@ class MainWindow(QMainWindow):
             
         html += "</table>"
         self.lbl_recommend.setText(html)
+        self.lbl_recommend.adjustSize()
         self.scroll_recommend.show()
             
     def _show_help(self):
