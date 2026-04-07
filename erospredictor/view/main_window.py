@@ -1,7 +1,7 @@
 from PyQt6.QtWidgets import (QMainWindow, QWidget, QVBoxLayout, QHBoxLayout, 
                              QPushButton, QLabel, QComboBox, QApplication, 
                              QCheckBox, QGroupBox, QProgressBar, QFrame, 
-                             QButtonGroup, QDialog, QTextEdit)
+                             QButtonGroup, QDialog, QTextEdit, QScrollArea)
 from PyQt6.QtCore import Qt, QSize
 from PyQt6.QtGui import QIcon
 from configs import TARGET_TIERS
@@ -69,7 +69,7 @@ class MainWindow(QMainWindow):
         """Builds the header widget containing title and help button."""
         header = QWidget()
         layout = QHBoxLayout(header)
-        layout.setContentsMargins(0, 3, 10, 0)
+        layout.setContentsMargins(0, 0, 0, 0)
         
         spacer = QWidget()
         spacer.setFixedWidth(270)
@@ -91,7 +91,7 @@ class MainWindow(QMainWindow):
         """Builds the division selection layout."""
         layout = QHBoxLayout()
         
-        lbl_rank = QLabel("Rang (Tier)")
+        lbl_rank = QLabel("Rang Divízió")
         lbl_rank.setStyleSheet("font-weight: bold; font-size: 14px;")
         
         self.cb_rank = QComboBox()
@@ -220,10 +220,21 @@ class MainWindow(QMainWindow):
         dash_layout.addWidget(self.bar_wr)
         self.bar_wr.hide()
         
+        self.scroll_recommend = QScrollArea()
+        self.scroll_recommend.setWidgetResizable(True)
+        self.scroll_recommend.setVerticalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+        self.scroll_recommend.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+        self.scroll_recommend.setFrameShape(QFrame.Shape.NoFrame)
+        self.scroll_recommend.setStyleSheet("background: transparent;")
+        self.scroll_recommend.setFixedHeight(300) 
+        
         self.lbl_recommend = QLabel("")
         self.lbl_recommend.setAlignment(Qt.AlignmentFlag.AlignTop | Qt.AlignmentFlag.AlignHCenter)
-        dash_layout.addWidget(self.lbl_recommend)
-        self.lbl_recommend.hide()
+        self.lbl_recommend.setStyleSheet("background: transparent;")
+        
+        self.scroll_recommend.setWidget(self.lbl_recommend)
+        self.scroll_recommend.hide()
+        dash_layout.addWidget(self.scroll_recommend)
         
         dash_layout.addStretch()
         layout.addWidget(self.dashboard)
@@ -264,9 +275,8 @@ class MainWindow(QMainWindow):
         layout.addWidget(self.btn_predict, alignment=Qt.AlignmentFlag.AlignHCenter)
         
         bottom_area = QHBoxLayout()
-        
         bottom_area.addStretch(1)
-
+        
         group_rec = QGroupBox("Hős Ajánló")
         group_rec.setFixedWidth(700) 
         rec_layout = QVBoxLayout(group_rec)
@@ -324,21 +334,19 @@ class MainWindow(QMainWindow):
         row_action.addWidget(self.btn_rec)
         rec_layout.addLayout(row_action)
         
-
         bottom_area.addWidget(group_rec)
         
         right_panel = QVBoxLayout()
         right_panel.addStretch() 
         
         self.btn_clear = QPushButton("Új Draft")
-        self.btn_clear.setFixedSize(80, 35)
-        self.btn_clear.setStyleSheet("QPushButton { font-size: 14px; background-color: #1A1A15; font-weight: bold; color: #D0D0D0; border: 1px solid #444; border-radius: 6px; } QPushButton:hover { background-color: #3A3A45; color: white; }")
+        self.btn_clear.setFixedSize(120, 35)
+        self.btn_clear.setStyleSheet("QPushButton { font-size: 14px; background-color: #2A2A35; font-weight: bold; color: #A0A0B5; border: 1px solid #444; border-radius: 6px; } QPushButton:hover { background-color: #3A3A45; color: white; }")
         self.btn_clear.clicked.connect(self._on_clear_all)
-
+        
         right_panel.addWidget(self.btn_clear, alignment=Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignBottom)
         
         bottom_area.addLayout(right_panel, 1)
-
         layout.addLayout(bottom_area)
 
         return container
@@ -399,7 +407,7 @@ class MainWindow(QMainWindow):
         self.lbl_dash_title.show()
         self.wr_container.hide()
         self.bar_wr.hide()
-        self.lbl_recommend.hide()
+        self.scroll_recommend.hide()
 
     def _validate(self) -> tuple:
         """Validates the current draft state."""
@@ -492,16 +500,13 @@ class MainWindow(QMainWindow):
             self.lbl_dash_title.setText("<span style='color: #FFCA28;'>Erre a pozícióra már választottál hőst!</span>")
             return
         
-        allowed = None
-        if self.chk_meta.isChecked() and self.meta_data:
-            lookup = div if div in self.meta_data else "MIXED"
-            if lookup in self.meta_data and str(r_id) in self.meta_data[lookup]:
-                allowed = set(self.meta_data[lookup][str(r_id)])
+        filter_off_meta = self.chk_meta.isChecked()
         
         self.lbl_dash_title.setText("Szimuláció futtatása...")
         QApplication.instance().processEvents()
         
-        recs = self.controller.recommend_champs(div, blue, red, bans, picking, r_id, 5, allowed)
+        limit = 172
+        recs = self.controller.recommend_champs(div, blue, red, bans, picking, r_id, limit, filter_off_meta)
         
         id_name = {v: k for k, v in self.name_map.items()}
         t_name = "Kék" if picking == "blue" else "Piros"
@@ -513,10 +518,10 @@ class MainWindow(QMainWindow):
         
         if not recs:
             self.lbl_recommend.setText("<h3 style='color: #EF5350;'>Nem található megfelelő hős!</h3>")
-            self.lbl_recommend.show()
+            self.scroll_recommend.show()
             return
             
-        html = "<table width='100%' cellspacing='0' cellpadding='8' align='center' style='margin-top: 10px;'>"
+        html = "<table width='100%' cellspacing='0' cellpadding='8' align='center' style='margin-top: 21px;'>"
         colors = ["#323242", "#2C2C3A", "#262632", "#20202A", "#1A1A22"]
         
         for i, rec in enumerate(recs):
@@ -525,7 +530,8 @@ class MainWindow(QMainWindow):
             name = id_name.get(cid, "Unknown")
             c_wr = self._color_wr(wr)
             
-            html += f"<tr bgcolor='{colors[i]}'>"
+            row_color = colors[min(i, len(colors) - 1)]
+            html += f"<tr bgcolor='{row_color}'>"
             html += f"<td style='width: 45px;'><img src='assets/icons/{cid}.png' width='38' height='38' style='border-radius: 6px;'></td>"
             html += f"<td style='font-size: 18px; font-weight: bold; color: #FFFFFF; text-align: left;'>{name}</td>"
             html += f"<td style='font-size: 18px; color: {c_wr}; font-weight: bold; text-align: right;'>{wr:.2f}%</td>"
@@ -533,7 +539,7 @@ class MainWindow(QMainWindow):
             
         html += "</table>"
         self.lbl_recommend.setText(html)
-        self.lbl_recommend.show()
+        self.scroll_recommend.show()
             
     def _show_help(self):
         """Displays the help dialog."""

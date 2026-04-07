@@ -1,5 +1,6 @@
 import os
 import time
+import json
 import torch
 from model.statistical import StatisticalModel
 from model.riot import Riot
@@ -22,6 +23,13 @@ class Controller:
         self.models = {}
         self.active_div = None
         self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+        
+        self.meta_data = {}
+        try:
+            with open("data/meta_champs.json", "r", encoding="utf-8") as f:
+                self.meta_data = json.load(f)
+        except Exception:
+            pass
 
     def load_models(self, div: str):
         """Loads PyTorch models for the specified division into memory."""
@@ -133,13 +141,24 @@ class Controller:
             "red_win_prob": (1.0 - blue_final) * 100
         }
 
-    def recommend_champs(self, div: str, blue: list, red: list, bans: list, team: str, r_idx: int, top_k: int = 5, allowed: set = None) -> list:
+    def recommend_champs(self, div: str, blue: list, red: list, bans: list, team: str, r_idx: int, top_k: int = 5, filter_off_meta: bool = True) -> list:
         """Simulates matches for available champions to find the highest win rate."""
         unavail = set(bans).union(set([c for c in blue + red if c > 0]))
         res = []
         
+        allowed = set()
+        if self.meta_data:
+            lookup_div = div if div in self.meta_data else "MIXED"
+            mode = "strict" if filter_off_meta else "loose"
+            try:
+                allowed = set(self.meta_data[lookup_div][mode][str(r_idx)])
+            except KeyError:
+                pass
+        
         for c_id in range(1, CHAMPION_COUNT):
-            if c_id in unavail or (allowed is not None and c_id not in allowed):
+            if c_id in unavail:
+                continue
+            if allowed and c_id not in allowed:
                 continue
 
             t_blue, t_red = list(blue), list(red)
@@ -179,9 +198,10 @@ class Controller:
         
     def prep_training_data(self, cache=True):
         """Preprocesses all match data for training."""
-        self.prep.preprocess_all_matches(use_cache=cache, always_save_cache=True)
-        self.prep.preprocess_all_matches_roleaware(use_cache=cache, always_save_cache=True)
-        self.stat_model.build_from_matches()
+        self.prep.process_matches(use_cache=cache)
+        self.prep.process_matches_ra(use_cache=cache)
+        self.prep.gen_meta_champs()
+        self.stat_model.build_stats()
 
     def train_model(self, m_type: str, div: str, epochs=None, batch=None, lr=None, cache=True):
         """Trains a specified machine learning model type."""
@@ -191,10 +211,10 @@ class Controller:
         lr = lr or (0.0003 if m_type == "4" else 0.001)
         
         if m_type == "1":  
-            X, y, divs = self.prep.preprocess_all_matches(use_cache=cache)
+            X, y, divs, w = self.prep.process_matches(use_cache=cache)
             train_single_model(X, y, divs, f"{div}_roleweighted", CHAMPION_COUNT * 2, epochs, batch, lr, "standard")
         elif m_type == "2": 
-            X, y, divs = self.prep.preprocess_all_matches_roleaware(use_cache=cache)
+            X, y, divs, w = self.prep.process_matches_ra(use_cache=cache)
             train_single_model(X, y, divs, f"{div}_roleaware", CHAMPION_COUNT * 10, epochs, batch, lr, "roleaware")
         elif m_type == "4":  
             self.train_gnn_spec(div, epochs, batch, lr)

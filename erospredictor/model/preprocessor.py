@@ -1,4 +1,5 @@
 import json
+import os
 from configs import CHAMPION_COUNT, ALLOWED_PATCHES, ROLE_WEIGHTS, CHAMPION_DATA_PATH
 from model.data_manager import DataManager
 
@@ -82,7 +83,7 @@ class Preprocessor:
         return self.c_ra
     
     def gen_meta_champs(self):
-        """Generates a JSON configuration of frequently played meta champions."""
+        """Generates a JSON configuration of playable and meta champions based on pickrates."""
         matches = self.db.get_all_matches()
         if not matches: return
 
@@ -105,11 +106,15 @@ class Preprocessor:
 
         meta = {}
         for div, t_match in totals.items():
-            meta[div] = {}
+            meta[div] = {"strict": {}, "loose": {}}
             t_picks = t_match * 2 
             for r_idx in range(5):
-                val_c = [c for c, count in stats[div][r_idx].items() if count >= 500 or (count / t_picks) >= 0.01]
-                meta[div][str(r_idx)] = val_c
+                strict_c = [c for c, count in stats[div][r_idx].items() if count >= 1500 or (count / t_picks) >= 0.005]
+                loose_c = [c for c, count in stats[div][r_idx].items() if (count / t_picks) >= 0.0005]
+                
+                meta[div]["strict"][str(r_idx)] = strict_c
+                meta[div]["loose"][str(r_idx)] = loose_c
 
+        os.makedirs("data", exist_ok=True)
         with open("data/meta_champs.json", "w", encoding="utf-8") as f:
             json.dump(meta, f, indent=4)
