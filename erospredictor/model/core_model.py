@@ -67,12 +67,16 @@ class CoreModel:
             
             Roleweighted models are given a champion count long vector filled with 0s with the sole exception
             of all the champions one team had where it was the role weight for that position X 2 for both teams
+            
+            The reasoning behind their weights is as follows: the GNN is the most complex and potentially powerful model, so it receives the highest weight.
+            The role-weighted and role-aware models are simpler but still provide valuable insights, but their result can be extremely volatile, so they receive moderate weights.
+            The statistical model, while less sophisticated, can still capture important historical trends, so it is given a smaller but significant weight to ensure it contributes to the final prediction without overpowering the more nuanced models.
             """
         self.load_models(div)
         
         preds = []
         weights = []
-        w_map = {"gnn": 0.6, "roleweighted": 0.1, "roleaware": 0.1, "statistical": 0.1}
+        w_map = {"gnn": 0.6, "roleweighted": 0.11, "roleaware": 0.12, "statistical": 0.17}
 
         if "gnn" in self.models:
             from model.gnn_predictor import predict_gnn
@@ -129,7 +133,7 @@ class CoreModel:
         prob_swap = self.calc_win_prob(div, red, blue)
         prob_if_red = 1.0 - prob_swap
         
-        blue_final = (prob_orig * 0.6) + (prob_if_red * 0.4)
+        blue_final = (prob_orig * 0.58) + (prob_if_red * 0.42)
         
         return {
             "blue_win_prob": blue_final * 100,

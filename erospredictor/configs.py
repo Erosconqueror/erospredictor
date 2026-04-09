@@ -50,16 +50,3 @@ ALLOWED_PATCHES = ["16.3", "16.4", "16.5", "16.6", "16.7"]
 
 TARGET_TIERS = [ "IRON", "BRONZE", "SILVER", "GOLD", "PLATINUM", "EMERALD", "DIAMOND", "MASTER", "GRANDMASTER", "CHALLENGER" ][::-1] 
 TARGET_DIVISIONS = ["I", "II", "III", "IV"]
-#These will be removed after im done with experimenting
-
-#, "GOLD", "PLATINUM", "EMERALD", "DIAMOND", "MASTER", "GRANDMASTER",
-#"IRON", "BRONZE",
-# "SILVER", "PLATINUM","CHALLENGER"
-#asia
-# kr, jp1, oc1, ru, tr1
-#europe
-# eun1, euw1, ru, tr1
-#americas
-# br1, oc1, na1, la1, la2
-
-#TARGET_TIERS = [ "IRON", "BRONZE", "SILVER", "GOLD", "PLATINUM", "EMERALD", "DIAMOND", "MASTER", "GRANDMASTER", "CHALLENGER" ][::-1] 
