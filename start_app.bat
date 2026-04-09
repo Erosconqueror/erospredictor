@@ -2,7 +2,7 @@
 color F
 call env\Scripts\activate.bat
 cd erospredictor
-python updater.py
+python services\updater.py
 echo Frissitesi procesure veget ert...
 color A
 echo Erospredictor inditasa...

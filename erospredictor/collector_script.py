@@ -6,7 +6,7 @@ from model.data_manager import DataManager
 def run_scraper():
     """Continuously scrapes matches from Riot API based on config criteria."""
     riot = Riot()
-    db = DataManager()
+    db = DataManager(True)
     
     print("Starting continuous scraper...")
     print(f"Allowed patches: {cfg.ALLOWED_PATCHES}")

@@ -24,10 +24,13 @@ def get_params(size: int, m_type: str) -> tuple:
     return ep, bs, lr
 
 def run_trainer():
-    """CLI application to train ML models with the fetched data."""
-    print("=== EROS PREDICTOR - TANITO MODUL ===")
+    """CLI application to train ML models with the fetched data, gives options for preprocessing and caching data,
+        train all models with a preoptimized training function based on data size,
+        and for optimizing individual models with custom parameters"""
+        
+    print("=== EROSPREDICTOR - TRAINING MODUL ===")
     prep = Preprocessor()
-    db = DataManager()
+    db = DataManager(True)
     stat = StatisticalModel(db)
     
     while True:
@@ -46,7 +49,7 @@ def run_trainer():
             print(f"RoleWeighted data processed: {len(x_rw)} matches")
             
             x_ra, y_ra, d_ra, w_ra = prep.process_matches_ra(use_cache=False)
-            print(f"RoleAware adatok feldolgozva: {len(x_ra)} matches")
+            print(f"RoleAware data processed: {len(x_ra)} matches")
             
             stat.build_stats()
             stat.save_cache()

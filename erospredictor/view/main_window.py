@@ -4,8 +4,7 @@ from PyQt6.QtWidgets import (QMainWindow, QWidget, QVBoxLayout, QHBoxLayout,
                              QButtonGroup, QDialog, QTextEdit, QScrollArea)
 from PyQt6.QtCore import Qt, QSize
 from PyQt6.QtGui import QIcon
-from configs import TARGET_TIERS
-
+from configs import TARGET_TIERS, CHAMPION_COUNT
 class MainWindow(QMainWindow):
     """Main graphical user interface for the application."""
 
@@ -69,7 +68,7 @@ class MainWindow(QMainWindow):
         """Builds the header widget containing title and help button."""
         header = QWidget()
         layout = QHBoxLayout(header)
-        layout.setContentsMargins(0, 0, 0, 0)
+        layout.setContentsMargins(0, 0, 7, 0)
         
         spacer = QWidget()
         spacer.setFixedWidth(270)
@@ -91,7 +90,7 @@ class MainWindow(QMainWindow):
         """Builds the division selection layout."""
         layout = QHBoxLayout()
         
-        lbl_rank = QLabel("Rang Divízió")
+        lbl_rank = QLabel("Rang (Tier)")
         lbl_rank.setStyleSheet("font-weight: bold; font-size: 14px;")
         
         self.cb_rank = QComboBox()
@@ -352,8 +351,8 @@ class MainWindow(QMainWindow):
         right_panel.addStretch() 
         
         self.btn_clear = QPushButton("Új Draft")
-        self.btn_clear.setFixedSize(120, 35)
-        self.btn_clear.setStyleSheet("QPushButton { font-size: 14px; background-color: #2A2A35; font-weight: bold; color: #A0A0B5; border: 1px solid #444; border-radius: 6px; } QPushButton:hover { background-color: #3A3A45; color: white; }")
+        self.btn_clear.setFixedSize(80, 35)
+        self.btn_clear.setStyleSheet("QPushButton { font-size: 14px; background-color: #1A1A15; font-weight: bold; color: #BBBBBB; border: 1px solid #444; border-radius: 6px; } QPushButton:hover { background-color: #3A3A45; color: white; }")
         self.btn_clear.clicked.connect(self._on_clear_all)
         
         right_panel.addWidget(self.btn_clear, alignment=Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignBottom)
@@ -517,8 +516,7 @@ class MainWindow(QMainWindow):
         self.lbl_dash_title.setText("Szimuláció futtatása...")
         QApplication.instance().processEvents()
         
-        limit = 172
-        recs = self.controller.recommend_champs(div, blue, red, bans, picking, r_id, limit, filter_off_meta)
+        recs = self.controller.recommend_champs(div, blue, red, bans, picking, r_id, CHAMPION_COUNT, filter_off_meta)
         
         id_name = {v: k for k, v in self.name_map.items()}
         t_name = "Kék" if picking == "blue" else "Piros"

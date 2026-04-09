@@ -7,7 +7,7 @@ class Preprocessor:
     """Prepares and transforms match data for ML model training."""
     
     def __init__(self):
-        self.db = DataManager()
+        self.db = DataManager(True)
         self.c_rw = None
         self.c_ra = None
         self.weights = self._calc_weights()
@@ -16,6 +16,7 @@ class Preprocessor:
             self.c_map = json.load(f)
 
     def _calc_weights(self) -> dict:
+        """Calculates patch-based weights for matches, giving more recent updates higher importance."""
         w_map = {}
         for i, p in enumerate(reversed(ALLOWED_PATCHES)):
             w_map[p] = max(0.1, 1.0 - (i * 0.2))
@@ -56,7 +57,7 @@ class Preprocessor:
         return self.c_rw
 
     def process_matches_ra(self, use_cache: bool = True) -> tuple:
-        """Preprocesses matches as flattened positional one-hot arrays."""
+        """Preprocesses matches as flattened positional one-hot arrays, for roleaware model"""
         if use_cache and self.c_ra: return self.c_ra
             
         matches = self.db.get_all_matches()
@@ -83,7 +84,9 @@ class Preprocessor:
         return self.c_ra
     
     def gen_meta_champs(self):
-        """Generates a JSON configuration of playable and meta champions based on pickrates."""
+        """Generates a JSON configuration of playable and meta champions based on pickrates. Added a loose filter so now recommendations like,
+            Alistar top can appear in off meta recommendations (which can be a valid pick),
+            but something like a lulu jungle wont (which absolutely is not)"""
         matches = self.db.get_all_matches()
         if not matches: return
 

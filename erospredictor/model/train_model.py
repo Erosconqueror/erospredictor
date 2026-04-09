@@ -9,7 +9,7 @@ from model.gnn_predictor import LeagueGNN
 from configs import MODELS_DIR
 
 def train_single_model(X: list, y: list, divs: list, name: str, in_size: int, ep: int, bs: int, lr: float, m_type: str = "standard", w: list = None):
-    """Trains and saves a standard or role-aware model."""
+    """Trains and saves a single model (either standard or role-aware) based on the provided training data."""
     if not X: return
 
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")

@@ -11,7 +11,7 @@ class StatisticalModel:
         with open(CHAMPION_DATA_PATH, 'r', encoding='utf-8') as f:
             self.c_map = json.load(f)
 
-    def build_stats(self):
+    def build_stats(self): 
         """Builds lookup tables for champion matchup statistics based on historical data."""
         matches = self.db.get_all_matches()
         if not matches: return

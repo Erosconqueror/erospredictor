@@ -6,15 +6,19 @@ from pathlib import Path
 class DataManager:
     """Handles PostgreSQL database operations and static JSON parsing."""
 
-    def __init__(self):
-        self.conn = psycopg2.connect(
-            dbname=getattr(cfg, 'DB_NAME', 'erospredictor'),
-            user=getattr(cfg, 'DB_USER', 'postgres'),
-            password=getattr(cfg, 'DB_PASS', 'Eros'),
-            host=getattr(cfg, 'DB_HOST', 'localhost'),
-            port=getattr(cfg, 'DB_PORT', '5432')
-        )
-        self._init_tables()
+    def __init__(self, dev_mode: bool = False ):
+        if dev_mode:
+            self.conn = psycopg2.connect(
+                dbname=getattr(cfg, 'DB_NAME', 'erospredictor'),
+                user=getattr(cfg, 'DB_USER', 'postgres'),
+                password=getattr(cfg, 'DB_PASS', 'Eros'),
+                host=getattr(cfg, 'DB_HOST', 'localhost'),
+                port=getattr(cfg, 'DB_PORT', '5432')
+            )
+            self._init_tables()
+        else:
+            self.conn = None
+            self.cur = None
 
     def _init_tables(self):
         """Creates the necessary schema if it does not exist."""

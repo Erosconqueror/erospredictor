@@ -19,7 +19,7 @@ def run_predictor():
 
     app = QApplication(sys.argv)
     
-    db = DataManager()
+    db = DataManager(False)
     names_dict = db.get_champion_names()
     names_list = sorted(list(names_dict.values()))
     name_map = {name: int(cid) for cid, name in names_dict.items()}

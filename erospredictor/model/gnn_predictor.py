@@ -7,7 +7,10 @@ from torch_geometric.data import Data
 from configs import CHAMPION_COUNT, CHAMPION_DATA_PATH
 
 class LeagueGNN(nn.Module):
-    """Graph Neural Network model for League of Legends matches."""
+    """This GNN model represents each match as a graph where nodes correspond to champions in specific roles, and edges represent interactions between them.
+       Each node's features are derived from champion embeddings, role embeddings, and a team indicator.
+       It was chosen because it is the best representation of a LoL champion draft.
+       The dropout rate is there to prevent the model from becoming too deterministic"""
     
     def __init__(self, champ_dim: int = 32, role_dim: int = 8, hid_dim: int = 64):  
         super().__init__()

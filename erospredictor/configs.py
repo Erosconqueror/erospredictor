@@ -1,7 +1,7 @@
 """Application configuration constants."""
 
 RIOT_API_KEY = "RGAPI-c3d498f9-c7a6-4add-88a5-a2c5c12e7844"
-REGION = "eun1"
+REGION = "euw1"
 CONTINENT = "europe"
 
 CHAMPION_DATA_PATH = "data/champion_id.json"
@@ -16,14 +16,23 @@ DB_PASS = "Eros"
 DB_HOST = "localhost"
 DB_PORT = "5432"
 
+#BASED ON XPETU'S ROLE IMPORTANCE DATA (TRIPLED VALUES TO AVOID NEAR NULL-VECTORS!!!)
 ROLE_WEIGHTS = {
-    "TOP": 1.0,
-    "JUNGLE": 0.9,
-    "MIDDLE": 0.8,
-    "BOTTOM": 0.7,
-    "UTILITY": 0.6
+    "TOP": 0.593,
+    "JUNGLE": 0.878,
+    "MIDDLE": 0.62,
+    "BOTTOM": 0.52,
+    "UTILITY": 0.39
 }
 
+ROLE_WEIGHTS_NO = {
+    "TOP": 0.66,
+    "JUNGLE": 0.84,
+    "MIDDLE": 0.6,
+    "BOTTOM": 0.15,
+    "UTILITY": 0.15
+}
+#PLAYERS IN HIGER TIERSHAVE MORE CONSISTENT PERFORMANCE, SO THEIR MATCHES SHOULD BE WEIGHTED MORE HEAVILY IN THE MODEL TRAINING
 DIVISION_WEIGHTS = {
     "IRON": 0.3,
     "BRONZE": 0.4,
@@ -39,5 +48,18 @@ DIVISION_WEIGHTS = {
 
 ALLOWED_PATCHES = ["16.3", "16.4", "16.5", "16.6", "16.7"]
 
-TARGET_TIERS = ["IRON", "BRONZE", "SILVER", "GOLD", "PLATINUM", "EMERALD", "DIAMOND", "MASTER", "GRANDMASTER", "CHALLENGER"][::-1]
+TARGET_TIERS = [ "IRON", "BRONZE", "SILVER", "GOLD", "PLATINUM", "EMERALD", "DIAMOND", "MASTER", "GRANDMASTER", "CHALLENGER" ][::-1] 
 TARGET_DIVISIONS = ["I", "II", "III", "IV"]
+#These will be removed after im done with experimenting
+
+#, "GOLD", "PLATINUM", "EMERALD", "DIAMOND", "MASTER", "GRANDMASTER",
+#"IRON", "BRONZE",
+# "SILVER", "PLATINUM","CHALLENGER"
+#asia
+# kr, jp1, oc1, ru, tr1
+#europe
+# eun1, euw1, ru, tr1
+#americas
+# br1, oc1, na1, la1, la2
+
+#TARGET_TIERS = [ "IRON", "BRONZE", "SILVER", "GOLD", "PLATINUM", "EMERALD", "DIAMOND", "MASTER", "GRANDMASTER", "CHALLENGER" ][::-1] 

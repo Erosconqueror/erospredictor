@@ -2,3 +2,7 @@
 __pycache__/
 *.pyc
 env/
+erospredictor/__pycache__/
+erospredictor/model/__pycache__/
+erospredictor/controller/__pycache__/
+erospredictor/view/__pycache__/
