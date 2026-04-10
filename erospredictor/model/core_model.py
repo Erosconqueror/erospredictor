@@ -76,7 +76,7 @@ class CoreModel:
         
         preds = []
         weights = []
-        w_map = {"gnn": 0.6, "roleweighted": 0.11, "roleaware": 0.12, "statistical": 0.17}
+        w_map = {"gnn": 0.58, "roleweighted": 0.11, "roleaware": 0.12, "statistical": 0.19}
 
         if "gnn" in self.models:
             from model.gnn_predictor import predict_gnn

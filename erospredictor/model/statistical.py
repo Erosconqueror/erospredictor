@@ -70,11 +70,8 @@ class StatisticalModel:
         return False
 
     def predict(self, div: str, blue: list, red: list) -> float:
-        """Predicts probability of blue team win using a hybrid macro/micro average of role statistics and bot lane synergies."""
+        """Predicts probability of blue team win using aggregated role statistics and bot lane synergies."""
         probs = []
-        total_w = 0
-        total_m = 0
-        
         for i, r in enumerate(["TOP", "JUNGLE", "MIDDLE", "BOTTOM", "UTILITY"]):
             bc, rc = str(blue[i]), str(red[i])
             
@@ -90,8 +87,6 @@ class StatisticalModel:
             
             if c_stats and c_stats["m"] > 0:
                 probs.append(c_stats["w"] / c_stats["m"])
-                total_w += c_stats["w"]
-                total_m += c_stats["m"]
 
         b_adc, b_sup = str(blue[3]), str(blue[4])
         
@@ -107,13 +102,5 @@ class StatisticalModel:
             
         if syn_stats and syn_stats["m"] > 0:
             probs.append(syn_stats["w"] / syn_stats["m"])
-            total_w += syn_stats["w"]
-            total_m += syn_stats["m"]
 
-        if not probs or total_m == 0:
-            return 0.50
-
-        global_avg = total_w / total_m
-        matchup_avg = sum(probs) / len(probs)
-
-        return (global_avg + matchup_avg) / 2.0
+        return sum(probs) / len(probs) if probs else 0.50
