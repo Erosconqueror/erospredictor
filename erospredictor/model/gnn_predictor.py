@@ -4,7 +4,7 @@ import torch.nn as nn
 import torch.nn.functional as F
 from torch_geometric.nn import GCNConv, global_mean_pool
 from torch_geometric.data import Data
-from configs import CHAMPION_COUNT, CHAMPION_DATA_PATH
+from configs import CHAMPION_COUNT, CHAMPION_DATA_PATH, DIVISION_WEIGHTS
 
 class LeagueGNN(nn.Module):
     """This GNN model represents each match as a graph where nodes correspond to champions in specific roles, and edges represent interactions between them.
@@ -89,9 +89,10 @@ def prep_gnn_matches(db, p_weights: dict) -> tuple:
         if len(b_team) != 5 or len(r_team) != 5:
             continue
             
-        w = p_weights.get(m.get("patch", "UNKNOWN"), 0.5)
-        graphs.append(create_graph(b_team, r_team, m.get("blue_win", False), w))
-        divs.append(m.get("tier", "UNKNOWN"))
+        combined_weight = p_weights[m["patch"]] * DIVISION_WEIGHTS[m["tier"]]
+        
+        graphs.append(create_graph(b_team, r_team, m.get("blue_win", False), combined_weight))
+        divs.append(m["tier"])
     
     return graphs, divs
 

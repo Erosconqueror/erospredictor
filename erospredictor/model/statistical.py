@@ -1,6 +1,6 @@
 import json
 import os
-from configs import CHAMPION_DATA_PATH
+from configs import CHAMPION_DATA_PATH, DIVISION_WEIGHTS
 
 class StatisticalModel:
     """Predicts match outcomes purely based on historical champion matchup winrates and bot lane synergies."""
@@ -71,36 +71,52 @@ class StatisticalModel:
 
     def predict(self, div: str, blue: list, red: list) -> float:
         """Predicts probability of blue team win using aggregated role statistics and bot lane synergies."""
+        if div == "MIXED":
+            total_weighted_prob = 0.0
+            total_weight_sum = 0.0
+            
+            for tier_name, tier_weight in division_weights.items():
+                prob, m_count = self._predict_tier(tier_name, blue, red)
+                
+                if m_count > 0:
+                    combined_weight = tier_weight * m_count
+                    total_weighted_prob += prob * combined_weight
+                    total_weight_sum += combined_weight
+                    
+            if total_weight_sum > 0:
+                return total_weighted_prob / total_weight_sum
+            return 0.50
+        else:
+            prob, _ = self._predict_tier(div, blue, red)
+            return prob
+
+    def _predict_tier(self, div: str, blue: list, red: list):
+        """Helper method: calculates the pure prediction and match count for a single tier by averaging macro and micro statistics."""
         probs = []
+        total_w = 0
+        total_m = 0
+        
         for i, r in enumerate(["TOP", "JUNGLE", "MIDDLE", "BOTTOM", "UTILITY"]):
             bc, rc = str(blue[i]), str(red[i])
-            
-            if div == "MIXED":
-                c_stats = {"w": 0, "m": 0}
-                for d_stat in self.matchups.values():
-                    s = d_stat.get(r, {}).get(bc, {}).get(rc)
-                    if s:
-                        c_stats["w"] += s["w"]
-                        c_stats["m"] += s["m"]
-            else:
-                c_stats = self.matchups.get(div, {}).get(r, {}).get(bc, {}).get(rc)
+            c_stats = self.matchups.get(div, {}).get(r, {}).get(bc, {}).get(rc)
             
             if c_stats and c_stats["m"] > 0:
                 probs.append(c_stats["w"] / c_stats["m"])
+                total_w += c_stats["w"]
+                total_m += c_stats["m"]
 
         b_adc, b_sup = str(blue[3]), str(blue[4])
-        
-        if div == "MIXED":
-            syn_stats = {"w": 0, "m": 0}
-            for d_stat in self.matchups.values():
-                s = d_stat.get("BOT_SYNERGY", {}).get(b_adc, {}).get(b_sup)
-                if s:
-                    syn_stats["w"] += s["w"]
-                    syn_stats["m"] += s["m"]
-        else:
-            syn_stats = self.matchups.get(div, {}).get("BOT_SYNERGY", {}).get(b_adc, {}).get(b_sup)
+        syn_stats = self.matchups.get(div, {}).get("BOT_SYNERGY", {}).get(b_adc, {}).get(b_sup)
             
         if syn_stats and syn_stats["m"] > 0:
             probs.append(syn_stats["w"] / syn_stats["m"])
+            total_w += syn_stats["w"]
+            total_m += syn_stats["m"]
 
-        return sum(probs) / len(probs) if probs else 0.50
+        if not probs or total_m == 0:
+            return 0.50, 0
+
+        global_avg = total_w / total_m
+        matchup_avg = sum(probs) / len(probs)
+
+        return (global_avg + matchup_avg) / 2.0, total_m

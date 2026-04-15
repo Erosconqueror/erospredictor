@@ -1,6 +1,6 @@
 import json
 import os
-from configs import CHAMPION_COUNT, ALLOWED_PATCHES, ROLE_WEIGHTS, CHAMPION_DATA_PATH
+from configs import CHAMPION_COUNT, ALLOWED_PATCHES, ROLE_WEIGHTS, CHAMPION_DATA_PATH, DIVISION_WEIGHTS
 from model.data_manager import DataManager
 
 class Preprocessor:
@@ -50,11 +50,14 @@ class Preprocessor:
                 
             x_lst.append(champs)
             y_lst.append(1.0 if m.get("blue_win") else 0.0)
-            d_lst.append(m.get("tier", "UNKNOWN"))
-            w_lst.append(self.weights.get(m.get("patch", "UNKNOWN"), 0.5))
+            d_lst.append(m["tier"])
+            
+            combined_weight = self.weights[m["patch"]] * DIVISION_WEIGHTS[m["tier"]]
+            w_lst.append(combined_weight)
             
         self.c_rw = (x_lst, y_lst, d_lst, w_lst)
         return self.c_rw
+
 
     def process_matches_ra(self, use_cache: bool = True) -> tuple:
         """Preprocesses matches as flattened positional one-hot arrays, for roleaware model"""
@@ -77,8 +80,10 @@ class Preprocessor:
                 
             x_lst.append(champs)
             y_lst.append(1.0 if m.get("blue_win") else 0.0)
-            d_lst.append(m.get("tier", "UNKNOWN"))
-            w_lst.append(self.weights.get(m.get("patch", "UNKNOWN"), 0.5))
+            d_lst.append(m["tier"])
+            
+            combined_weight = self.weights[m["patch"]] * DIVISION_WEIGHTS[m["tier"]]
+            w_lst.append(combined_weight)
             
         self.c_ra = (x_lst, y_lst, d_lst, w_lst)
         return self.c_ra
