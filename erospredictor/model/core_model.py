@@ -32,7 +32,7 @@ class CoreModel:
             
             if os.path.exists(gnn_path):
                 gnn = LeagueGNN()
-                gnn.load_state_dict(torch.load(gnn_path, map_location=self.device))
+                gnn.load_state_dict(torch.load(gnn_path, map_location=self.device, weights_only=True))
                 gnn.to(self.device)
                 gnn.eval()
                 self.models["gnn"] = gnn
@@ -42,7 +42,7 @@ class CoreModel:
             rw_path = os.path.join(MODELS_DIR, f"{div}_roleweighted.pth")
             if os.path.exists(rw_path):
                 rw = ChampionPredictor(input_size=CHAMPION_COUNT * 2).to(self.device)
-                rw.load_state_dict(torch.load(rw_path, map_location=self.device))
+                rw.load_state_dict(torch.load(rw_path, map_location=self.device, weights_only=True))
                 rw.eval()
                 self.models["roleweighted"] = rw
         except Exception: pass
@@ -51,7 +51,7 @@ class CoreModel:
             ra_path = os.path.join(MODELS_DIR, f"{div}_roleaware.pth")
             if os.path.exists(ra_path):
                 ra = RoleAwareEmbeddingPredictor().to(self.device)
-                ra.load_state_dict(torch.load(ra_path, map_location=self.device))
+                ra.load_state_dict(torch.load(ra_path, map_location=self.device, weights_only=True))
                 ra.eval()
                 self.models["roleaware"] = ra
         except Exception: pass
