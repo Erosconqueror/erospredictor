@@ -3,7 +3,6 @@ from model.preprocessor import Preprocessor
 from model.train_model import train_single_model, train_gnn_model
 from model.data_manager import DataManager
 from model.statistical import StatisticalModel
-from model.gnn_predictor import prep_gnn_matches
 from configs import CHAMPION_COUNT
 
 def get_params(size: int, m_type: str) -> tuple:
@@ -24,17 +23,14 @@ def get_params(size: int, m_type: str) -> tuple:
     return ep, bs, lr
 
 def run_trainer():
-    """CLI application to train ML models with the fetched data, gives options for preprocessing and caching data,
-        train all models with a preoptimized training function based on data size,
-        and for optimizing individual models with custom parameters"""
-        
+    """CLI application to train ML models with data fetching, RAM caching and on-the-fly preprocessing."""
     print("=== EROSPREDICTOR - TRAINING MODUL ===")
     prep = Preprocessor()
     db = DataManager(True)
     stat = StatisticalModel(db)
     
     while True:
-        print("\n1. Preprocess ALL data")
+        print("\n1. Preprocess ALL data (Loads into RAM)")
         print("2. Train individual model (via giving unique parameters)")
         print("3. Train every model (via auto-tune function)")
         print("4. EXIT")
@@ -50,6 +46,9 @@ def run_trainer():
             
             x_ra, y_ra, d_ra, w_ra = prep.process_matches_ra(use_cache=False)
             print(f"RoleAware data processed: {len(x_ra)} matches")
+            
+            graphs, d_gnn = prep.process_matches_gnn(use_cache=False)
+            print(f"GNN graphs processed: {len(graphs)} matches")
             
             stat.build_stats()
             stat.save_cache()
@@ -72,36 +71,41 @@ def run_trainer():
             bs = int(bs_in) if bs_in else 32
             lr = float(lr_in) if lr_in else 0.001
             
+            print("Preparing data...")
+            
             if m_choice == "1":
                 X, y, divs, w = prep.process_matches(use_cache=True)
                 if not X:
-                    print("No preprocessed data found! Run the 1st option first!")
+                    print("No matches found in database!")
                     continue
                 train_single_model(X, y, divs, f"{div}_roleweighted", CHAMPION_COUNT * 2, ep, bs, lr, "standard", w)
             
             elif m_choice == "2":
                 X, y, divs, w = prep.process_matches_ra(use_cache=True)
                 if not X:
-                    print("No preprocessed data found! Run the 1st option first!")
+                    print("No matches found in database!")
                     continue
                 train_single_model(X, y, divs, f"{div}_roleaware", CHAMPION_COUNT * 10, ep, bs, lr, "roleaware", w)
 
             elif m_choice == "3":
-                graphs, divs = prep_gnn_matches(db, prep.weights)
+                graphs, divs = prep.process_matches_gnn(use_cache=True)
                 if not graphs:
-                    print("No preprocessed data found! Run the 1st option first!")
+                    print("No matches found in database!")
                     continue
+                if div != "MIXED":
+                    graphs = [g for g, d in zip(graphs, divs) if d == div]
+                print(f"Adatok szűrve: {len(graphs)} meccs a {div} divízióban.")
+                
                 train_gnn_model(graphs, f"{div}_gnn", ep, bs, lr)
                 
         elif choice == "3":
+            print("Preparing data for all models...")
             x_rw, y_rw, d_rw, w_rw = prep.process_matches(use_cache=True)
             x_ra, y_ra, d_ra, w_ra = prep.process_matches_ra(use_cache=True)
-            
-            print("Loading GNN data...")
-            graphs, d_gnn = prep_gnn_matches(db, prep.weights)
+            graphs, d_gnn = prep.process_matches_gnn(use_cache=True)
             
             if not x_rw or not x_ra or not graphs:
-                print("Not enough preprocessed data found!")
+                print("No matches found in database!")
                 continue
                 
             unique_divs = list(set(d_rw))

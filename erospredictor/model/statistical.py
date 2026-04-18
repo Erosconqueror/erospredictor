@@ -8,8 +8,7 @@ class StatisticalModel:
     def __init__(self, db):
         self.db = db
         self.matchups = {}
-        with open(CHAMPION_DATA_PATH, 'r', encoding='utf-8') as f:
-            self.c_map = json.load(f)
+        self.c_map = self.db.get_champion_mapping()
 
     def build_stats(self): 
         """Builds lookup tables for champion matchup statistics and bot lane synergies based on historical data."""

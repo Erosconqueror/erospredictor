@@ -24,8 +24,7 @@ def run_predictor():
     names_list = sorted(list(names_dict.values()))
     name_map = {name: int(cid) for cid, name in names_dict.items()}
     
-    with open("data/meta_champs.json", "r", encoding="utf-8") as f:
-        meta_data = json.load(f)
+    meta_data = db.load_meta_champs() or {}
     
     view = MainWindow(names_list, name_map)
     ctrl = Controller(view=view)

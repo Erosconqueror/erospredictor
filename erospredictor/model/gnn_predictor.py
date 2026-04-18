@@ -68,33 +68,6 @@ def create_graph(blue: list, red: list, win: bool = None, weight: float = 1.0) -
     
     return graph
 
-def prep_gnn_matches(db, p_weights: dict) -> tuple:
-    """Prepares all matches from the database into PyTorch geometric graphs."""
-    matches = db.get_all_matches()
-    graphs, divs = [], []
-    
-    print(f"GNN data prep: Building graphs from {len(matches)} matches...")
-    
-    with open(CHAMPION_DATA_PATH, 'r', encoding='utf-8') as f:
-        c_map = json.load(f)
-            
-    for m in matches:
-        b_raw, r_raw = m.get("blue_team", []), m.get("red_team", [])
-        if isinstance(b_raw, str): b_raw = b_raw.strip("{}").split(",")
-        if isinstance(r_raw, str): r_raw = r_raw.strip("{}").split(",")
-
-        b_team = [int(c_map[str(cid)]) for cid in b_raw if str(cid) in c_map]
-        r_team = [int(c_map[str(cid)]) for cid in r_raw if str(cid) in c_map]
-        
-        if len(b_team) != 5 or len(r_team) != 5:
-            continue
-            
-        combined_weight = p_weights[m["patch"]] * DIVISION_WEIGHTS[m["tier"]]
-        
-        graphs.append(create_graph(b_team, r_team, m.get("blue_win", False), combined_weight))
-        divs.append(m["tier"])
-    
-    return graphs, divs
 
 def predict_gnn(model, blue: list, red: list, device) -> float:
     """Runs a prediction using the GNN model."""

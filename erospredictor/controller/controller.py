@@ -11,11 +11,9 @@ class Controller:
         self.stat_model = StatisticalModel(self.db)
         self.core_model = CoreModel(self.stat_model)
         
-        try:
-            with open("data/meta_champs.json", "r", encoding="utf-8") as f:
-                self.core_model.load_meta_data(json.load(f))
-        except Exception:
-            pass
+        meta_data = self.db.load_meta_champs()
+        if meta_data:
+            self.core_model.load_meta_data(meta_data)
 
     def validate_draft(self, blue_picks: list, red_picks: list, blue_bans: list, red_bans: list) -> tuple:
         """Validates the current draft state and returns a (is_valid, error_message) tuple."""
