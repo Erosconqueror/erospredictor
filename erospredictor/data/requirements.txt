@@ -1,11 +1,10 @@
-numpy<2
---extra-index-url https://download.pytorch.org/whl/cpu
-PyQt6
-PyQt6-sip
-torch
-torchvision
-torchaudio
-torch-geometric
-psycopg2-binary
-riotwatcher
-requests
+--extra-index-url https://download.pytorch.org/whl/cu121
+
+torch>=2.2.0
+torchvision>=0.17.0
+torchaudio>=2.2.0
+torch-geometric>=2.5.0
+requests>=2.31.0
+psycopg2>=2.9.9
+PyQt6>=6.6.1
+numpy>=1.26.0

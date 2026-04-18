@@ -1,5 +1,4 @@
-
-#HELLO
+#HELLO!!!
 import os
 from model.preprocessor import Preprocessor
 from model.train_model import train_single_model, train_gnn_model
@@ -7,17 +6,11 @@ from model.data_manager import DataManager
 from model.statistical import StatisticalModel
 from configs import CHAMPION_COUNT
 
-
 def get_params(size: int, m_type: str) -> tuple:
-    """Calculates optimal hyperparameters based on dataset size."""
-    if size < 2000:
-        ep, bs, lr = 100, 32, 0.001
-    elif size < 10000:
-        ep, bs, lr = 75, 64, 0.001
-    elif size < 30000:
-        ep, bs, lr = 50, 128, 0.0005
-    else:
-        ep, bs, lr = 40, 256, 0.0003
+    if size < 2000: ep, bs, lr = 100, 32, 0.001
+    elif size < 10000: ep, bs, lr = 75, 64, 0.001
+    elif size < 30000: ep, bs, lr = 50, 128, 0.0005
+    else: ep, bs, lr = 40, 256, 0.0003
         
     if m_type == "gnn":
         lr *= 0.3
@@ -26,7 +19,6 @@ def get_params(size: int, m_type: str) -> tuple:
     return ep, bs, lr
 
 def run_trainer():
-    """CLI application to train ML models with data fetching, RAM caching and on-the-fly preprocessing."""
     print("=== EROSPREDICTOR - TRAINING MODUL ===")
     prep = Preprocessor()
     db = DataManager(True)
@@ -81,6 +73,11 @@ def run_trainer():
                 if not X:
                     print("No matches found in database!")
                     continue
+                if div != "MIXED":
+                    X = [x for x, d in zip(X, divs) if d == div]
+                    y = [y_ for y_, d in zip(y, divs) if d == div]
+                    w = [w_ for w_, d in zip(w, divs) if d == div]
+                print(f"Data filtered: {len(X)} matches in {div} division.")
                 train_single_model(X, y, divs, f"{div}_roleweighted", CHAMPION_COUNT * 2, ep, bs, lr, "standard", w)
             
             elif m_choice == "2":
@@ -88,6 +85,11 @@ def run_trainer():
                 if not X:
                     print("No matches found in database!")
                     continue
+                if div != "MIXED":
+                    X = [x for x, d in zip(X, divs) if d == div]
+                    y = [y_ for y_, d in zip(y, divs) if d == div]
+                    w = [w_ for w_, d in zip(w, divs) if d == div]
+                print(f"Data filtered: {len(X)} matches in {div} division.")
                 train_single_model(X, y, divs, f"{div}_roleaware", CHAMPION_COUNT * 10, ep, bs, lr, "roleaware", w)
 
             elif m_choice == "3":
@@ -97,8 +99,7 @@ def run_trainer():
                     continue
                 if div != "MIXED":
                     graphs = [g for g, d in zip(graphs, divs) if d == div]
-                print(f"Adatok szűrve: {len(graphs)} meccs a {div} divízióban.")
-                
+                print(f"Data filtered: {len(graphs)} matches in {div} division.")
                 train_gnn_model(graphs, f"{div}_gnn", ep, bs, lr)
                 
         elif choice == "3":

@@ -1,6 +1,4 @@
-import json
-import os
-from configs import CHAMPION_DATA_PATH, DIVISION_WEIGHTS
+from configs import DIVISION_WEIGHTS
 
 class StatisticalModel:
     """Predicts match outcomes purely based on historical champion matchup winrates and bot lane synergies."""
@@ -8,6 +6,7 @@ class StatisticalModel:
     def __init__(self, db):
         self.db = db
         self.matchups = {}
+        
         self.c_map = self.db.get_champion_mapping()
 
     def build_stats(self): 
@@ -55,26 +54,23 @@ class StatisticalModel:
             if not m.get("blue_win", False): self.matchups[div]["BOT_SYNERGY"][r_adc][r_sup]["w"] += 1
 
     def save_cache(self, path: str = "data/stats_cache.json"):
-        """Saves generated matchups and bot lane synergies to disk."""
-        os.makedirs(os.path.dirname(path), exist_ok=True)
-        with open(path, "w", encoding="utf-8") as f:
-            json.dump(self.matchups, f, indent=4)
+        """Saves generated matchups and bot lane synergies to disk via DataManager."""
+        self.db.save_stats_cache(self.matchups, path)
 
     def load_cache(self, path: str = "data/stats_cache.json") -> bool:
-        """Loads matchups and bot lane synergies from disk into memory."""
-        if os.path.exists(path):
-            with open(path, "r", encoding="utf-8") as f:
-                self.matchups = json.load(f)
+        """Loads matchups and bot lane synergies from disk into memory via DataManager."""
+        cached_data = self.db.load_stats_cache(path)
+        if cached_data is not None:
+            self.matchups = cached_data
             return True
         return False
 
     def predict(self, div: str, blue: list, red: list) -> float:
-        """Predicts probability of blue team win using aggregated role statistics and bot lane synergies."""
         if div == "MIXED":
             total_weighted_prob = 0.0
             total_weight_sum = 0.0
             
-            for tier_name, tier_weight in division_weights.items():
+            for tier_name, tier_weight in DIVISION_WEIGHTS.items():
                 prob, m_count = self._predict_tier(tier_name, blue, red)
                 
                 if m_count > 0:
@@ -90,7 +86,6 @@ class StatisticalModel:
             return prob
 
     def _predict_tier(self, div: str, blue: list, red: list):
-        """Helper method: calculates the pure prediction and match count for a single tier by averaging macro and micro statistics."""
         probs = []
         total_w = 0
         total_m = 0

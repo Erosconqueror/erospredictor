@@ -10,16 +10,13 @@ from model.gnn_predictor import LeagueGNN
 from configs import MODELS_DIR
 
 def train_single_model(X: list, y: list, divs: list, name: str, in_size: int, ep: int, bs: int, lr: float, m_type: str = "standard", w: list = None):
-    """
-    Trains and saves a single MLP model using optimized data loading.
-    """
     if not X:
         return
 
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     print(f"[{name}] Training started on device: {device}")
     
-    print(f"[{name}] Converting tensors via numpy...")
+    print(f"[{name}] Converting tensors via numpy (Fast memory allocation)...")
     x_t = torch.tensor(np.array(X, dtype=np.float32))
     y_t = torch.tensor(np.array(y, dtype=np.float32)).unsqueeze(1)
     
@@ -58,9 +55,6 @@ def train_single_model(X: list, y: list, divs: list, name: str, in_size: int, ep
     print(f"[{name}] Training complete. Model saved to {MODELS_DIR}.")
 
 def train_gnn_model(graphs: list, name: str, ep: int, bs: int, lr: float):
-    """
-    Trains and saves a Graph Neural Network model using geometric data loading.
-    """
     if not graphs:
         return
 
