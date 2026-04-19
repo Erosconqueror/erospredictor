@@ -1,70 +1,100 @@
 import json
 import os
-from typing import Dict, List, Tuple
+from typing import Dict, List, Callable
 
 class GoldenDataset:
-    """Loads and validates recommendations against domain knowledge rules."""
+    """Validator for evaluating recommendation and prediction models using a domain-knowledge dataset."""
     
-    def __init__(self, path: str = "data/golden_dataset.json"):
-        self.cases = []
+    def __init__(self, path: str = "data/golden_dataset.json", name_map: Dict[str, int] = None):
+        self.recommendation_cases = []
+        self.prediction_cases = []
+        self.name_map = name_map or {}
         self.load(path)
     
     def load(self, path: str):
-        """Load golden dataset from JSON file."""
+        """Loads recommendation and prediction cases from the specified JSON file."""
         if os.path.exists(path):
-            with open(path, 'r') as f:
+            with open(path, 'r', encoding='utf-8') as f:
                 data = json.load(f)
-                self.cases = data.get('cases', [])
-    
-    def calculate_penalty(self, recommendations: List[Tuple[int, float]], 
-                         case: Dict, top_k: int = 5) -> float:
-        """Calculate domain knowledge violation penalty."""
-        penalty = 0.0
-        top_k_champs = [champ_id for champ_id, _ in recommendations[:top_k]]
-        
-        if "avoid_picks" in case:
-            for avoid_id in case["avoid_picks"]:
-                if avoid_id in top_k_champs:
-                    idx = top_k_champs.index(avoid_id)
-                    penalty += (0.5 / (idx + 1))
-        
-        if "must_pick_from" in case:
-            allowed_set = set(case["must_pick_from"])
-            must_pick_count = sum(1 for c in top_k_champs if c in allowed_set)
-            
-            if must_pick_count == 0:
-                penalty += 0.7
-            elif must_pick_count < 3:
-                penalty += 0.3 * (1 - must_pick_count / 3)
-        
-        return min(penalty, 1.0)
-    
-    def get_cases_by_tier(self, tier: str) -> List[Dict]:
-        """Get applicable cases for tier."""
-        return [c for c in self.cases if c.get('tier') == 'ALL' or c.get('tier') == tier]
-    
-    def validate(self, recommendation_fn, div: str, top_k: int = 5) -> Dict:
-        """Validate recommendations against all cases."""
-        cases = self.get_cases_by_tier(div)
+                self.recommendation_cases = data.get('recommendation_cases', [])
+                self.prediction_cases = data.get('prediction_cases', [])
+
+    def _names_to_ids(self, names: List[str]) -> List[int]:
+        """Converts a list of champion names to their corresponding numerical IDs."""
+        return [self.name_map.get(n, 0) if n else 0 for n in names]
+
+    def validate_recommendations(self, recommendation_fn: Callable, div: str, top_k: int = 10) -> Dict:
+        """Validates champion recommendations ensuring required picks are in top K and avoided picks are in bottom 10."""
         results = []
         
-        for case in cases:
-            recs = recommendation_fn(
-                blue=case['blue_team'],
-                red=case['red_team'],
-                r_idx=case['position']
-            )
-            penalty = self.calculate_penalty(recs, case, top_k)
+        for case in self.recommendation_cases:
+            blue_ids = self._names_to_ids(case.get('blue_team', []))
+            red_ids = self._names_to_ids(case.get('red_team', []))
+            must_pick_ids = set(self._names_to_ids(case.get('must_pick_from', [])))
+            avoid_ids = set(self._names_to_ids(case.get('avoid_picks', [])))
+            r_idx = case.get('position', 0)
+            
+            recs = recommendation_fn(div=div, blue=blue_ids, red=red_ids, bans=[], 
+                                     team="blue" if r_idx < 5 else "red", 
+                                     r_idx=r_idx % 5, top_k=160)
+            
+            rec_ids = [r['id'] for r in recs]
+            passed = True
+            reasons = []
+
+            if must_pick_ids:
+                top_k_ids = set(rec_ids[:top_k])
+                if not must_pick_ids.intersection(top_k_ids):
+                    passed = False
+                    reasons.append(f"Failed: Must-pick champion not found in Top {top_k}.")
+
+            if avoid_ids:
+                bottom_10_ids = set(rec_ids[-10:]) if len(rec_ids) >= 10 else set(rec_ids)
+                for avoid_id in avoid_ids:
+                    if avoid_id in rec_ids and avoid_id not in bottom_10_ids:
+                        passed = False
+                        reasons.append("Failed: Avoid-pick champion not found in Bottom 10.")
+                        break
+
             results.append({
                 'scenario': case['scenario'],
-                'penalty': penalty,
-                'pass': penalty < 0.2
+                'passed': passed,
+                'reasons': reasons
             })
-        
-        passed = sum(1 for r in results if r['pass'])
+            
+        passed_count = sum(1 for r in results if r['passed'])
         return {
-            'passed': passed,
+            'passed': passed_count,
             'total': len(results),
-            'rate': (passed / len(results)) if results else 0.0,
+            'rate': (passed_count / len(results)) if results else 0.0,
+            'results': results
+        }
+
+    def validate_predictions(self, prediction_fn: Callable, div: str) -> Dict:
+        """Validates full match win probability predictions against expected ranges."""
+        results = []
+        
+        for case in self.prediction_cases:
+            blue_ids = self._names_to_ids(case.get('blue_team', []))
+            red_ids = self._names_to_ids(case.get('red_team', []))
+            min_wr = case.get('expected_blue_winrate_min', 0.0)
+            max_wr = case.get('expected_blue_winrate_max', 100.0)
+            
+            pred = prediction_fn(div=div, blue=blue_ids, red=red_ids)
+            blue_wr = pred.get('blue_win_prob', 50.0)
+            passed = min_wr <= blue_wr <= max_wr
+            
+            results.append({
+                'scenario': case['scenario'],
+                'predicted_winrate': round(blue_wr, 2),
+                'expected_range': f"{min_wr}% - {max_wr}%",
+                'passed': passed
+            })
+            
+        passed_count = sum(1 for r in results if r['passed'])
+        return {
+            'passed': passed_count,
+            'total': len(results),
+            'rate': (passed_count / len(results)) if results else 0.0,
             'results': results
         }

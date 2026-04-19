@@ -1,7 +1,7 @@
 from PyQt6.QtWidgets import (QMainWindow, QWidget, QVBoxLayout, QHBoxLayout, 
                              QPushButton, QLabel, QComboBox, QApplication, 
                              QCheckBox, QGroupBox, QProgressBar, QFrame, 
-                             QButtonGroup, QDialog, QTextEdit, QScrollArea)
+                             QButtonGroup, QDialog, QTextEdit, QScrollArea, QCompleter)
 from PyQt6.QtCore import Qt, QSize
 from PyQt6.QtGui import QIcon
 from configs import TARGET_TIERS, CHAMPION_COUNT
@@ -322,25 +322,38 @@ class MainWindow(QMainWindow):
         return container
 
     def _create_combo(self, is_ban: bool = False) -> QComboBox:
-        """Helper to create a stylized champion selection dropdown."""
         combo = QComboBox()
         width = 130 if is_ban else 150
         height = 35 if is_ban else 50
         icon_size = 24 if is_ban else 42
+        
         combo.setFixedWidth(width)   
         combo.setMinimumHeight(height) 
         combo.setIconSize(QSize(icon_size, icon_size)) 
         combo.setStyleSheet("font-size: 14px; padding: 3px;")
+        
         if is_ban: combo.setProperty("isBan", True)
+        
         combo.addItem(QIcon(), "") 
         for name in self.champ_names:
             cid = self.name_map.get(name)
             combo.addItem(QIcon(f"assets/icons/{cid}.png"), name)
+            
         combo.setEditable(True)
         combo.lineEdit().setPlaceholderText("Gépelj...") 
         combo.setInsertPolicy(QComboBox.InsertPolicy.NoInsert)
-        combo.completer().setFilterMode(Qt.MatchFlag.MatchContains)
+        
+
+        completer = combo.completer()
+        
+        completer.setCompletionMode(QCompleter.CompletionMode.PopupCompletion)
+
+        completer.setFilterMode(Qt.MatchFlag.MatchContains)
+
+        completer.setCaseSensitivity(Qt.CaseSensitivity.CaseInsensitive)
+        
         combo.editTextChanged.connect(lambda t, cb=combo: cb.setCurrentIndex(0) if not t.strip() else None)
+        
         return combo
 
     def set_controller_and_mapping(self, controller, name_map: dict):

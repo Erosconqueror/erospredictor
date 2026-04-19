@@ -11,7 +11,7 @@ from model.gnn_predictor import LeagueGNN
 from configs import MODELS_DIR, CHAMPION_COUNT
 
 class DynamicTrainer:
-    """Trainer with dynamic hyperparameters, early stopping, and LR scheduling."""
+    """Trainer with dynamic hyperparameters, early stopping, and fallback generalization."""
     
     DATASET_SIZES = {
         "GRANDMASTER": 10799, "CHALLENGER": 12011, "MASTER": 89630,
@@ -42,15 +42,18 @@ class DynamicTrainer:
         return {"batch_size": bs, "epochs": ep, "learning_rate": lr, "dataset_size": size}
     
     def train_single_model(self, X: list, y: list, name: str, in_size: int, 
-                          m_type: str = "standard", w: list = None) -> dict:
-        """Train model with dynamic hyperparameters and early stopping."""
+                           m_type: str = "standard", w: list = None, fallback: bool = False) -> dict:
+        """Trains model with dynamic hyperparameters, early stopping, and optional fallback generalization."""
         if not X:
             return {"status": "failed", "reason": "no_data"}
         
         config = self.config
-        ep, bs, lr = config["epochs"], config["batch_size"], config["learning_rate"]
+        ep = 15 if fallback else config["epochs"]
+        bs = config["batch_size"]
+        lr = config["learning_rate"]
+        weight_decay = 1e-3 if fallback else 1e-5
         
-        print(f"[{name}] BS={bs}, EP={ep}, LR={lr:.6f}, Dataset={len(X)}")
+        print(f"[{name}] BS={bs}, EP={ep}, LR={lr:.6f}, WD={weight_decay}, Fallback={fallback}, Dataset={len(X)}")
         
         x_t = torch.tensor(np.array(X, dtype=np.float32))
         y_t = torch.tensor(np.array(y, dtype=np.float32)).unsqueeze(1)
@@ -65,7 +68,7 @@ class DynamicTrainer:
         
         model = ChampionPredictor(in_size).to(self.device) if m_type == "standard" \
                 else RoleAwareEmbeddingPredictor().to(self.device)
-        opt = optim.Adam(model.parameters(), lr=lr)
+        opt = optim.Adam(model.parameters(), lr=lr, weight_decay=weight_decay)
         crit = nn.BCELoss(reduction='none')
         
         self.best_loss = float('inf')
@@ -125,20 +128,23 @@ class DynamicTrainer:
         
         return {"status": "success", "epochs_trained": epoch + 1, "best_loss": float(self.best_loss)}
     
-    def train_gnn_model(self, graphs: list, name: str) -> dict:
-        """Train GNN model with dynamic hyperparameters."""
+    def train_gnn_model(self, graphs: list, name: str, fallback: bool = False) -> dict:
+        """Trains GNN model with dynamic hyperparameters and optional fallback generalization."""
         if not graphs:
             return {"status": "failed", "reason": "no_data"}
         
         config = self.config
-        ep, bs, lr = config["epochs"], max(8, config["batch_size"] // 4), config["learning_rate"] * 0.3
+        ep = 15 if fallback else config["epochs"]
+        bs = max(8, config["batch_size"] // 4)
+        lr = config["learning_rate"] * 0.3
+        weight_decay = 1e-3 if fallback else 1e-5
         
-        print(f"[{name}] BS={bs}, EP={ep}, LR={lr:.6f}")
+        print(f"[{name}] BS={bs}, EP={ep}, LR={lr:.6f}, WD={weight_decay}, Fallback={fallback}")
         
         loader = GeoDataLoader(graphs, batch_size=bs, shuffle=True, num_workers=4, pin_memory=True)
         
         model = LeagueGNN().to(self.device)
-        opt = optim.Adam(model.parameters(), lr=lr)
+        opt = optim.Adam(model.parameters(), lr=lr, weight_decay=weight_decay)
         crit = nn.BCELoss(reduction='none')
         
         self.best_loss = float('inf')
@@ -194,7 +200,7 @@ class MetaLearningTrainer:
     
     def calibrate_ensemble(self, gnn_preds: list, rw_preds: list, ra_preds: list, 
                           stat_preds: list, ground_truth: list, div: str) -> dict:
-        """Train logistic regression meta-model to learn ensemble weights."""
+        """Trains logistic regression meta-model to learn ensemble weights."""
         try:
             from sklearn.linear_model import LogisticRegression
             from sklearn.preprocessing import StandardScaler
@@ -236,6 +242,6 @@ class MetaLearningTrainer:
     
     @staticmethod
     def _softmax(x: np.ndarray) -> np.ndarray:
-        """Convert raw weights to probabilities."""
+        """Converts raw weights to probabilities."""
         e_x = np.exp(x - np.max(x))
         return e_x / e_x.sum()
