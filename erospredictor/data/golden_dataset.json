@@ -1,0 +1,74 @@
+{
+  "cases": [
+    {
+      "scenario": "enemy_4_ad",
+      "description": "Enemy has 4 AD champions",
+      "blue_team": [1, 2, 3, 4, 0],
+      "red_team": [157, 2, 3, 4, 5],
+      "position": 4,
+      "must_pick_from": [31, 54, 157, 223, 120],
+      "avoid_picks": [],
+      "tier": "ALL"
+    },
+    {
+      "scenario": "sylas_ult_threat",
+      "description": "Sylas picked - avoid powerful ultimates",
+      "blue_team": [0, 2, 3, 4, 5],
+      "red_team": [517, 2, 3, 4, 5],
+      "position": 0,
+      "must_pick_from": [1, 2, 3],
+      "avoid_picks": [64, 89, 34],
+      "tier": "ALL"
+    },
+    {
+      "scenario": "rammus_engage_support",
+      "description": "Rammus top needs engage support",
+      "blue_team": [31, 2, 3, 4, 0],
+      "red_team": [1, 2, 3, 4, 5],
+      "position": 4,
+      "must_pick_from": [25, 53, 497],
+      "avoid_picks": [117],
+      "tier": "ALL"
+    },
+    {
+      "scenario": "poke_composition",
+      "description": "Poke comp needs poke support",
+      "blue_team": [0, 2, 3, 4, 0],
+      "red_team": [1, 2, 3, 4, 5],
+      "position": 4,
+      "must_pick_from": [117, 34, 112],
+      "avoid_picks": [],
+      "tier": "ALL"
+    },
+    {
+      "scenario": "evelynn_jungle",
+      "description": "Evelynn jungle needs vision control",
+      "blue_team": [0, 2, 3, 4, 5],
+      "red_team": [1, 28, 3, 4, 5],
+      "position": 0,
+      "must_pick_from": [245, 3],
+      "avoid_picks": [],
+      "tier": "ALL"
+    },
+    {
+      "scenario": "anti_engage_support",
+      "description": "vs Leona/Alistar - pick protective support",
+      "blue_team": [0, 2, 3, 4, 0],
+      "red_team": [1, 2, 3, 4, 25],
+      "position": 4,
+      "must_pick_from": [40, 161],
+      "avoid_picks": [],
+      "tier": "ALL"
+    },
+    {
+      "scenario": "scaling_comp_support",
+      "description": "Scaling ADC needs scaling support",
+      "blue_team": [1, 2, 3, 4, 0],
+      "red_team": [1, 2, 3, 4, 5],
+      "position": 4,
+      "must_pick_from": [16, 267, 40],
+      "avoid_picks": [412],
+      "tier": "ALL"
+    }
+  ]
+}
