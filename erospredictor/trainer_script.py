@@ -1,6 +1,6 @@
 import json
 from model.preprocessor import Preprocessor
-from model.train_model_integrated import DynamicTrainer, MetaLearningTrainer
+from model.train_model import DynamicTrainer, MetaLearningTrainer
 from model.data_manager import DataManager
 from model.statistical import StatisticalModel
 from configs import CHAMPION_COUNT
