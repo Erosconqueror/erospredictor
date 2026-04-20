@@ -1,5 +1,6 @@
 import json
 import os
+import time
 import torch
 from typing import Dict, Any
 
@@ -64,7 +65,7 @@ def quick_evaluate_model(model_id: str, model_obj: Any, div: str, dataset: Golde
         return recs[:top_k]
 
     res_pred = dataset.validate_predictions(predict_fn, div)
-    res_rec = dataset.validate_recommendations(recommend_fn, div, top_k=10)
+    res_rec = dataset.validate_recommendations(recommend_fn, div) # <--- ITT VOLT A HIBA, javítva!
     
     total_tests = res_pred['total'] + res_rec['total']
     if total_tests == 0:
@@ -74,7 +75,7 @@ def quick_evaluate_model(model_id: str, model_obj: Any, div: str, dataset: Golde
     return passed / total_tests
 
 def run_trainer():
-    """Enhanced training script with dynamic hyperparameters, QA fallback mechanisms, and meta-learning calibration."""
+    """Enhanced training script with interactive custom parameters, QA fallback, and execution timers."""
     print("=== EROSPREDICTOR - ENHANCED TRAINING WITH QA ===")
     prep = Preprocessor()
     db = DataManager(True)
@@ -83,9 +84,10 @@ def run_trainer():
     
     while True:
         print("\n1. Preprocess data")
-        print("2. Train models (with Golden Dataset QA Fallback)")
-        print("3. Calibrate ensemble weights")
-        print("4. EXIT")
+        print("2. Train ALL models (with Golden Dataset QA Fallback)")
+        print("3. Train CUSTOM model (Interactive)")
+        print("4. Calibrate ensemble weights")
+        print("5. EXIT")
         
         choice = input("Select: ").strip()
         
@@ -118,6 +120,8 @@ def run_trainer():
             if "MIXED" not in unique_divs:
                 unique_divs.append("MIXED")
             
+            total_start_time = time.time()
+            
             for div in unique_divs:
                 print(f"\n>>> DIV: {div} <<<")
                 
@@ -137,6 +141,7 @@ def run_trainer():
                 trainer = DynamicTrainer(div)
 
                 def train_and_qa(model_id: str, x_data, y_data, w_data, input_size, model_type):
+                    t0 = time.time()
                     print(f"Training {model_id}...")
                     trainer.train_single_model(x_data, y_data, f"{div}_{model_id}", input_size, model_type, w_data, fallback=False)
                     
@@ -156,11 +161,13 @@ def run_trainer():
                             model_obj.eval()
                             score2 = quick_evaluate_model(model_id, model_obj, div, dataset, device)
                             print(f"  -> New QA Pass Rate: {score2*100:.1f}%. Saved for Meta-Calibrator.")
+                    print(f"  -> Total time for {model_id}: {time.time() - t0:.1f} seconds.")
 
                 train_and_qa("roleweighted", x_rw_d, y_rw_d, w_rw_d, CHAMPION_COUNT * 2, "standard")
                 train_and_qa("roleaware", x_ra_d, y_ra_d, w_ra_d, CHAMPION_COUNT * 10, "roleaware")
                 
                 if len(gr_d) >= 200:
+                    t_gnn = time.time()
                     print("Training GNN...")
                     trainer.train_gnn_model(gr_d, f"{div}_gnn", fallback=False)
                     gnn_path = f"models/{div}_gnn.pth"
@@ -173,10 +180,106 @@ def run_trainer():
                         if score < 0.25:
                             print("  [!] GNN QA FAILED (<25%). Retraining with generalized parameters...")
                             trainer.train_gnn_model(gr_d, f"{div}_gnn", fallback=True)
+                    print(f"  -> Total time for GNN: {time.time() - t_gnn:.1f} seconds.")
             
-            print("\n✓ Training and QA complete!")
-        
+            print(f"\n✓ Training and QA complete! Total duration: {(time.time() - total_start_time)/60:.1f} minutes.")
+
         elif choice == "3":
+            print("\n--- Train CUSTOM Model ---")
+            x_rw, y_rw, d_rw, w_rw = prep.process_matches(use_cache=True)
+            x_ra, y_ra, d_ra, w_ra = prep.process_matches_ra(use_cache=True)
+            graphs, d_gnn = prep.process_matches_gnn(use_cache=True)
+
+            if not x_rw:
+                print("No data! Please run Preprocess (1) first.")
+                continue
+
+            unique_divs = sorted(set(d_rw))
+            if "MIXED" not in unique_divs:
+                unique_divs.append("MIXED")
+
+            print(f"Available divisions: {', '.join(unique_divs)}")
+            target_div = input("Select division: ").strip().upper()
+            if target_div not in unique_divs:
+                print("Invalid division.")
+                continue
+
+            print("Available models: 1. roleweighted, 2. roleaware, 3. gnn")
+            m_choice = input("Select model (1/2/3): ").strip()
+            model_map = {"1": "roleweighted", "2": "roleaware", "3": "gnn"}
+            target_model = model_map.get(m_choice)
+            if not target_model:
+                print("Invalid model.")
+                continue
+
+            fallback_input = input("Use fallback parameters (stricter regularization)? (y/n): ").strip().lower()
+            use_fallback = fallback_input == 'y'
+
+            custom_ep, custom_bs, custom_lr = None, None, None
+            if not use_fallback:
+                cust_param_input = input("Use custom hyperparameters? (y/n): ").strip().lower()
+                if cust_param_input == 'y':
+                    try:
+                        custom_ep = int(input("Epochs (e.g. 30): ").strip())
+                        custom_bs = int(input("Batch Size (e.g. 64): ").strip())
+                        custom_lr = float(input("Learning Rate (e.g. 0.001): ").strip())
+                    except ValueError:
+                        print("Invalid numeric input. Proceeding with dynamic defaults.")
+
+            trainer = DynamicTrainer(target_div)
+            if custom_ep and custom_bs and custom_lr:
+                trainer.config["epochs"] = custom_ep
+                trainer.config["batch_size"] = custom_bs
+                trainer.config["learning_rate"] = custom_lr
+
+            if target_div == "MIXED":
+                x_rw_d, y_rw_d, w_rw_d = x_rw, y_rw, w_rw
+                x_ra_d, y_ra_d, w_ra_d = x_ra, y_ra, w_ra
+                gr_d = graphs
+            else:
+                x_rw_d = [x for x, d in zip(x_rw, d_rw) if d == target_div]
+                y_rw_d = [y for y, d in zip(y_rw, d_rw) if d == target_div]
+                w_rw_d = [w for w, d in zip(w_rw, d_rw) if d == target_div]
+                x_ra_d = [x for x, d in zip(x_ra, d_ra) if d == target_div]
+                y_ra_d = [y for y, d in zip(y_ra, d_ra) if d == target_div]
+                w_ra_d = [w for w, d in zip(w_ra, d_ra) if d == target_div]
+                gr_d = [g for g, d in zip(graphs, d_gnn) if d == target_div]
+
+            t_custom = time.time()
+            print(f"\nTraining {target_div}_{target_model} (Fallback: {use_fallback})...")
+            
+            if target_model == "roleweighted":
+                trainer.train_single_model(x_rw_d, y_rw_d, f"{target_div}_roleweighted", CHAMPION_COUNT * 2, "standard", w_rw_d, fallback=use_fallback)
+            elif target_model == "roleaware":
+                trainer.train_single_model(x_ra_d, y_ra_d, f"{target_div}_roleaware", CHAMPION_COUNT * 10, "roleaware", w_ra_d, fallback=use_fallback)
+            elif target_model == "gnn":
+                trainer.train_gnn_model(gr_d, f"{target_div}_gnn", fallback=use_fallback)
+
+            run_qa = input("Run QA evaluation on this model? (y/n): ").strip().lower()
+            if run_qa == 'y':
+                name_map = load_name_map()
+                dataset = GoldenDataset(path="data/golden_dataset.json", name_map=name_map)
+                path = f"models/{target_div}_{target_model}.pth"
+                if os.path.exists(path):
+                    if target_model == "gnn":
+                        gnn_obj = LeagueGNN().to(device)
+                        gnn_obj.load_state_dict(torch.load(path, map_location=device, weights_only=True))
+                        gnn_obj.eval()
+                        score = quick_evaluate_model("gnn", gnn_obj, target_div, dataset, device)
+                        print(f"  -> QA Pass Rate: {score*100:.1f}%")
+                    else:
+                        in_size = CHAMPION_COUNT * 2 if target_model == "roleweighted" else CHAMPION_COUNT * 10
+                        model_obj = ChampionPredictor(input_size=in_size).to(device) if target_model == "roleweighted" else RoleAwareEmbeddingPredictor().to(device)
+                        model_obj.load_state_dict(torch.load(path, map_location=device, weights_only=True))
+                        model_obj.eval()
+                        score = quick_evaluate_model(target_model, model_obj, target_div, dataset, device)
+                        print(f"  -> QA Pass Rate: {score*100:.1f}%")
+                else:
+                    print("Model file not found for evaluation.")
+
+            print(f"\n✓ Custom training complete in {time.time() - t_custom:.1f} seconds!")
+        
+        elif choice == "4":
             print("\nCalibrating ensemble weights using Golden Dataset...")
             name_map = load_name_map()
             dataset = GoldenDataset(path="data/golden_dataset.json", name_map=name_map)
@@ -219,7 +322,7 @@ def run_trainer():
             
             print("\n✓ Calibration complete!")
         
-        elif choice == "4":
+        elif choice == "5":
             break
 
 if __name__ == "__main__":

@@ -1,12 +1,10 @@
 import os
-import json
 import torch
-import numpy as np
 from configs import CHAMPION_COUNT, MODELS_DIR, ROLE_WEIGHTS
 from model.predictor import ChampionPredictor, RoleAwareEmbeddingPredictor
 
 class CoreModel:
-    """Main interface for fast, deterministic predictions with meta-learned ensemble weights."""
+    """Main interface for fast, deterministic match predictions and recommendations."""
     
     def __init__(self, stat_model):
         self.stat_model = stat_model
@@ -17,7 +15,7 @@ class CoreModel:
         self.ensemble_weights = self._default_weights()
 
     def _default_weights(self) -> dict:
-        """Default ensemble weights."""
+        """Returns the default ensemble weights."""
         return {
             "gnn": 0.58,
             "roleweighted": 0.11,
@@ -26,11 +24,11 @@ class CoreModel:
         }
 
     def load_meta_data(self, data):
-        """Load champion meta information."""
+        """Loads champion meta information for filtering recommendations."""
         self.meta_data = data
 
-    def load_ensemble_weights(self, div: str = "MIXED"):
-        """Load learned ensemble weights from meta-calibrator."""
+    def load_ensemble_weights(self, div: str = "MIXED") -> bool:
+        """Loads learned ensemble weights from the meta-calibrator."""
         try:
             from model.meta_calibrator import MetaLearningCalibrator
             calibrator = MetaLearningCalibrator()
@@ -47,7 +45,7 @@ class CoreModel:
         return False
 
     def load_models(self, div: str):
-        """Load appropriate models for given division."""
+        """Loads all required prediction models for a specific division in evaluation mode."""
         if self.active_div == div and self.models:
             return 
             
@@ -67,16 +65,18 @@ class CoreModel:
                 gnn.to(self.device)
                 gnn.eval() 
                 self.models["gnn"] = gnn
-        except Exception: pass
+        except Exception: 
+            pass
 
         try:
             rw_path = os.path.join(MODELS_DIR, f"{div}_roleweighted.pth")
             if os.path.exists(rw_path):
                 rw = ChampionPredictor(input_size=CHAMPION_COUNT * 2).to(self.device)
                 rw.load_state_dict(torch.load(rw_path, map_location=self.device, weights_only=True))
-                rw.eval() 
+                rw.eval()
                 self.models["roleweighted"] = rw
-        except Exception: pass
+        except Exception: 
+            pass
 
         try:
             ra_path = os.path.join(MODELS_DIR, f"{div}_roleaware.pth")
@@ -85,10 +85,11 @@ class CoreModel:
                 ra.load_state_dict(torch.load(ra_path, map_location=self.device, weights_only=True))
                 ra.eval()
                 self.models["roleaware"] = ra
-        except Exception: pass
+        except Exception: 
+            pass
 
     def calc_win_prob_fast(self, div: str, blue: list, red: list) -> float:
-        """Calculate deterministic win probability via meta-learned weights (Lightning Fast)."""
+        """Calculates deterministic win probability using ensemble weighted average."""
         self.load_models(div)
         
         preds = []
@@ -100,7 +101,8 @@ class CoreModel:
                 p = predict_gnn(self.models["gnn"], blue, red, self.device)
                 preds.append(p)
                 weights.append(self.ensemble_weights["gnn"])
-            except Exception: pass
+            except Exception: 
+                pass
 
         if "roleweighted" in self.models:
             c_rw = [0.0] * (CHAMPION_COUNT * 2)
@@ -134,10 +136,12 @@ class CoreModel:
             if p_stat is not None:
                 preds.append(p_stat)
                 weights.append(self.ensemble_weights["statistical"])
-        except Exception: pass
+        except Exception: 
+            pass
 
         if not preds:
             return 0.50
+
         tot_w = sum(weights)
         norm_w = [w / tot_w for w in weights]
         
@@ -145,25 +149,22 @@ class CoreModel:
         return blue_prob
 
     def predict_match(self, div: str, blue: list, red: list) -> dict:
-        """Predict match outcome deterministically."""
+        """Predicts match outcome deterministically with balanced side evaluation."""
         blue_prob_orig = self.calc_win_prob_fast(div, blue, red)
         blue_prob_swap = self.calc_win_prob_fast(div, red, blue)
         
         red_prob_from_swap = 1.0 - blue_prob_swap
-        
         blue_final = (blue_prob_orig * 0.58) + (red_prob_from_swap * 0.42)
         
         return {
             "blue_win_prob": blue_final * 100,
-            "red_win_prob": (1.0 - blue_final) * 100,
-            "uncertainty": 0.0,    
-            "confidence": 100.0   
+            "red_win_prob": (1.0 - blue_final) * 100
         }
 
     def recommend_champs(self, div: str, blue: list, red: list, bans: list, 
                         team: str, r_idx: int, top_k: int = 5, 
                         filter_off_meta: bool = True) -> list:
-        """Recommend champions fast and deterministically."""
+        """Recommends champions deterministically based on maximum win probability."""
         unavail = set(bans).union(set([c for c in blue + red if c > 0]))
         res = []
         
@@ -183,13 +184,15 @@ class CoreModel:
                 continue
 
             t_blue, t_red = list(blue), list(red)
-            if team == "blue": t_blue[r_idx] = c_id
-            else: t_red[r_idx] = c_id
+            if team == "blue": 
+                t_blue[r_idx] = c_id
+            else: 
+                t_red[r_idx] = c_id
 
             pred = self.predict_match(div, t_blue, t_red)
             score = pred["blue_win_prob"] if team == "blue" else pred["red_win_prob"]
             
-            res.append((c_id, score, 0.0, 100.0)) 
+            res.append((c_id, score, 0.0, 100.0))
 
         res.sort(key=lambda x: (x[1] if x[1] != 50.0 else -1.0), reverse=True)
         return [{"id": cid, "wr": prob, "uncertainty": unc, "confidence": conf} 

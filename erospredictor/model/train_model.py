@@ -64,7 +64,7 @@ class DynamicTrainer:
         train_indices = np.array([i for i in range(len(X)) if i not in val_indices])
         
         train_ds = TensorDataset(x_t[train_indices], y_t[train_indices], w_t[train_indices])
-        loader = TorchDataLoader(train_ds, batch_size=bs, shuffle=True, num_workers=4, pin_memory=True)
+        loader = TorchDataLoader(train_ds, batch_size=bs, shuffle=True, num_workers=0, pin_memory=True)
         
         model = ChampionPredictor(in_size).to(self.device) if m_type == "standard" \
                 else RoleAwareEmbeddingPredictor().to(self.device)
@@ -141,7 +141,7 @@ class DynamicTrainer:
         
         print(f"[{name}] BS={bs}, EP={ep}, LR={lr:.6f}, WD={weight_decay}, Fallback={fallback}")
         
-        loader = GeoDataLoader(graphs, batch_size=bs, shuffle=True, num_workers=4, pin_memory=True)
+        loader = GeoDataLoader(graphs, batch_size=bs, shuffle=True, num_workers=0, pin_memory=True)
         
         model = LeagueGNN().to(self.device)
         opt = optim.Adam(model.parameters(), lr=lr, weight_decay=weight_decay)
@@ -190,7 +190,6 @@ class DynamicTrainer:
         torch.save(model.state_dict(), os.path.join(MODELS_DIR, f"{name}.pth"))
         
         return {"status": "success", "epochs_trained": epoch + 1, "best_loss": float(self.best_loss)}
-
 
 class MetaLearningTrainer:
     """Trains meta-model to learn optimal ensemble weights."""

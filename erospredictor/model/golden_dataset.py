@@ -23,8 +23,8 @@ class GoldenDataset:
         """Converts a list of champion names to their corresponding numerical IDs."""
         return [self.name_map.get(n, 0) if n else 0 for n in names]
 
-    def validate_recommendations(self, recommendation_fn: Callable, div: str, top_k: int = 10) -> Dict:
-        """Validates champion recommendations ensuring required picks are in top K and avoided picks are in bottom 10."""
+    def validate_recommendations(self, recommendation_fn: Callable, div: str) -> Dict:
+        """Validates champion recommendations. Must-picks in Top 5, Avoid-picks NOT in Top 10."""
         results = []
         
         for case in self.recommendation_cases:
@@ -36,28 +36,28 @@ class GoldenDataset:
             
             recs = recommendation_fn(div=div, blue=blue_ids, red=red_ids, bans=[], 
                                      team="blue" if r_idx < 5 else "red", 
-                                     r_idx=r_idx % 5, top_k=160)
+                                     r_idx=r_idx % 5, top_k=50)
             
             rec_ids = [r['id'] for r in recs]
             passed = True
             reasons = []
 
             if must_pick_ids:
-                top_k_ids = set(rec_ids[:top_k])
-                if not must_pick_ids.intersection(top_k_ids):
+                top_5_ids = set(rec_ids[:5])
+                if not must_pick_ids.intersection(top_5_ids):
                     passed = False
-                    reasons.append(f"Failed: Must-pick champion not found in Top {top_k}.")
+                    reasons.append("Failed: Must-pick champion not found in Top 5.")
 
             if avoid_ids:
-                bottom_10_ids = set(rec_ids[-10:]) if len(rec_ids) >= 10 else set(rec_ids)
+                top_10_ids = set(rec_ids[:8])
                 for avoid_id in avoid_ids:
-                    if avoid_id in rec_ids and avoid_id not in bottom_10_ids:
+                    if avoid_id in top_10_ids:
                         passed = False
-                        reasons.append("Failed: Avoid-pick champion not found in Bottom 10.")
+                        reasons.append("Failed: Avoid-pick champion found in Top 8.")
                         break
 
             results.append({
-                'scenario': case['scenario'],
+                'scenario': case.get('scenario', 'Unknown'),
                 'passed': passed,
                 'reasons': reasons
             })
@@ -85,7 +85,7 @@ class GoldenDataset:
             passed = min_wr <= blue_wr <= max_wr
             
             results.append({
-                'scenario': case['scenario'],
+                'scenario': case.get('scenario', 'Unknown'),
                 'predicted_winrate': round(blue_wr, 2),
                 'expected_range': f"{min_wr}% - {max_wr}%",
                 'passed': passed

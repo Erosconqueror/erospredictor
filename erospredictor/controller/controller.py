@@ -4,7 +4,7 @@ from model.data_manager import DataManager
 from model.core_model import CoreModel
 
 class Controller:
-    """The Controller coordinates the prediction process, validates inputs, and formats results for the view."""
+    """A Controller koordinálja a jóslási folyamatot, validálja a bemeneteket és formázza az eredményeket a nézet számára."""
     def __init__(self, view=None, dev_mode=False):
         self.view = view
         self.db = DataManager(dev_mode=dev_mode)
@@ -16,7 +16,7 @@ class Controller:
             self.core_model.load_meta_data(meta_data)
 
     def validate_draft(self, blue_picks: list, red_picks: list, blue_bans: list, red_bans: list) -> tuple:
-        """Validates the current draft state and returns a (is_valid, error_message) tuple."""
+        """Validálja a jelenlegi draft állapotát."""
         b_bans = [i for i in blue_bans if i > 0]
         r_bans = [i for i in red_bans if i > 0]
         b_picks = [i for i in blue_picks if i > 0]
@@ -39,7 +39,7 @@ class Controller:
         return True, ""
 
     def get_winrate_color(self, wr: float) -> str:
-        """Returns a hex color string based on winrate percentage thresholds."""
+        """Hex színt ad vissza a winrate alapján."""
         if wr >= 57.0: return "#00E676"      
         elif wr >= 54.0: return "#66BB6A"    
         elif wr >= 51.5: return "#A5D6A7"    
@@ -49,7 +49,7 @@ class Controller:
         return "#D32F2F"
 
     def predict_match(self, div: str, blue: list, red: list) -> dict:
-        """Predicts match outcome and returns formatted UI data including colors and progress bar values."""
+        """Meccs eredmény jóslása és UI adatok formázása."""
         res = self.core_model.predict_match(div, blue, red)
         b_wr = res['blue_win_prob']
         r_wr = res['red_win_prob']
@@ -63,7 +63,7 @@ class Controller:
         }
 
     def recommend_champs(self, div: str, blue: list, red: list, bans: list, team: str, r_idx: int, top_k: int = 5, filter_off_meta: bool = True) -> list:
-        """Fetches champion recommendations and pre-calculates the UI display color for each."""
+        """Hős ajánlások lekérése és UI színek kiszámítása."""
         recs = self.core_model.recommend_champs(div, blue, red, bans, team, r_idx, top_k, filter_off_meta)
         for rec in recs:
             rec['display_color'] = self.get_winrate_color(rec['wr'])
