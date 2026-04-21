@@ -66,6 +66,7 @@ class StatisticalModel:
         return False
 
     def predict(self, div: str, blue: list, red: list) -> float:
+        """Predicts the probability of the blue team winning based on champion matchups and bot lane synergies for the specified division."""
         if div == "MIXED":
             total_weighted_prob = 0.0
             total_weight_sum = 0.0
@@ -86,9 +87,10 @@ class StatisticalModel:
             return prob
 
     def _predict_tier(self, div: str, blue: list, red: list):
+        """Helper function to predict win probability for a specific division based on champion matchups and bot lane synergies."""
         probs = []
-        total_w = 0
-        total_m = 0
+        total_w = 0.0
+        total_m = 0.0
         
         for i, r in enumerate(["TOP", "JUNGLE", "MIDDLE", "BOTTOM", "UTILITY"]):
             bc, rc = str(blue[i]), str(red[i])
@@ -100,12 +102,27 @@ class StatisticalModel:
                 total_m += c_stats["m"]
 
         b_adc, b_sup = str(blue[3]), str(blue[4])
-        syn_stats = self.matchups.get(div, {}).get("BOT_SYNERGY", {}).get(b_adc, {}).get(b_sup)
+        b_syn_stats = self.matchups.get(div, {}).get("BOT_SYNERGY", {}).get(b_adc, {}).get(b_sup)
+        
+        r_adc, r_sup = str(red[3]), str(red[4])
+        r_syn_stats = self.matchups.get(div, {}).get("BOT_SYNERGY", {}).get(r_adc, {}).get(r_sup)
+        
+        syn_probs = []
+        
+        if b_syn_stats and b_syn_stats["m"] > 0:
+            b_w, b_m = float(b_syn_stats["w"]), float(b_syn_stats["m"])
+            syn_probs.append(b_w / b_m)
+            total_w += b_w / 2.0
+            total_m += b_m / 2.0
             
-        if syn_stats and syn_stats["m"] > 0:
-            probs.append(syn_stats["w"] / syn_stats["m"])
-            total_w += syn_stats["w"]
-            total_m += syn_stats["m"]
+        if r_syn_stats and r_syn_stats["m"] > 0:
+            r_w, r_m = float(r_syn_stats["w"]), float(r_syn_stats["m"])
+            syn_probs.append(1.0 - (r_w / r_m))
+            total_w += (r_m - r_w) / 2.0
+            total_m += r_m / 2.0
+            
+        if syn_probs:
+            probs.append(sum(syn_probs) / len(syn_probs))
 
         if not probs or total_m == 0:
             return 0.50, 0

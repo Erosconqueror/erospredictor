@@ -102,7 +102,7 @@ class TestRecommendationsRealFiles(unittest.TestCase):
         except Exception:
             self.core.meta_data = {}
             
-        self.patcher = patch.object(CoreModel, 'calc_win_prob', return_value=0.55)
+        self.patcher = patch.object(CoreModel, 'calc_win_prob_fast', return_value=0.55)
         self.mock_calc = self.patcher.start()
 
     def tearDown(self):
