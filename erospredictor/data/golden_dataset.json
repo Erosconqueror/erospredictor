@@ -5,8 +5,8 @@
       "blue_team": [ "Yasuo", "Zed", "Talon", "Draven", "Pyke" ],
       "red_team": [ "Aatrox", "Lee Sin", "Ahri", "Ezreal", "" ],
       "position": 9,
-      "must_pick_from": [ "Alistar", "Malphite", "Taric" ],
-      "avoid_picks": [ "Soraka", "Sona", "Yuumi" ]
+      "must_pick_from": [ "Alistar", "Malphite", "Taric", "Poppy" ],
+      "avoid_picks": [ "Soraka", "Sona", "Yuumi", "Xerath", "Vel'Koz" ]
     },
     {
       "scenario": "sylas_ult_threat",
@@ -29,7 +29,7 @@
       "blue_team": [ "Nasus", "Kindred", "Zoe", "Draven", "Yuumi" ],
       "red_team": [ "Tryndamere", "Master Yi", "Katarina", "Yunara", "" ],
       "position": 9,
-      "must_pick_from": [ "Braum", "Thresh", "Blitzcrank", "Leona" ],
+      "must_pick_from": [ "Braum", "Thresh", "Blitzcrank", "Lulu" ],
       "avoid_picks": [ "Xerath", "Lux" ]
     },
     {
@@ -45,7 +45,7 @@
       "blue_team": [ "Malphite", "Jarvan IV", "", "Miss Fortune", "" ],
       "red_team": [ "Darius", "Nunu & Willump", "", "Jhin", "" ],
       "position": 2,
-      "must_pick_from": [ "Orianna", "Diana", "Aurora", "Yasuo" ],
+      "must_pick_from": [ "Orianna", "Diana", "Aurora" ],
       "avoid_picks": [ "Zed", "Talon" ]
     },
     {
@@ -59,7 +59,7 @@
     {
       "scenario": "red_protect_the_hypercarry",
       "blue_team": [ "", "Vi", "Ahri", "Kai'Sa", "Leona" ],
-      "red_team": [ "", "Ivern", "", "Kog'Maw", "Lulu" ],
+      "red_team": [ "", "Ivern", "", "Kog'Maw", "Soraka" ],
       "position": 5,
       "must_pick_from": [ "Ornn", "Sion", "Maokai", "Shen" ],
       "avoid_picks": [ "Teemo", "Quinn", "Vayne" ]
@@ -77,7 +77,7 @@
       "blue_team": [ "", "", "Hwei", "Kai'Sa", "Rell" ],
       "red_team": [ "Garen", "Graves", "Ryze", "", "" ],
       "position": 8,
-      "must_pick_from": [ "Varus", "Ezreal", "Caitlyn"],
+      "must_pick_from": [ "Varus", "Ezreal", "Caitlyn", "Yunara"],
       "avoid_picks": [ "Yasuo", "Draven" ]
     },
     {
@@ -85,7 +85,7 @@
       "blue_team": [ "Darius", "", "Zed", "Corki", "" ],
       "red_team": [ "Poppy", "Jarvan IV", "", "", "Alistar" ],
       "position": 1,
-      "must_pick_from": [ "Evelynn", "Fiddlesticks", "Karthus", "Lillia" ],
+      "must_pick_from": [ "Diana", "Fiddlesticks", "Karthus"],
       "avoid_picks": [ "Lee Sin", "Xin Zhao", "Kha'Zix", "Talon" ]
     },
     {
@@ -101,7 +101,7 @@
       "blue_team": [ "Pantheon", "Bel'Veth", "Sylas", "Lucian", "Rakan" ],
       "red_team": [ "Garen", "", "", "Xayah", "Alistar" ],
       "position": 6,
-      "must_pick_from": [ "Poppy", "Taliyah" ],
+      "must_pick_from": [ "Poppy", "Taliyah", "Vi" ],
       "avoid_picks": [ "Aatrox", "Nidalee" ]
     },
     {
@@ -116,7 +116,7 @@
       "scenario": "blue_needs_apc",
       "blue_team": [ "Garen", "Rengar", "Akshan", "", ""  ],
       "red_team": [ "Wukong", "Shen", "Pantheon", "", "Tahm Kench"],
-      "position": 4,
+      "position": 3,
       "must_pick_from": [ "Brand", "Veigar", "Swain", "Lux" ],
       "avoid_picks": [ "Jhin", "Draven", "Aphelios", "Tristana" ]
     }
