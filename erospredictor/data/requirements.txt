@@ -8,3 +8,4 @@ requests>=2.31.0
 psycopg2>=2.9.9
 PyQt6>=6.6.1
 numpy>=1.26.0
+sickit-learn>=1.8

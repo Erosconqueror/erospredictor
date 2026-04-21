@@ -10,6 +10,7 @@ FILES_TO_UPDATE = [
     "data/champion_names.json",
     "data/meta_champs.json",
     "data/stats_cache.json",
+    "data/golden_dataset.json",
     "models/BRONZE_gnn.pth",
     "models/BRONZE_roleaware.pth",
     "models/BRONZE_roleweighted.pth",
