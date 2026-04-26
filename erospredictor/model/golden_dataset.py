@@ -24,7 +24,7 @@ class GoldenDataset:
         return [self.name_map.get(n, 0) if n else 0 for n in names]
 
     def validate_recommendations(self, recommendation_fn: Callable, div: str) -> Dict:
-        """Validates champion recommendations. Must-picks in Top 5, Avoid-picks NOT in Top 10."""
+        """Validates champion recommendations. Must-picks in Top 5, Avoid-picks NOT in Top 8."""
         results = []
         
         for case in self.recommendation_cases:

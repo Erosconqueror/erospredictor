@@ -16,17 +16,20 @@ class Preprocessor:
         self.c_map = self.db.get_champion_mapping()
 
     def _calc_weights(self) -> dict:
+        """Calculates weights for each patch based on recency, with a minimum threshold to prevent zeroing out."""
         w_map = {}
         for i, p in enumerate(reversed(ALLOWED_PATCHES)):
             w_map[p] = max(0.1, 1.0 - (i * 0.2))
         return w_map
 
     def clear_cache(self):
+        """Clears cached"""
         self.c_rw = None
         self.c_ra = None
         self.c_gnn = None
 
     def process_matches(self, use_cache: bool = True) -> tuple:
+        """Processes match data into a format suitable for training the role-weighted model, with optional caching."""
         if use_cache and self.c_rw:
             return self.c_rw
         
@@ -59,6 +62,7 @@ class Preprocessor:
         return self.c_rw
 
     def process_matches_ra(self, use_cache: bool = True) -> tuple:
+        """Processes match data into a format suitable for training the role-aware model, with optional caching."""
         if use_cache and self.c_ra:
             return self.c_ra
             
@@ -89,6 +93,7 @@ class Preprocessor:
         return self.c_ra
 
     def process_matches_gnn(self, use_cache: bool = True) -> tuple:
+        """Processes match data into graph representations suitable for training the GNN model, with optional caching."""
         if use_cache and self.c_gnn:
             return self.c_gnn
                 
@@ -116,6 +121,7 @@ class Preprocessor:
         return self.c_gnn
 
     def gen_meta_champs(self):
+        """Generates meta champion lists for each role and division based on pick frequency, saving results to the database."""
         matches = self.db.get_all_matches()
         if not matches: return
 

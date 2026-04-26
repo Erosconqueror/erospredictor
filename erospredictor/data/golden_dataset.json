@@ -149,7 +149,7 @@
     {
       "scenario": "full_ad_vs_tanks_drz",
       "blue_team": [ "Sion", "Jarvan IV", "Neeko", "Caitlyn", "Blitzcrank" ],
-      "red_team": [ "K'Sante", "Nocturne", "Yone", "Samira", "Nautilus" ],
+      "red_team": [ "K'Sante", "Nocturne", "Talon", "Samira", "Nautilus" ],
       "expected_blue_winrate_min": 53.2,
       "expected_blue_winrate_max": 65.0
     },
