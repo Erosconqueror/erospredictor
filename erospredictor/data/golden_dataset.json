@@ -1,0 +1,257 @@
+{
+  "recommendation_cases": [
+    {
+      "scenario": "enemy_4_ad",
+      "blue_team": [ "Yasuo", "Zed", "Talon", "Draven", "Pyke" ],
+      "red_team": [ "Aatrox", "Lee Sin", "Ahri", "Ezreal", "" ],
+      "position": 9,
+      "must_pick_from": [ "Alistar", "Malphite", "Taric", "Poppy" ],
+      "avoid_picks": [ "Soraka", "Sona", "Yuumi", "Xerath", "Vel'Koz" ]
+    },
+    {
+      "scenario": "sylas_ult_threat",
+      "blue_team": [ "", "Vi", "Syndra", "Jinx", "Lulu" ],
+      "red_team": [ "Sylas", "Jarvan IV", "Orianna", "Ashe", "Nautilus" ],
+      "position": 0,
+      "must_pick_from": [ "Teemo", "Darius", "Illaoi" ],
+      "avoid_picks": [ "Malphite", "Garen", "Cho'Gath" ]
+    },
+    {
+      "scenario": "itero_jg",
+      "blue_team": [ "Kennen", "", "Aurelion Sol", "Samira", "Braum" ],
+      "red_team": [ "Tryndamere", "Fiddlesticks", "Azir", "Senna", "Yuumi" ],
+      "position": 1,
+      "must_pick_from": [ "Vi", "Rek'Sai", "Rammus" ],
+      "avoid_picks": [ "Gwen", "Kindred", "Kayn" ]
+    },
+    {
+      "scenario": "itero_support",
+      "blue_team": [ "Nasus", "Kindred", "Zoe", "Draven", "Yuumi" ],
+      "red_team": [ "Tryndamere", "Master Yi", "Katarina", "Yunara", "" ],
+      "position": 9,
+      "must_pick_from": [ "Braum", "Thresh", "Blitzcrank", "Lulu" ],
+      "avoid_picks": [ "Xerath", "Lux" ]
+    },
+    {
+      "scenario": "itero_mid",
+      "blue_team": [ "Shen", "Graves", "", "Smolder", "Brand" ],
+      "red_team": [ "Malphite", "Shyvana", "Fizz", "Ashe", "Seraphine" ],
+      "position": 2,
+      "must_pick_from": [ "Sylas", "Akali", "Kassadin" ],
+      "avoid_picks": [ "Talon", "Yone", "Naafiri" ]
+    },
+    {
+      "scenario": "blue_wombo_combo_setup",
+      "blue_team": [ "Malphite", "Jarvan IV", "", "Miss Fortune", "" ],
+      "red_team": [ "Darius", "Nunu & Willump", "", "Jhin", "" ],
+      "position": 2,
+      "must_pick_from": [ "Orianna", "Diana", "Aurora" ],
+      "avoid_picks": [ "Zed", "Talon" ]
+    },
+    {
+      "scenario": "blue_needs_ap_mid",
+      "blue_team": [ "", "Lee Sin", "", "Lucian", "Nautilus" ],
+      "red_team": [ "Ornn", "Sejuani", "", "Xayah", "Rell" ],
+      "position": 2,
+      "must_pick_from": [ "Viktor", "Cassiopeia", "Anivia", "Azir" ],
+      "avoid_picks": [ "Zed", "Talon", "Yasuo", "Yone" ]
+    },
+    {
+      "scenario": "red_protect_the_hypercarry",
+      "blue_team": [ "", "Vi", "Ahri", "Kai'Sa", "Leona" ],
+      "red_team": [ "", "Ivern", "", "Kog'Maw", "Soraka" ],
+      "position": 5,
+      "must_pick_from": [ "Ornn", "Sion", "Maokai", "Shen" ],
+      "avoid_picks": [ "Teemo", "Quinn", "Vayne" ]
+    },
+    {
+      "scenario": "blue_anti_poke_engage",
+      "blue_team": [ "Garen", "", "Orianna", "Samira", "Alistar" ],
+      "red_team": [ "Jayce", "Nidalee", "", "Varus", "Karma" ],
+      "position": 1,
+      "must_pick_from": [ "Zac", "Nocturne", "Diana", "Amumu" ],
+      "avoid_picks": [ "Kindred", "Graves", "Karthus" ]
+    },
+    {
+      "scenario": "red_need_range",
+      "blue_team": [ "", "", "Hwei", "Kai'Sa", "Rell" ],
+      "red_team": [ "Garen", "Graves", "Ryze", "", "" ],
+      "position": 8,
+      "must_pick_from": [ "Varus", "Ezreal", "Caitlyn", "Yunara"],
+      "avoid_picks": [ "Yasuo", "Draven" ]
+    },
+    {
+      "scenario": "blue_needs_ap_jungle",
+      "blue_team": [ "Darius", "", "Zed", "Corki", "" ],
+      "red_team": [ "Poppy", "Jarvan IV", "", "", "Alistar" ],
+      "position": 1,
+      "must_pick_from": [ "Diana", "Fiddlesticks", "Karthus"],
+      "avoid_picks": [ "Lee Sin", "Xin Zhao", "Kha'Zix", "Talon" ]
+    },
+    {
+      "scenario": "red_needs_cc_vs_hypercarries",
+      "blue_team": [ "Gwen", "Master Yi", "Katarina", "Ezreal", "" ],
+      "red_team": [ "Irelia", "Ekko", "", "Xayah", "" ],
+      "position": 7,
+      "must_pick_from": [ "Malzahar", "Lissandra", "Annie", "Galio" ],
+      "avoid_picks": [ "Vel'Koz", "Xerath", "Ziggs" ]
+    },
+    {
+      "scenario": "blue_lot_of_dashes",
+      "blue_team": [ "Pantheon", "Bel'Veth", "Sylas", "Lucian", "Rakan" ],
+      "red_team": [ "Garen", "", "", "Xayah", "Alistar" ],
+      "position": 6,
+      "must_pick_from": [ "Poppy", "Taliyah", "Vi" ],
+      "avoid_picks": [ "Aatrox", "Nidalee" ]
+    },
+    {
+      "scenario": "red_lot_of_dashes",
+      "blue_team": [ "Garen", "", "", "Miss Fortune", "Morgana"  ],
+      "red_team": [ "Irelia", "Qiyana", "Yone", "Samira", "Alistar"],
+      "position": 2,
+      "must_pick_from": [ "Vex", "Taliyah", "Veigar" ],
+      "avoid_picks": [ "Naafiri", "Aurelion Sol" ]
+    },
+    {
+      "scenario": "blue_needs_apc",
+      "blue_team": [ "Garen", "Rengar", "Akshan", "", "" ],
+      "red_team": [ "Wukong", "Shen", "Pantheon", "", "Tahm Kench" ],
+      "position": 3,
+      "must_pick_from": [ "Brand", "Veigar", "Swain", "Lux" ],
+      "avoid_picks": [ "Jhin", "Draven", "Aphelios", "Tristana" ]
+    },
+    {
+      "scenario": "blue_supp_jg",
+      "blue_team": [ "", "", "", "", "" ],
+      "red_team": [ "", "", "", "", "" ],
+      "position": 1,
+      "must_pick_from": [ "Briar", "Nocturne", "Amumu", "Shyvana" ],
+      "avoid_picks": [ "Nami", "Millio", "Lulu", "Janna", "Yuumi", "Pyke" ]
+    },
+    {
+      "scenario": "red_supp_jg",
+      "blue_team": [ "", "", "", "", "" ],
+      "red_team": [ "", "", "", "", "" ],
+      "position": 6,
+      "must_pick_from": [ "Briar", "Nocturne", "Amumu", "Naafiri" ],
+      "avoid_picks": [ "Nami", "Millio", "Lulu", "Janna", "Yuumi", "Pyke" ]
+    }
+
+
+  ],
+  "prediction_cases": [
+    {
+      "scenario": "blue_heavy_engage_wins",
+      "blue_team": [ "Malphite", "Amumu", "Orianna", "Miss Fortune", "Leona" ],
+      "red_team": [ "Teemo", "Kindred", "Katarina", "Ezreal", "Soraka" ],
+      "expected_blue_winrate_min": 52.5,
+      "expected_blue_winrate_max": 65.0
+    },
+    {
+      "scenario": "red_full_counter",
+      "blue_team": [ "Malphite", "Sejuani", "Azir", "Ashe", "Braum" ],
+      "red_team": [ "Dr. Mundo", "Lillia", "Sylas", "Tristana", "Zilean" ],
+      "expected_blue_winrate_min": 38.0,
+      "expected_blue_winrate_max": 47.3
+    },
+    {
+      "scenario": "full_ad_vs_tanks",
+      "blue_team": [ "Jayce", "Talon", "Qiyana", "Ashe", "Pyke" ],
+      "red_team": [ "Malphite", "Rammus", "Sion", "Tristana", "Nautilus" ],
+      "expected_blue_winrate_min": 30.0,
+      "expected_blue_winrate_max": 46.0
+    },
+    {
+      "scenario": "full_ad_vs_tanks_drz",
+      "blue_team": [ "Sion", "Jarvan IV", "Neeko", "Caitlyn", "Blitzcrank" ],
+      "red_team": [ "K'Sante", "Nocturne", "Talon", "Samira", "Nautilus" ],
+      "expected_blue_winrate_min": 53.2,
+      "expected_blue_winrate_max": 65.0
+    },
+    {
+      "scenario": "xspace_stomp",
+      "blue_team": [ "Dr. Mundo", "Lillia", "Jayce", "Jhin", "Sona" ],
+      "red_team": [ "Gwen", "Naafiri", "Vladimir", "Jinx", "Elise" ],
+      "expected_blue_winrate_min": 35,
+      "expected_blue_winrate_max": 46.5
+    },
+    {
+      "scenario": "tanks_vs_tank_counters",
+      "blue_team": [ "Sion", "Rammus", "Cho'gath", "Tristana", "Nautilus" ],
+      "red_team": [ "Fiora", "Gwen", "Brand", "Kog'Maw", "Milio" ],
+      "expected_blue_winrate_min": 35.0,
+      "expected_blue_winrate_max": 46.5
+    },
+    {
+      "scenario": "ad_vs_super_tanks",
+      "blue_team": [ "Ornn", "Sejuani", "Malphite", "Ezreal", "Alistar" ],
+      "red_team": [ "Riven", "Talon", "Zed", "Jhin", "Pantheon" ],
+      "expected_blue_winrate_min": 54.5,
+      "expected_blue_winrate_max": 70.0
+    },
+    {
+      "scenario": "sylas_vs_good_ult",
+      "blue_team": [ "Malphite", "Amumu", "Swain", "Zeri", "Alistar" ],
+      "red_team": [ "Sion", "Shyvana", "Sylas", "Jinx", "Karma" ],
+      "expected_blue_winrate_min": 53.5,
+      "expected_blue_winrate_max": 65.0
+    },
+    {
+      "scenario": "cc_shuts_down_carries",
+      "blue_team": [ "Ornn", "Vi", "Malzahar", "Ashe", "Leona" ],
+      "red_team": [ "Varus", "Master Yi", "LeBlanc", "Samira", "Soraka" ],
+      "expected_blue_winrate_min": 53.0,
+      "expected_blue_winrate_max": 65.0
+    },
+    {
+      "scenario": "blue_bad_comp",
+      "blue_team": [ "Jayce", "Shyvana", "Taliyah", "Kalista", "Mel" ],
+      "red_team": [ "Kayle", "Briar", "Anivia", "Veigar", "Nami" ],
+      "expected_blue_winrate_min": 30.5,
+      "expected_blue_winrate_max": 44.5
+    },
+    {
+      "scenario": "blue_strong_comp",
+      "blue_team": [ "Garen", "Dr. Mundo", "Annie", "Yasuo", "Milio" ],
+      "red_team": [ "K'Sante", "Zed", "Smolder", "Ezreal", "Swain" ],
+      "expected_blue_winrate_min": 54.0,
+      "expected_blue_winrate_max": 75.0
+    },
+    {
+      "scenario": "random_blue",
+      "blue_team": [ "Pyke", "Azir", "Olaf", "Zaheen", "Master Yi" ],
+      "red_team": [ "Tahm Kench", "Lillia", "Ekko", "Xayah", "Lulu" ],
+      "expected_blue_winrate_min": 0.0,
+      "expected_blue_winrate_max": 30.0
+    },
+    {
+      "scenario": "random_blue_2",
+      "blue_team": [ "Kindred", "Veigar", "Soraka", "Maokai", "Jayce" ],
+      "red_team": [ "Pantheon", "Zac", "Katarina", "Caitlyn", "Morgana" ],
+      "expected_blue_winrate_min": 0.0,
+      "expected_blue_winrate_max": 30.0
+    },
+    {
+      "scenario": "random_red",
+      "blue_team": [ "Malphite", "Xin Zhao", "Anivia", "Sivir", "Nautilus" ],
+      "red_team": [ "Kha'Zix", "Sona", "Bard", "Leona", "Yone" ],
+      "expected_blue_winrate_min": 65.0,
+      "expected_blue_winrate_max": 100.0
+    },
+    {
+      "scenario": "random_red_2",
+      "blue_team": [ "Garen", "Dr. Mundo", "Annie", "Yasuo", "Milio" ],
+      "red_team": [ "Yuumi", "Soraka", "Rell", "Maokai", "Lee Sin" ],
+      "expected_blue_winrate_min": 65.0,
+      "expected_blue_winrate_max": 100.0
+    },
+    {
+      "scenario": "base",
+      "blue_team": [ "", "", "", "", "" ],
+      "red_team": [ "", "", "", "", "" ],
+      "expected_blue_winrate_min": 49.5,
+      "expected_blue_winrate_max": 52.5
+    }
+
+  ]
+}

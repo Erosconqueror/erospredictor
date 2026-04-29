@@ -1,0 +1,21 @@
+# Az Erospredictor használata
+
+Ez az alkalmazás gépi tanulási, és statisztikai modellek segítségével elemzi a League of Legends hősválasztási (Draft) fázisát.
+
+### 1. Divízió kiválasztása
+A felső legördülő menüben válaszd ki, hogy milyen rangbeli mérkőzést szeretnél szimulálni (Pl. Iron, Diamond, vagy All Ranks a vegyes modellhez).
+
+### 2. Tiltások (Bans) megadása
+A piros keretes részben adhatod meg azokat a hősöket, akiket a csapatok kitiltottak. **Ezeket a hősöket a program nem fogja ajánlani**. (Ha csak a saját ösvényedre szeretnél ajánlást akkor elegendő a releváns pozícióban játszható kitiltott hősöket megadni)
+
+### 3. Hős Ajánló Rendszer
+1. Állapítsd meg, hogy melyik csapatban játszol: ha nem emlékeznél, hogy melyik oldalra kerültetek **a kék csapat kezd elsőnek 1 darab hőssel, majd 2-2, és a piros csapat fejezi be az utolsó 1 hős választásával a LoL kliensen belül**
+2. A lenti panelen válaszd ki az **Oldalt**, és a **Pozíciót** (Top, Mid stb.).
+3. Válaszd ki az eddig **Kék** és a **Piros** csapat hőseit a legördülő menükből.
+4. A **Off-meta hősök kiszűrése** opció garantálja, hogy a rendszer csak olyan karaktereket ajánl, amiket abban a divízióban gyakrabban játszanak, de ha "off-meta" ájánlásokat is próbálnál akkor ezt hagy kikapcsolva.
+5. Kattints az **AJÁNLÁS** gombra, és a rendszer megppróbálja megállapítani, mely 5 hőssel lenne a legmagasabb eélyetek nyerni.
+
+### 4. Predikció
+1. Válaszd ki az összes maradék választott hőst a középső legördülő menükből.
+2. Kattints a zöld **PREDIKCIÓ INDÍTÁSA** gombra.
+3. A középső felületen megjelenik, hogy az algoritmus szerint melyik csapatnak hány százalék esélye van a győzelemre az adott felállás alapján.
