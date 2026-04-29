@@ -114,13 +114,28 @@
     },
     {
       "scenario": "blue_needs_apc",
-      "blue_team": [ "Garen", "Rengar", "Akshan", "", ""  ],
-      "red_team": [ "Wukong", "Shen", "Pantheon", "", "Tahm Kench"],
+      "blue_team": [ "Garen", "Rengar", "Akshan", "", "" ],
+      "red_team": [ "Wukong", "Shen", "Pantheon", "", "Tahm Kench" ],
       "position": 3,
       "must_pick_from": [ "Brand", "Veigar", "Swain", "Lux" ],
       "avoid_picks": [ "Jhin", "Draven", "Aphelios", "Tristana" ]
+    },
+    {
+      "scenario": "blue_supp_jg",
+      "blue_team": [ "", "", "", "", "" ],
+      "red_team": [ "", "", "", "", "" ],
+      "position": 1,
+      "must_pick_from": [ "Briar", "Nocturne", "Amumu", "Shyvana" ],
+      "avoid_picks": [ "Nami", "Millio", "Lulu", "Janna", "Yuumi", "Pyke" ]
+    },
+    {
+      "scenario": "red_supp_jg",
+      "blue_team": [ "", "", "", "", "" ],
+      "red_team": [ "", "", "", "", "" ],
+      "position": 6,
+      "must_pick_from": [ "Briar", "Nocturne", "Amumu", "Naafiri" ],
+      "avoid_picks": [ "Nami", "Millio", "Lulu", "Janna", "Yuumi", "Pyke" ]
     }
-    
 
 
   ],
@@ -201,6 +216,34 @@
       "red_team": [ "K'Sante", "Zed", "Smolder", "Ezreal", "Swain" ],
       "expected_blue_winrate_min": 54.0,
       "expected_blue_winrate_max": 75.0
+    },
+    {
+      "scenario": "random_blue",
+      "blue_team": [ "Pyke", "Azir", "Olaf", "Zaheen", "Master Yi" ],
+      "red_team": [ "Tahm Kench", "Lillia", "Ekko", "Xayah", "Lulu" ],
+      "expected_blue_winrate_min": 0.0,
+      "expected_blue_winrate_max": 30.0
+    },
+    {
+      "scenario": "random_blue_2",
+      "blue_team": [ "Kindred", "Veigar", "Soraka", "Maokai", "Jayce" ],
+      "red_team": [ "Pantheon", "Zac", "Katarina", "Caitlyn", "Morgana" ],
+      "expected_blue_winrate_min": 0.0,
+      "expected_blue_winrate_max": 30.0
+    },
+    {
+      "scenario": "random_red",
+      "blue_team": [ "Malphite", "Xin Zhao", "Anivia", "Sivir", "Nautilus" ],
+      "red_team": [ "Kha'Zix", "Sona", "Bard", "Leona", "Yone" ],
+      "expected_blue_winrate_min": 65.0,
+      "expected_blue_winrate_max": 100.0
+    },
+    {
+      "scenario": "random_red_2",
+      "blue_team": [ "Garen", "Dr. Mundo", "Annie", "Yasuo", "Milio" ],
+      "red_team": [ "Yuumi", "Soraka", "Rell", "Maokai", "Lee Sin" ],
+      "expected_blue_winrate_min": 65.0,
+      "expected_blue_winrate_max": 100.0
     },
     {
       "scenario": "base",
