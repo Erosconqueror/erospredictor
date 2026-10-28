@@ -4,14 +4,17 @@ import urllib.parse
 import requests
 from riotwatcher import LolWatcher
 from configs import RIOT_API_KEY, REGION, CONTINENT
+from services.riot_rate_limit import shared_limiter
 
 class Riot:
     """Handles Riot API requests and data extraction."""
     
-    def __init__(self, api_key=None, strict_errors=False):
+    def __init__(self, api_key=None, strict_errors=False, rate_limiter=None, max_rate_retries=5):
         self.api_key = api_key or os.environ.get("RIOT_API_KEY") or RIOT_API_KEY
         self.strict_errors = strict_errors
-        self.api = LolWatcher(self.api_key)
+        self.rate_limiter = rate_limiter if rate_limiter is not None else shared_limiter(self.api_key)
+        self.max_rate_retries = max_rate_retries
+        self.api = LolWatcher(self.api_key, timeout=15, rate_limiter=self.rate_limiter)
         self.region = REGION
         self.cont = CONTINENT
     
@@ -21,9 +24,13 @@ class Riot:
             q_name = urllib.parse.quote(name)
             q_tag = urllib.parse.quote(tag)
             url = f"https://{self.cont}.api.riotgames.com/riot/account/v1/accounts/by-riot-id/{q_name}/{q_tag}"
-            res = requests.get(url, headers={"X-Riot-Token": self.api_key}, timeout=15)
-            res.raise_for_status()
-            return res.json()
+            def request():
+                self.rate_limiter.acquire(self.cont, "account", "by-riot-id")
+                res = requests.get(url, headers={"X-Riot-Token": self.api_key}, timeout=15)
+                self.rate_limiter.record_response(self.cont, "account", "by-riot-id", res.status_code, res.headers)
+                res.raise_for_status()
+                return res.json()
+            return self._call(request, self.cont)
         except Exception as e:
             if self.strict_errors:
                 raise
@@ -38,14 +45,14 @@ class Riot:
                     return []
                 
                 if tier == "CHALLENGER":
-                    league = self.api.league.challenger_by_queue(self.region, q_type)
+                    league = self._call(lambda: self.api.league.challenger_by_queue(self.region, q_type), self.region)
                 elif tier == "GRANDMASTER":
-                    league = self.api.league.grandmaster_by_queue(self.region, q_type)
+                    league = self._call(lambda: self.api.league.grandmaster_by_queue(self.region, q_type), self.region)
                 else:
-                    league = self.api.league.masters_by_queue(self.region, q_type)
+                    league = self._call(lambda: self.api.league.masters_by_queue(self.region, q_type), self.region)
                     
                 return league.get("entries", [])
-            return self.api.league.entries(self.region, q_type, tier, div, page=page)
+            return self._call(lambda: self.api.league.entries(self.region, q_type, tier, div, page=page), self.region)
         except requests.exceptions.ConnectionError:
             if self.strict_errors:
                 raise
@@ -60,7 +67,7 @@ class Riot:
     def get_match_ids(self, puuid: str, q_id: int = 420, limit: int = 20) -> list:
         """Fetches match IDs for a specific player."""
         try:
-            return self.api.match.matchlist_by_puuid(self.cont, puuid, queue=q_id, count=limit)
+            return self._call(lambda: self.api.match.matchlist_by_puuid(self.cont, puuid, queue=q_id, count=limit), self.cont)
         except requests.exceptions.ConnectionError:
             if self.strict_errors:
                 raise
@@ -109,7 +116,7 @@ class Riot:
     def get_match_data(self, match_id: str, tier: str = "UNKNOWN") -> dict:
         """Fetches and cleans a single match by ID."""
         try:
-            raw = self.api.match.by_id(self.cont, match_id)
+            raw = self._call(lambda: self.api.match.by_id(self.cont, match_id), self.cont)
             return self._clean_data(raw, tier)
         except requests.exceptions.ConnectionError:
             if self.strict_errors:
@@ -121,3 +128,6 @@ class Riot:
                 raise
             print(f"Match fetch error ({match_id}): {e}")
             return None
+
+    def _call(self, operation, region):
+        return self.rate_limiter.call(operation, region, self.max_rate_retries)

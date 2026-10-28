@@ -23,6 +23,9 @@ class MainWindow(QMainWindow):
         self._task = None
         self._busy = False
         self._recommendation_context = None
+        self._effects_context = None
+        self._last_recommendations = []
+        self._selected_recommendation_id = None
         self._lockfile_path = None
         
         self._setup_window()
@@ -115,13 +118,20 @@ class MainWindow(QMainWindow):
                 
         layout.addWidget(lbl_rank)
         layout.addWidget(self.cb_rank)
+        self.chk_effects = QCheckBox("Egyszerű hőshatások")
+        self.chk_effects.setToolTip(
+            "Opcionális számítás a lent kiválasztott csapat és pozíció hőséhez. "
+            "Ajánláskor az első jelöltet vizsgálja; másik hős a nevére kattintva választható. "
+            "A számok százalékpontos modellhatások.")
+        self.chk_effects.toggled.connect(self._on_effects_toggled)
+        layout.addWidget(self.chk_effects)
         layout.addStretch()
         self.btn_import = QPushButton("LoL-kliens beolvasása")
         self.btn_import.setToolTip("A már kiválasztott hősök és tiltások beolvasása a saját kliensből.")
         self.btn_import.clicked.connect(self._on_import_draft)
         layout.addWidget(self.btn_import)
-        self.btn_lockfile = QPushButton("Kliens útvonala…")
-        self.btn_lockfile.setToolTip("Ha az automatikus keresés nem találja a LoL-kliens lockfile fájlját.")
+        self.btn_lockfile = QPushButton("LoL lockfile…")
+        self.btn_lockfile.setToolTip("A futó LoL-kliens lockfile fájlja, például C:\\Riot Games\\League of Legends\\lockfile.")
         self.btn_lockfile.clicked.connect(self._choose_lockfile)
         layout.addWidget(self.btn_lockfile)
         return layout
@@ -185,6 +195,7 @@ class MainWindow(QMainWindow):
         blue_col.addWidget(lbl_blue, alignment=Qt.AlignmentFlag.AlignCenter)
         
         self.blue_picks = []
+        self.blue_effects = []
         for role in self.roles:
             row = QHBoxLayout()
             lbl = QLabel(f"{role}:")
@@ -193,6 +204,9 @@ class MainWindow(QMainWindow):
             lbl.setStyleSheet("font-weight: bold; color: #9E9E9E; font-size: 15px;")
             combo = self._create_combo()
             self.blue_picks.append(combo)
+            badge = self._create_effect_badge()
+            self.blue_effects.append(badge)
+            row.addWidget(badge)
             row.addWidget(lbl)
             row.addWidget(combo)
             blue_col.addLayout(row)
@@ -238,6 +252,10 @@ class MainWindow(QMainWindow):
         self.lbl_recommend = QLabel("")
         self.lbl_recommend.setAlignment(Qt.AlignmentFlag.AlignTop | Qt.AlignmentFlag.AlignHCenter)
         self.lbl_recommend.setStyleSheet("background: transparent;")
+        self.lbl_recommend.setTextInteractionFlags(Qt.TextInteractionFlag.LinksAccessibleByMouse)
+        self.lbl_recommend.setOpenExternalLinks(False)
+        self.lbl_recommend.linkActivated.connect(self._on_recommendation_selected)
+        self.lbl_recommend.setToolTip("A hős nevére kattintva az egyszerű hőshatások fókusza választható ki.")
         self.scroll_recommend.setWidget(self.lbl_recommend)
         self.scroll_recommend.hide()
         
@@ -250,6 +268,7 @@ class MainWindow(QMainWindow):
         lbl_red.setStyleSheet("color: #EF5350; font-weight: bold; font-size: 18px; padding-bottom: 5px;")
         red_col.addWidget(lbl_red, alignment=Qt.AlignmentFlag.AlignCenter)
         self.red_picks = []
+        self.red_effects = []
         for role in self.roles:
             row = QHBoxLayout()
             lbl = QLabel(f"{role}:")
@@ -260,10 +279,20 @@ class MainWindow(QMainWindow):
             self.red_picks.append(combo)
             row.addWidget(lbl)
             row.addWidget(combo)
+            badge = self._create_effect_badge()
+            self.red_effects.append(badge)
+            row.addWidget(badge)
             red_col.addLayout(row)
         layout.addLayout(red_col, stretch=1)
         
         return layout
+
+    def _create_effect_badge(self):
+        badge = QLabel("")
+        badge.setFixedWidth(92)
+        badge.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        badge.setStyleSheet("font-size: 13px; font-weight: bold; border: 1px solid transparent;")
+        return badge
 
     def _create_controls(self) -> QWidget:
         """Builds the bottom control panel."""
@@ -333,6 +362,12 @@ class MainWindow(QMainWindow):
         self.btn_explain.setToolTip("Opcionális második lépés: további számításokat csak erre a gombra indít.")
         self.btn_explain.clicked.connect(self._on_explain)
         rec_layout.addWidget(self.btn_explain)
+        self.lbl_effects_hint = QLabel("")
+        self.lbl_effects_hint.setTextFormat(Qt.TextFormat.PlainText)
+        self.lbl_effects_hint.setWordWrap(True)
+        self.lbl_effects_hint.setStyleSheet("font-size: 12px; color: #BDBDCB;")
+        self.lbl_effects_hint.hide()
+        rec_layout.addWidget(self.lbl_effects_hint)
         
         bottom_area.addWidget(group_rec)
         right_panel = QVBoxLayout()
@@ -408,9 +443,11 @@ class MainWindow(QMainWindow):
 
     def _on_clear_all(self):
         """Clears all champion selections and resets the UI."""
+        self._invalidate_recommendations()
         for combo in self.blue_picks + self.red_picks + self.blue_bans + self.red_bans:
             combo.setCurrentIndex(0)
         self._reset_dash()
+        self._clear_effect_badges()
         self.lbl_dash_title.setText("Válassz hősöket a draftoláshoz!")
 
     def _on_predict(self):
@@ -426,13 +463,29 @@ class MainWindow(QMainWindow):
         valid, err = self.controller.validate_draft(blue, red, b_bans, r_bans)
         if not valid:
             self.lbl_dash_title.setText(f"<span style='color: #EF5350;'>HIBA: {err}</span>")
+            self._effects_context = None
             return
 
         div_ui = self.cb_rank.currentText()
         div = "MIXED" if div_ui == "ALL RANKS" else div_ui
         self.lbl_dash_title.setText("Számítás folyamatban...")
-        self._start_task(lambda: self.controller.predict_match(div, blue, red),
-                         lambda result: self._display_prediction(result, div_ui))
+        context = self._current_effects_context()
+        enabled = self.chk_effects.isChecked()
+        self._clear_effect_badges()
+
+        def predict():
+            result = self.controller.predict_match(div, blue, red)
+            effects, error = self._optional_inline_effects(context, enabled)
+            return result, effects, error
+
+        def display(result):
+            prediction, effects, error = result
+            self._display_prediction(prediction, div_ui)
+            self._effects_context = context
+            if enabled:
+                self._display_optional_effects(effects, error)
+
+        self._start_task(predict, display)
 
     def _display_prediction(self, res, div_ui):
         self.lbl_dash_title.setText(f"<span style='color: #FFFFFF; font-size: 20px;'>Prediktált Győzelmi Arány ({div_ui})</span>")
@@ -473,15 +526,29 @@ class MainWindow(QMainWindow):
         self.lbl_dash_title.setText("Szimuláció futtatása...")
         context = dict(div=div, blue=blue, red=red, team=picking, r_idx=r_id)
         filter_meta = self.chk_meta.isChecked()
-        self._start_task(
-            lambda: self.controller.recommend_champs(div, blue, red, bans, picking,
-                                                      r_id, CHAMPION_COUNT, filter_meta),
-            lambda result: self._display_recommendations(result, context))
+        enabled = self.chk_effects.isChecked()
+
+        def recommend():
+            recs = self.controller.recommend_champs(div, blue, red, bans, picking,
+                                                     r_id, CHAMPION_COUNT, filter_meta)
+            focus = dict(context, champion_id=recs[0]['id']) if recs else None
+            effects, error = self._optional_inline_effects(focus, enabled and bool(recs))
+            return recs, effects, error
+
+        def display(result):
+            recs, effects, error = result
+            self._display_recommendations(recs, context)
+            if enabled:
+                self._display_optional_effects(effects, error)
+
+        self._start_task(recommend, display)
 
     def _display_recommendations(self, recs, context):
         picking, r_id = context['team'], context['r_idx']
         self._recommendation_context = dict(context, recommendations=recs[:5]) if recs else None
-        id_name = {v: k for k, v in self.name_map.items()}
+        self._last_recommendations = list(recs)
+        self._selected_recommendation_id = recs[0]['id'] if recs else None
+        self._effects_context = dict(context, champion_id=recs[0]['id']) if recs else None
         t_name = "Kék" if picking == "blue" else "Piros"
         r_name = self.roles[r_id]
         icon_name = {"Mid": "Middle", "ADC": "Bottom"}.get(r_name, r_name)
@@ -492,21 +559,158 @@ class MainWindow(QMainWindow):
             self.lbl_recommend.setText("<h3 style='color: #EF5350;'>Nem található megfelelő hős!</h3>")
             self.scroll_recommend.show()
             return
-            
+        self._render_recommendation_rows()
+
+    def _render_recommendation_rows(self):
+        id_name = {v: k for k, v in self.name_map.items()}
         html = "<table width='100%' cellspacing='0' cellpadding='8' align='center' style='margin-top: 21px;'>"
         colors = ["#323242", "#2C2C3A", "#262632", "#20202A", "#1A1A22"]
-        for i, rec in enumerate(recs):
+        for i, rec in enumerate(self._last_recommendations):
             cid, wr, color = rec['id'], rec['wr'], rec['display_color']
             name = escape(id_name.get(cid, "Unknown"))
             row_color = colors[min(i, len(colors) - 1)]
+            selected = cid == self._selected_recommendation_id and self.chk_effects.isChecked()
+            if selected:
+                row_color = "#34475D"
+            name_color = "#FFE082" if selected else "#FFFFFF"
             html += f"<tr bgcolor='{row_color}'>"
             html += f"<td style='width: 45px;'><img src='assets/icons/{cid}.png' width='38' height='38' style='border-radius: 6px;'></td>"
-            html += f"<td style='font-size: 18px; font-weight: bold; color: #FFFFFF; text-align: left;'>{name}</td>"
+            html += (f"<td style='font-size: 18px; font-weight: bold; text-align: left;'>"
+                     f"<a href='champion:{cid}' style='color: {name_color}; text-decoration: none;'>{name}</a></td>")
             html += f"<td style='font-size: 18px; color: {color}; font-weight: bold; text-align: right;'>{wr:.2f}%</td>"
             html += "</tr>"
         html += "</table>"
         self.lbl_recommend.setText(html)
         self.scroll_recommend.show()
+
+    def _current_effects_context(self):
+        blue, red = self._get_ids(self.blue_picks), self._get_ids(self.red_picks)
+        team = "blue" if self.grp_team.checkedId() == 0 else "red"
+        role = self.grp_role.checkedId()
+        if role < 0 or (blue if team == "blue" else red)[role] < 0:
+            return None
+        rank = self.cb_rank.currentText()
+        return dict(div="MIXED" if rank == "ALL RANKS" else rank,
+                    blue=blue, red=red, team=team, r_idx=role)
+
+    def _optional_inline_effects(self, context, enabled):
+        """Worker-only optional step: failure must not hide the main prediction."""
+        if not enabled:
+            return None, None
+        if context is None:
+            return None, "A kijelölt csapat és pozíció helyén még nincs hős. Válassz hőst, vagy kérj ajánlást."
+        try:
+            return self.controller.explain_champion_effects(**context), None
+        except Exception as exc:
+            return None, str(exc) or "A hőshatás most nem számítható ki."
+
+    def _display_optional_effects(self, result, error):
+        if not self.chk_effects.isChecked():
+            return
+        if result is not None:
+            self._display_inline_effects(result)
+        else:
+            self._clear_effect_badges()
+            self.lbl_effects_hint.setText(error or "Nincs elemezhető ajánlott hős.")
+            self.lbl_effects_hint.show()
+
+    def _clear_effect_badges(self):
+        for badge in self.blue_effects + self.red_effects:
+            badge.clear()
+            badge.setToolTip("")
+            badge.setProperty("laneOpponent", False)
+            badge.setProperty("focusChampion", False)
+            badge.setStyleSheet("font-size: 13px; font-weight: bold; border: 1px solid transparent;")
+
+    @staticmethod
+    def _effect_color(delta):
+        magnitude = abs(delta)
+        if magnitude < 0.005:
+            return "#A0A0B5"
+        if delta > 0:
+            return "#B9F6CA" if magnitude < 0.5 else "#81C784" if magnitude < 2 else "#00E676"
+        return "#FFCDD2" if magnitude < 0.5 else "#EF9A9A" if magnitude < 2 else "#FF5252"
+
+    def _display_inline_effects(self, result):
+        if not self.chk_effects.isChecked():
+            return
+        self._clear_effect_badges()
+        badges = {"blue": self.blue_effects, "red": self.red_effects}
+        for item in result['interactions']:
+            badge = badges[item['team']][item['role_index']]
+            delta = float(item['delta_pp'])
+            arrow = "▲" if delta >= 0.005 else "▼" if delta <= -0.005 else "→"
+            text = f"{arrow} {delta:+.2f}" if abs(delta) >= 0.005 else "→ 0.00"
+            lane = bool(item.get('is_lane_opponent'))
+            badge.setText(text)
+            badge.setProperty("laneOpponent", lane)
+            border = "#E7BC52" if lane else "transparent"
+            background = "rgba(231, 188, 82, 24)" if lane else "transparent"
+            badge.setStyleSheet(f"font-size: 13px; font-weight: bold; color: {self._effect_color(delta)}; "
+                               f"border: {'2' if lane else '1'}px solid {border}; "
+                               f"border-radius: 5px; padding: 3px; background: {background};")
+            badge.setToolTip(("Azonos pozícióban játszó lane-ellenfél. " if lane else "")
+                             + f"A fókuszhős becsült többletének változása: {delta:+.2f} százalékpont. "
+                             "Pozitív: kedvező; negatív: kedvezőtlen. A hatások külön vizsgálatok, nem összeadhatók.")
+        focus = badges[result['team']][result['role_index']]
+        focus.setText("● Fókusz")
+        focus.setProperty("focusChampion", True)
+        focus.setStyleSheet("font-size: 13px; font-weight: bold; color: #90CAF9; "
+                           "border: 1px solid #64B5F6; border-radius: 5px; padding: 3px;")
+        names = {v: k for k, v in self.name_map.items()}
+        name = names.get(result['id'], str(result['id']))
+        side = "Kék" if result['team'] == "blue" else "Piros"
+        focus.setToolTip(f"Kijelölt hős: {name}. A többi jelzés ehhez a hőshöz és a {side} csapathoz viszonyít.")
+        self.lbl_effects_hint.setText(
+            f"Fókusz: {side} {self.roles[result['role_index']]} – {name}. "
+            "▲ kedvező, ▼ kedvezőtlen hatás (százalékpont). Aranykeret: lane-ellenfél.")
+        self.lbl_effects_hint.show()
+
+    def _on_effects_toggled(self, enabled):
+        self._clear_effect_badges()
+        if self._last_recommendations:
+            self._render_recommendation_rows()
+        if not enabled:
+            self.lbl_effects_hint.hide()
+            return
+        context = self._effects_context or self._current_effects_context()
+        if not context or not self.controller:
+            self.lbl_effects_hint.setText("Válassz lent csapatot és pozíciót, majd kérj predikciót vagy ajánlást.")
+            self.lbl_effects_hint.show()
+            return
+        self._run_inline_effects(context)
+
+    def _run_inline_effects(self, context):
+        if self._busy or not self.controller or not self.chk_effects.isChecked():
+            return
+        valid, error = self.controller.validate_draft(
+            context['blue'], context['red'], self._get_ids(self.blue_bans), self._get_ids(self.red_bans))
+        if not valid:
+            self.lbl_effects_hint.setText(error)
+            self.lbl_effects_hint.show()
+            return
+        self._effects_context = context
+        self._clear_effect_badges()
+        self.lbl_effects_hint.setText("A kijelölt hős egyszerű hatásainak számítása…")
+        self.lbl_effects_hint.show()
+        self._start_task(lambda: self._optional_inline_effects(context, True),
+                         lambda result: self._display_optional_effects(*result))
+
+    def _on_recommendation_selected(self, link):
+        if self._busy or not self._recommendation_context or not link.startswith("champion:"):
+            return
+        try:
+            champion_id = int(link.split(":", 1)[1])
+        except ValueError:
+            return
+        if champion_id not in {rec['id'] for rec in self._last_recommendations}:
+            return
+        self._selected_recommendation_id = champion_id
+        context = {key: value for key, value in self._recommendation_context.items()
+                   if key != 'recommendations'}
+        self._effects_context = dict(context, champion_id=champion_id)
+        self._render_recommendation_rows()
+        self._run_inline_effects(self._effects_context)
 
     def _connect_draft_changes(self):
         for combo in self.blue_picks + self.red_picks + self.blue_bans + self.red_bans:
@@ -518,13 +722,20 @@ class MainWindow(QMainWindow):
 
     def _invalidate_recommendations(self, *_):
         self._recommendation_context = None
+        self._effects_context = None
+        self._last_recommendations = []
+        self._selected_recommendation_id = None
         self.btn_explain.setEnabled(False)
+        self._clear_effect_badges()
+        if self.chk_effects.isChecked():
+            self.lbl_effects_hint.setText("Válassz lent csapatot és pozíciót, majd kérj predikciót vagy ajánlást.")
+            self.lbl_effects_hint.show()
 
     def _set_busy(self, busy):
         self._busy = busy
         controls = (self.blue_picks + self.red_picks + self.blue_bans + self.red_bans
                     + [self.cb_rank, self.btn_predict, self.btn_rec, self.btn_clear,
-                       self.btn_import, self.btn_lockfile, self.chk_meta]
+                       self.btn_import, self.btn_lockfile, self.chk_meta, self.chk_effects]
                     + self.grp_team.buttons() + self.grp_role.buttons())
         for control in controls:
             control.setEnabled(not busy)
@@ -551,6 +762,7 @@ class MainWindow(QMainWindow):
 
     def _show_task_error(self, message):
         self._reset_dash()
+        self._clear_effect_badges()
         self.lbl_dash_title.setWordWrap(True)
         self.lbl_dash_title.setText(f"<span style='color: #EF5350;'>HIBA: {escape(message)}</span>")
 
@@ -607,7 +819,8 @@ class MainWindow(QMainWindow):
             ids = values.get(key, [])
             for index, combo in enumerate(combos):
                 champion_id = ids[index] if index < len(ids) else None
-                combo.setCurrentText(names[champion_id] if champion_id is not None else "")
+                name = names[champion_id] if champion_id is not None else ""
+                combo.setCurrentIndex(combo.findText(name, Qt.MatchFlag.MatchExactly))
         self._invalidate_recommendations()
         self._reset_dash()
         self.lbl_dash_title.setText("A hősök és tiltások beolvasva. Kérhetsz ajánlást vagy predikciót.")

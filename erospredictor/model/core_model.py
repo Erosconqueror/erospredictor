@@ -210,6 +210,73 @@ class CoreModel:
                             "weight": weight, "weighted_win_prob": weight * probability * 100})
         return details
 
+    def explain_champion_effects(self, div: str, blue: list, red: list, team: str,
+                                 r_idx: int, champion_id=None) -> dict:
+        """Calculate only the visible draft's sensitivity to one selected champion.
+
+        This explicit lightweight operation supports an already picked focus or a
+        candidate for an empty role. Effects measure the change in the focus's
+        gain after removing each other known champion, in percentage points from
+        the selected team's perspective. They are not additive causal effects.
+        """
+        self._validate_draft_shape(blue, red)
+        if (team not in ("blue", "red") or not isinstance(r_idx, int)
+                or isinstance(r_idx, bool) or not 0 <= r_idx < 5):
+            raise ValueError("Érvénytelen csapat vagy pozíció.")
+        candidate_blue, candidate_red = list(blue), list(red)
+        own = candidate_blue if team == "blue" else candidate_red
+        if champion_id is None:
+            champion_id = own[r_idx]
+            if champion_id == EMPTY_CHAMPION:
+                raise ValueError("Válassz hőst a kijelölt csapat pozíciójára, vagy válassz egy ajánlott hőst!")
+        elif (not isinstance(champion_id, int) or isinstance(champion_id, bool)
+              or not 0 <= champion_id < CHAMPION_COUNT):
+            raise ValueError("Érvénytelen hősazonosító az elemzéshez.")
+        elif own[r_idx] not in (EMPTY_CHAMPION, champion_id):
+            raise ValueError("A kijelölt pozíció hőse megváltozott. Válaszd ki újra az elemzendő hőst!")
+        own[r_idx] = champion_id
+        known = [cid for cid in candidate_blue + candidate_red if cid >= 0]
+        if len(known) != len(set(known)):
+            raise ValueError("Egy hős csak egyszer lehet kiválasztva!")
+
+        cache = {}
+
+        def score(b, r):
+            key = (tuple(b), tuple(r))
+            if key not in cache:
+                cache[key] = self.predict_match(div, b, r)[f"{team}_win_prob"]
+            return cache[key]
+
+        base_blue, base_red = list(candidate_blue), list(candidate_red)
+        (base_blue if team == "blue" else base_red)[r_idx] = EMPTY_CHAMPION
+        current, baseline = score(candidate_blue, candidate_red), score(base_blue, base_red)
+        gain = current - baseline
+        interactions = []
+        for side, champions in (("blue", candidate_blue), ("red", candidate_red)):
+            for role, champion in enumerate(champions):
+                if champion < 0 or (side == team and role == r_idx):
+                    continue
+                without_blue, without_red = list(candidate_blue), list(candidate_red)
+                empty_blue, empty_red = list(base_blue), list(base_red)
+                (without_blue if side == "blue" else without_red)[role] = EMPTY_CHAMPION
+                (empty_blue if side == "blue" else empty_red)[role] = EMPTY_CHAMPION
+                without_score = score(without_blue, without_red)
+                gain_without = without_score - score(empty_blue, empty_red)
+                interactions.append({
+                    "champion_id": champion, "team": side,
+                    "side": "ally" if side == team else "opponent", "role_index": role,
+                    "delta_pp": gain - gain_without, "score_delta_pp": current - without_score,
+                    "is_lane_opponent": side != team and role == r_idx,
+                })
+        interactions.sort(key=lambda item: abs(item["delta_pp"]), reverse=True)
+        return {
+            "id": champion_id, "team": team, "role_index": r_idx,
+            "wr": current, "baseline_win_prob": baseline, "candidate_delta_pp": gain,
+            "interactions": interactions, "explanation_kind": "conditional_leave_one_out",
+            "note": "A nyilak a kijelölt hős feltételes modellhatását jelzik százalékpontban. "
+                    "Az egyes hatások nem adhatók össze, és nem bizonyítanak ok-okozatot.",
+        }
+
     def explain_recommendations(self, div: str, blue: list, red: list, team: str,
                                 r_idx: int, recommendations: list, max_items: int = 5) -> list:
         """Diagnose at most five candidates without changing the original draft.

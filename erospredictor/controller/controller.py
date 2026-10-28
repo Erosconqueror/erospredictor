@@ -86,3 +86,9 @@ class Controller:
         """Run optional diagnostics only after the user requests a second stage."""
         return self.core_model.explain_recommendations(
             div, blue, red, team, r_idx, recommendations, max_items=max_items)
+
+    def explain_champion_effects(self, div: str, blue: list, red: list, team: str,
+                                 r_idx: int, champion_id=None) -> dict:
+        """Return optional main-screen effects for a selected pick or candidate."""
+        return self.core_model.explain_champion_effects(
+            div, blue, red, team, r_idx, champion_id=champion_id)

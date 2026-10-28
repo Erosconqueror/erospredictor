@@ -59,6 +59,16 @@ a már begyűjtött meccsek pedig felhasználhatók a következő indításkor.
 Az eredmény és a kihagyott adatok száma a `data/update_manifest.json` fájlba kerül.
 Egyszerre csak egy modellfrissítés futhat.
 
+A Riot-kérések közös ütemezést kapnak: alapból legfeljebb 20 kérés/másodperc és
+100 kérés/120 másodperc egy kulcs és route alatt. A szerver által közölt alkalmazás-
+és metóduskereteket, valamint számlálókat is figyeli. A magasabb metóduslimit nem
+növeli meg az alkalmazás teljes keretét. A 429-es válasznál kivárja a teljes
+`Retry-After` időt, majd ugyanazt a kérést legfeljebb ötször újrapróbálja;
+hosszabb várakozáskor kiírja a hátralévő időt. Így egy nagyobb adatgyűjtésnél
+a várakozás normális. Más HTTP-hibákat nem ismétel korlátlanul.
+A [Riot limitkezelési leírása](https://developer.riotgames.com/docs/portal#web-apis_rate-limiting)
+részletezi az egymás mellett érvényes kereteket.
+
 Az aktuális, rögzített hőskatalógus 172 hőst tartalmaz. A benne még nem szereplő
 hősöket tartalmazó meccseket a tanítás jelzett módon kihagyja; ez a folyamat
 nem számozza át a meglévő hősazonosítókat és nem bővíti automatikusan a katalógust.
@@ -77,8 +87,11 @@ nem tekinti lane-sorrendnek. Ha az oldal sem biztos, válaszd ki a saját csapat
 Kék/Piros oldalát is. A **Draft kitöltése** gomb az ellenőrzött drafttal felváltja
 a főablak korábbi választásait és tiltásait. A még nem véglegesített hover kimarad.
 
-Ha az automatikus keresés nem találja a klienst, a **Kliens útvonala…** gombbal
+Ha az automatikus keresés nem találja a klienst, a **LoL lockfile…** gombbal
 válaszd ki a League of Legends telepítési mappájának `lockfile` fájlját.
+Példa: `C:\Riot Games\League of Legends\lockfile` vagy egy másik meghajtón a
+megfelelő telepítési mappa. A fájl a futó klienshez tartozik; nem a kliens `.exe`
+fájlját vagy a Riot API-kulcsot kell megadni. Nyisd meg a klienst és a hősválasztást.
 Alternatív beállítás: `EROSPREDICTOR_LCU_LOCKFILE` környezeti változó.
 A helyi hitelesítési token nem jelenik meg a hibaüzenetekben.
 
@@ -100,6 +113,30 @@ A lane-párosítás és ADC–Support szinergia történeti győzelmi aránya k�
 a mérkőzésszámmal együtt látható. A lane-statisztika teljes meccsek kimenetelét
 méri, nem az ösvény megnyerésének esélyét. Hiányzó mintát nem pótol kitalált értékkel.
 Draft-, rang- vagy szűrőváltás után előbb új ajánlást kell kérni.
+
+## Egyszerű nyilas hőshatások a főablakon
+
+A felső **Egyszerű hőshatások** kapcsoló alapból ki van kapcsolva, ilyenkor
+nincs hozzáadott hatásszámítás. Bekapcsolva a hősök és szerepköreik mellett
+zöld **▲**, piros **▼**, illetve semleges **→** jelzi a hatást. Az erősebb
+szín nagyobb eltérést jelent, az **arany keret** pedig a fókuszhős lane-ellenfelét
+emeli ki. A **● Fókusz** felirat jelöli a kiválasztott pozíciót.
+
+Predikcióhoz válaszd ki lent a csapatot és szerepkört, töltsd ki ott a vizsgált
+hőst, majd nyomd meg a **PREDIKCIÓ** gombot. Az aktuális győzelmi becslés mellett
+megjelennek az adott hőshöz viszonyított hatások. Üres fókuszpozíció mellett
+a normál predikció továbbra is lefut, csak a nyilas elemzéshez kér hősválasztást.
+
+Ajánlásnál először az első jelölt a fókusz. A listában bármelyik ajánlott hős
+nevére kattintva átválthatsz rá, anélkül, hogy a draftba beírná. A kijelölt ajánlás
+színes hátteret kap. Ez egyetlen hőst vizsgál, nem indítja el az ötös részletes
+elemzést. Teljes draftnál legfeljebb 20 gyors, kétoldali predikciót számol.
+
+A szám **százalékpontban** mutatja, hogyan változik a fókuszhős becsült többlete
+egy másik ismert hős jelenlétében. Pozitív: kedvező a kiválasztott csapat és hős
+számára; negatív: kedvezőtlen. Ez modellérzékenység, nem biztos lane-győzelem vagy
+összeadható magyarázat. Draft-, rang-, csapat- vagy szerepkörváltás törli a korábbi
+nyilakat, így elavult eredmény nem marad a hősök mellett.
 
 ## Ellenőrzések
 
