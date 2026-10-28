@@ -60,3 +60,43 @@ DB_USER = _os.environ.get("DB_USER", DB_USER)
 DB_PASS = _os.environ.get("DB_PASS", DB_PASS)
 DB_HOST = _os.environ.get("DB_HOST", DB_HOST)
 DB_PORT = _os.environ.get("DB_PORT", DB_PORT)
+
+# Approximate collection profile, with useful minimum samples for rare ranks.
+DATASET_TARGETS = {
+    "CHALLENGER": 2000, "GRANDMASTER": 3000, "MASTER": 5000,
+    "DIAMOND": 8000, "EMERALD": 12000, "PLATINUM": 16000,
+    "GOLD": 22000, "SILVER": 20000, "BRONZE": 14000, "IRON": 5000,
+}
+
+
+def _load_runtime_config():
+    """Only published patch/catalog metadata may override these settings."""
+    import json
+    from pathlib import Path
+    app_dir = Path(__file__).resolve().parent
+    try:
+        names = json.loads((app_dir / CHAMPION_NAMES_PATH).read_text(encoding="utf-8"))
+        count = max(int(key) for key in names) + 1
+        if count > 0:
+            globals()["CHAMPION_COUNT"] = count
+    except (OSError, ValueError, TypeError):
+        pass
+    try:
+        runtime = json.loads((app_dir / "data/runtime_config.json").read_text(encoding="utf-8"))
+        if not isinstance(runtime, dict):
+            return
+        patches = runtime.get("ALLOWED_PATCHES")
+        if isinstance(patches, list) and patches and all(isinstance(patch, str) for patch in patches):
+            globals()["ALLOWED_PATCHES"] = patches
+        version = runtime.get("CHAMPION_CATALOG_VERSION")
+        if isinstance(version, str):
+            globals()["CHAMPION_CATALOG_VERSION"] = version
+        targets = runtime.get("DATASET_TARGETS")
+        if (isinstance(targets, dict) and set(targets) == set(DATASET_TARGETS)
+                and all(isinstance(value, int) and not isinstance(value, bool) and value > 0 for value in targets.values())):
+            globals()["DATASET_TARGETS"] = targets
+    except (OSError, ValueError, TypeError):
+        pass
+
+
+_load_runtime_config()

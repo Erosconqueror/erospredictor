@@ -47,10 +47,38 @@ Az automatikus patchlista a Riot Data Dragon megjelent verzióiból készül, í
 évfordulón sem egyszerű sorszámcsökkentést használ. Explicit `--patches` mellett
 a `--dry-run` hálózati kapcsolat nélkül is működik.
 
-Az adatgyűjtés véges: alapértelmezetten rangonként legfeljebb 200 játékost vizsgál,
-és legfeljebb 2000 új, megfelelő patchű meccset ment. Az ismert meccseket átugorja.
-A `--matches-per-tier`, `--players-per-tier`, `--pages-per-division`,
-`--matches-per-player`, `--region` és `--continent` kapcsolókkal állítható.
+Az alapértelmezett, közelítő játékoseloszlást követő profil az utolsó öt patchből
+összesen **107 000 használható, egyedi meccset** céloz. A táblázat rangonkénti,
+az öt patchre együtt értendő célokat tartalmaz; Gold és Silver külön-külön is
+legalább 20 000 meccset kap. Ez szándékosan választott mintavételi profil.
+
+| Rang | Meccscél |
+| --- | ---: |
+| Challenger | 2 000 |
+| Grandmaster | 3 000 |
+| Master | 5 000 |
+| Diamond | 8 000 |
+| Emerald | 12 000 |
+| Platinum | 16 000 |
+| Gold | 22 000 |
+| Silver | 20 000 |
+| Bronze | 14 000 |
+| Iron | 5 000 |
+
+A már adatbázisban lévő, megfelelő régiójú, rangú és patchű, érvényes meccsek
+beszámítanak: a frissítő a hiányzó mennyiséget gyűjti. A célig minden elérhető
+oldalon továbbkeres, alapból nincs 200 játékosos vagy kétoldalas korlát. Ha minden
+játékost végignézett, de még kevés a meccs, várakozás után újra keres. A kvóták
+teljesüléséig nem indít kisebb mintával tanítást. A nagyobb korábbi rangadatokból
+csak a profil szerinti mennyiséget használja; a rendelkezésre álló patchek között
+közel egyenletesen mintáz, majd a meglévő frissességi súlyokat alkalmazza.
+
+A profil a `configs.py` `DATASET_TARGETS` beállításában szerepel. Egyedi cél például
+`--tier-target GOLD=24000`; ismételhető több ranghoz. A külön megadott
+`--matches-per-tier 2000` a régebbi, egységes újmeccs-kvótás működést választja.
+A `--players-per-tier`, `--pages-per-division`, `--matches-per-player`, `--region`
+és `--continent` kapcsolók is használhatók. Kézi keresési korlát vagy `--skip-scrape`
+mellett a hiányos profil beavatkozást kér, és megtartja az adatokat.
 További beállítások: `env\Scripts\python.exe erospredictor\update_pipeline.py --help`.
 
 A kiválasztott patchekre szűrt adatokból készül a statisztika, az off-meta lista,
@@ -86,9 +114,13 @@ felhasználói megszakítás után nem indítja újra magát. A következő kéz
 ugyanazokkal a paraméterekkel ismét folytatható. A `--fresh` szándékosan új futást
 kezd, a már adatbázisba gyűjtött meccseket megtartva.
 
-Hibás kulcs, hiányzó függőség, elégtelen használható adat vagy sikertelen QA esetén
+Hibás kulcs, hiányzó függőség, kézzel korlátozott elégtelen adat vagy sikertelen QA esetén
 beavatkozást kér, és megtartja a folytatási pontot. Megváltoztatott futási/tanítási
 paraméterekhez új futás szükséges, hogy ne keveredjenek eltérő adatok és modellek.
+A gyűjtési profil, keresési korlátok vagy katalógusfrissítés megváltoztatása kivétel:
+a korábbi patchablakot és gyűjtési kurzort átveszi, a kibővült rangcélokat újranyitja,
+a tanításhoz pedig új, rögzített pillanatképet készít. A korábbi futás adatbázisba
+mentett meccsei megmaradnak.
 
 A Riot-kérések közös ütemezést kapnak: alapból legfeljebb 20 kérés/másodperc és
 100 kérés/120 másodperc egy kulcs és route alatt. A szerver által közölt alkalmazás-
@@ -103,10 +135,20 @@ hitelesítést nem próbálja hálózati hibaként újra és újra elküldeni.
 A [Riot limitkezelési leírása](https://developer.riotgames.com/docs/portal#web-apis_rate-limiting)
 részletezi az egymás mellett érvényes kereteket.
 
-Az aktuális, rögzített hőskatalógus 172 hőst tartalmaz. A benne még nem szereplő
-hősöket tartalmazó meccseket a tanítás jelzett módon kihagyja; ez a folyamat
-nem számozza át a meglévő hősazonosítókat és nem bővíti automatikusan a katalógust.
-A jelenlegi GUI az új, ismeretlen hősök beolvasásánál is figyelmeztet.
+Az updater a patchablak legfrissebb patchéhez tartozó hivatalos
+[Data Dragon hőslistát](https://developer.riotgames.com/docs/lol#data-dragon) is
+frissíti. A meglévő belső azonosítók megmaradnak, az új hősök a lista végére
+kerülnek; az Aatrox=0 index változatlan. A hiányzó portrékat is letölti.
+A bővített katalógus, a hozzá illő méretű modellek és az új konfiguráció csak
+a teljes tanítás, QA és kalibráció után kerülnek a helyükre, ugyanazzal a
+helyreállítható cserefolyamattal. Új hős esetén minden rangot együtt kell frissíteni.
+A `--no-catalog` megtartja a telepített listát, például korlátozott vagy helyi
+újratanításhoz. A választott katalógusban ismeretlen hősök meccsei kimaradnak.
+
+Sikeres frissítéskor a `data/runtime_config.json` tárolja a használt patchablakot,
+a hőskatalógus verzióját és méretét, valamint az adatprofilt. Ezt a `configs.py`
+a következő alkalmazásindításkor betölti; a tényleges hősszámot a publikált
+hőslistából olvassa. Az API-kulcsot és adatbázis-beállításokat nem írja át.
 
 ## Hősök beolvasása a saját LoL-kliensből
 

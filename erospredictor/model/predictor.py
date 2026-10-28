@@ -9,8 +9,9 @@ class ChampionPredictor(nn.Module):
     This architecture was chosen for its simplicity and effectiveness in handling tabular data, and as well to serve as a strong baseline and to serve as a balancing factor against more complex models like the GNN.
     while the dropout and batch normalization help prevent overfitting and improve generalization to unseen matchups."""
     
-    def __init__(self, input_size: int = CHAMPION_COUNT * 2, hidden_size: int = 256, drop_rate: float = 0.2):
+    def __init__(self, input_size: int = None, hidden_size: int = 256, drop_rate: float = 0.2):
         super().__init__()
+        input_size = CHAMPION_COUNT * 2 if input_size is None else input_size
         self.norm = nn.BatchNorm1d(input_size)
         self.fc1 = nn.Linear(input_size, hidden_size)
         self.fc2 = nn.Linear(hidden_size, hidden_size // 2)
@@ -34,8 +35,10 @@ class RoleAwareEmbeddingPredictor(nn.Module):
        This design was an improvement on the previous model, and gave promising results, in some rare cases can give more valid result than the GNN (we are tlaking like 1 champion out of 10 recommendation),
        so it is kept with its predecessor to smoothen out the rough predictions and give more accurate and reliable data """
     
-    def __init__(self, champ_count: int = CHAMPION_COUNT, role_count: int = 10, emb_dim: int = 64, hid_dim: int = 256):
+    def __init__(self, champ_count: int = None, role_count: int = 10, emb_dim: int = 64, hid_dim: int = 256):
         super().__init__()
+        champ_count = CHAMPION_COUNT if champ_count is None else champ_count
+        self.champ_count = champ_count
         self.c_emb = nn.Embedding(champ_count, emb_dim)
         self.r_emb = nn.Embedding(role_count, emb_dim)
         
@@ -53,7 +56,7 @@ class RoleAwareEmbeddingPredictor(nn.Module):
         
         for i in range(10): 
             r_tensor = self.r_emb(torch.tensor([i], device=device)).expand(bs, -1)
-            role_segment = x[:, i * CHAMPION_COUNT : (i + 1) * CHAMPION_COUNT]
+            role_segment = x[:, i * self.champ_count : (i + 1) * self.champ_count]
             c_idx = torch.argmax(role_segment, dim=1)
             # An empty role must not silently acquire Aatrox's embedding (index 0).
             known = role_segment.any(dim=1).unsqueeze(1)

@@ -35,11 +35,23 @@ class FakeDB:
         return {str(i): i - 1 for i in range(1, 11)}
 
     def save_match(self, match_id, region, data):
+        if match_id in self.get_all_match_ids():
+            return False
         self.saved.append(match_id)
+        self.records.append(dict(data, match_id=match_id, region=region))
         return True
 
     def close(self):
         self.closed = True
+
+
+def install_test_catalog(app, mapping=None, names=None):
+    folder = Path(app) / "data"
+    folder.mkdir(parents=True, exist_ok=True)
+    mapping = mapping or FakeDB().get_champion_mapping()
+    names = names or {str(value): "Champion" + str(value) for value in mapping.values()}
+    (folder / "champion_id.json").write_text(json.dumps(mapping), encoding="utf-8")
+    (folder / "champion_names.json").write_text(json.dumps(names), encoding="utf-8")
 
 
 class PatchSelectionTests(unittest.TestCase):
@@ -180,12 +192,14 @@ class PublicationTests(unittest.TestCase):
             self.assertEqual((dest / "two").read_text(), "old-two")
 
     def test_skip_scrape_update_filters_then_publishes_only_after_training(self):
-        args = pipeline.parser().parse_args(["--patches", "16.7", "--tiers", "GOLD", "--skip-scrape", "--min-matches", "4"])
+        args = pipeline.parser().parse_args(["--patches", "16.7", "--tiers", "GOLD", "--skip-scrape", "--min-matches", "4",
+                                            "--matches-per-tier", "4", "--no-catalog"])
         records = [record(str(i)) for i in range(4)] + [record("old", patch_version="16.5")]
         db = FakeDB(records)
         with tempfile.TemporaryDirectory() as temp:
             app = Path(temp)
             (app / "data").mkdir()
+            install_test_catalog(app)
             (app / "data/stats_cache.json").write_text(json.dumps({"IRON": {"old": True}, "GOLD": {"old": True}}))
             (app / "data/meta_champs.json").write_text(json.dumps({"IRON": {"old": True}, "MIXED": {"old": True}}))
 
@@ -193,7 +207,7 @@ class PublicationTests(unittest.TestCase):
                 self.assertEqual(len(selected), 4)
                 self.assertFalse((app / "models/done.pth").exists())
                 (stage / "models").mkdir()
-                (stage / "data").mkdir()
+                (stage / "data").mkdir(exist_ok=True)
                 (stage / "models/done.pth").write_text("new")
                 (stage / "data/stats_cache.json").write_text(json.dumps({"GOLD": {"new": True}}))
                 (stage / "data/meta_champs.json").write_text(json.dumps({"GOLD": {"new": True}, "MIXED": {"new": True}}))
@@ -216,12 +230,14 @@ class PublicationTests(unittest.TestCase):
             self.assertEqual(meta["MIXED"], {"new": True})
 
     def test_insufficient_tier_keeps_outputs_and_closes_database(self):
-        args = pipeline.parser().parse_args(["--patches", "16.7", "--tiers", "GOLD", "--skip-scrape", "--min-matches", "4"])
+        args = pipeline.parser().parse_args(["--patches", "16.7", "--tiers", "GOLD", "--skip-scrape", "--min-matches", "4",
+                                            "--matches-per-tier", "4", "--no-catalog"])
         db = FakeDB([record()])
         with tempfile.TemporaryDirectory() as temp, \
                 patch.dict("sys.modules", {"model.data_manager": SimpleNamespace(DataManager=lambda **kw: db)}), \
                 patch.object(pipeline, "APP_DIR", Path(temp)), \
                 patch.object(pipeline, "train_outputs", side_effect=AssertionError("Training should not start")):
+            install_test_catalog(temp)
             with self.assertRaisesRegex(RuntimeError, "Insufficient"):
                 pipeline.run(args, log=lambda _: None)
         self.assertTrue(db.closed)

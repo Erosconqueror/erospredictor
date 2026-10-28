@@ -14,7 +14,7 @@ from unittest.mock import patch
 import update_pipeline as pipeline
 from services.update_progress import UpdateProgress, atomic_json
 from services.update_retry import wait_for_retry
-from test_update_pipeline import FakeDB, record
+from test_update_pipeline import FakeDB, record, install_test_catalog
 
 
 class ProgressTests(unittest.TestCase):
@@ -210,12 +210,14 @@ class RestartTests(unittest.TestCase):
             self.assertEqual((stage / "backup/one").read_text(), "old-one")
 
     def test_resume_at_publication_does_not_collect_or_train_again(self):
-        args = pipeline.parser().parse_args(["--patches", "16.7", "--tiers", "GOLD", "--skip-scrape", "--min-matches", "4"])
+        args = pipeline.parser().parse_args(["--patches", "16.7", "--tiers", "GOLD", "--skip-scrape", "--min-matches", "4",
+                                            "--matches-per-tier", "4", "--no-catalog"])
         db = FakeDB([record(str(i)) for i in range(4)])
         with tempfile.TemporaryDirectory() as directory:
             app = Path(directory)
+            install_test_catalog(app)
             def fit(args, patches, db, records, stage, log):
-                (stage / "data").mkdir()
+                (stage / "data").mkdir(exist_ok=True)
                 (stage / "models").mkdir()
                 (stage / "models/done.pth").write_text("complete new model")
                 return {}, [Path("models/done.pth")]
@@ -252,7 +254,8 @@ class TrainingPipelineResumeTests(unittest.TestCase):
             modes.append(dev_mode)
             return DB([record(str(i)) for i in range(8)])
         args = pipeline.parser().parse_args(["--patches", "16.7", "--tiers", "GOLD", "--skip-scrape",
-                                            "--min-matches", "4", "--epochs", "1", "--qa-min-pass", "0"])
+                                            "--min-matches", "4", "--epochs", "1", "--qa-min-pass", "0",
+                                            "--matches-per-tier", "8", "--no-catalog"])
         finish = UpdateProgress.finish_unit
         training = DynamicTrainer.train_single_model
         trained = []
@@ -269,7 +272,7 @@ class TrainingPipelineResumeTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as directory:
             app = Path(directory)
             (app / "data").mkdir()
-            for name in ("champion_id.json", "golden_dataset.json"):
+            for name in ("champion_id.json", "champion_names.json", "golden_dataset.json"):
                 shutil.copy2(source / "data" / name, app / "data" / name)
             with patch.dict("sys.modules", {"model.data_manager": SimpleNamespace(DataManager=create_db)}), \
                     patch.object(pipeline, "APP_DIR", app), \

@@ -1,4 +1,4 @@
-"""One finite, non-interactive scrape -> train -> calibrate update.
+"""One resumable, non-interactive scrape -> train -> calibrate update.
 
 Run from anywhere with ``python erospredictor/update_pipeline.py --help``.
 Heavy dependencies and the database are opened only after the update plan is
@@ -22,6 +22,8 @@ import tempfile
 from urllib.request import urlopen
 from services.update_progress import UpdateProgress, atomic_json, file_digest
 from services.update_retry import http_status, retry_delay, wait_for_retry
+from services.dataset_profile import rank_targets, balanced_snapshot
+from services.catalog_update import CatalogData, prepare_catalog, champion_dimensions
 
 import configs as cfg
 
@@ -36,6 +38,18 @@ class PermanentUpdateError(RuntimeError):
 
 class UpdateLockError(PermanentUpdateError):
     pass
+
+
+def compatible_profile_upgrade(previous, current):
+    """Collection targets/catalog may evolve while keeping already collected data."""
+    def stable(request):
+        request = json.loads(json.dumps(request))
+        for key in ("matches_per_tier", "players_per_tier", "pages_per_division", "tier_target",
+                    "targets", "no_catalog", "champion_id.json"):
+            request.pop(key, None)
+        request.get("training_config", {}).pop("champion_count", None)
+        return request
+    return stable(previous) == stable(current)
 
 
 class UpdateLock:
@@ -149,9 +163,11 @@ def parser() -> argparse.ArgumentParser:
     cli.add_argument("--tiers", nargs="+", type=str.upper, choices=cfg.TARGET_TIERS, default=list(cfg.TARGET_TIERS))
     cli.add_argument("--region", default=cfg.REGION, help="Platform route, e.g. euw1, eun1, kr")
     cli.add_argument("--continent", choices=("americas", "asia", "europe", "sea"), default=cfg.CONTINENT)
-    cli.add_argument("--matches-per-tier", type=positive_int, default=2000, help="Maximum NEW matching records collected per tier (default: 2000)")
-    cli.add_argument("--players-per-tier", type=positive_int, default=200, help="Maximum unique players visited per tier (default: 200)")
-    cli.add_argument("--pages-per-division", type=positive_int, default=2)
+    cli.add_argument("--matches-per-tier", type=positive_int, help="Optional flat NEW-match quota instead of the default population profile")
+    cli.add_argument("--tier-target", action="append", default=[], help="Override a population target, e.g. GOLD=22000")
+    cli.add_argument("--players-per-tier", type=positive_int, help="Optional player cap; default searches until the tier target")
+    cli.add_argument("--pages-per-division", type=positive_int, help="Optional page cap; default follows all available pages")
+    cli.add_argument("--no-catalog", action="store_true", help="Keep the installed champion catalog (for restricted/offline model updates)")
     cli.add_argument("--matches-per-player", type=positive_int, default=50)
     cli.add_argument("--min-matches", type=positive_int, default=200, help="Minimum usable records required for EVERY requested tier")
     cli.add_argument("--epochs", type=positive_int, help="Override adaptive training epochs")
@@ -176,17 +192,26 @@ def collect_matches(args, patches, riot, db, log=print, progress=None) -> dict:
     states = progress.state["collection"] if progress else {}
     save = progress.save if progress else lambda: None
     results = {}
+    targets = rank_targets(args, cfg.DATASET_TARGETS)
+    population = args.matches_per_tier is None
+    mapping = db.get_champion_mapping()
     riot.region, riot.cont = args.region, args.continent
-    if progress and progress.state.get("adopt_existing"):
+    if population or (progress and progress.state.get("adopt_existing")):
         raw = db.get_all_matches(patches=patches, tiers=args.tiers, region=args.region)
         existing, _ = usable_matches(raw, db.get_champion_mapping(), patches, args.tiers, args.region)
         counts = Counter(item["tier"] for item in existing)
         for tier in args.tiers:
             state = states.setdefault(tier, _collection_state())
-            state["reused_matches"] = min(args.matches_per_tier, counts[tier])
+            goal = targets[tier]
+            state["window_matches"] = counts[tier]
+            state["reused_matches"] = max(0, min(goal, counts[tier]) - state["new_matches"])
+            if population and state["done"] and counts[tier] < goal:
+                state.update(done=False, division=0, page=1, players=None, player_index=0,
+                             active_player=None, match_ids=None, match_index=0)
             if state["reused_matches"]:
                 log(f"[Update] {tier}: {state['reused_matches']} meglévő mérkőzés átvéve a korábbi gyűjtésből.")
-        progress.state["adopt_existing"] = False
+        if progress:
+            progress.state["adopt_existing"] = False
         save()
     for tier in args.tiers:
         state = states.setdefault(tier, _collection_state())
@@ -199,13 +224,16 @@ def collect_matches(args, patches, riot, db, log=print, progress=None) -> dict:
             # idempotent even if the process died after COMMIT but before the JSON.
             if state["pending"] is not None:
                 pending = state["pending"]
-                db.save_match(pending["id"], args.region, pending["data"])
+                inserted = db.save_match(pending["id"], args.region, pending["data"])
                 known.add(pending["id"])
+                if population and inserted:
+                    state["window_matches"] += 1
                 state["new_matches"] += 1
                 state["match_index"] += 1
                 state["pending"] = None
                 save()
-            if (state["new_matches"] + state.get("reused_matches", 0) >= args.matches_per_tier
+            count = state.get("window_matches", 0) if population else state["new_matches"] + state.get("reused_matches", 0)
+            if (count >= targets[tier]
                     or state["division"] >= len(divisions)):
                 state["done"] = True
                 save()
@@ -223,7 +251,7 @@ def collect_matches(args, patches, riot, db, log=print, progress=None) -> dict:
             if state["player_index"] >= len(state["players"]):
                 state["players"] = None
                 state["page"] += 1
-                if state["page"] > args.pages_per_division:
+                if args.pages_per_division is not None and state["page"] > args.pages_per_division:
                     state["division"] += 1
                     state["page"] = 1
                 save()
@@ -234,7 +262,7 @@ def collect_matches(args, patches, riot, db, log=print, progress=None) -> dict:
                     state["player_index"] += 1
                     save()
                     continue
-                if len(visited) >= args.players_per_tier:
+                if args.players_per_tier is not None and len(visited) >= args.players_per_tier:
                     state["done"] = True
                     save()
                     break
@@ -264,6 +292,12 @@ def collect_matches(args, patches, riot, db, log=print, progress=None) -> dict:
                 state["outside_window_or_invalid"] += 1
                 state["match_index"] += 1
             else:
+                if population and not usable_matches([dict(data, region=args.region)], mapping,
+                                                     patches, [tier], args.region)[0]:
+                    state["outside_window_or_invalid"] += 1
+                    state["match_index"] += 1
+                    save()
+                    continue
                 state["pending"] = {"id": match_id, "data": data}
             save()
         state["players_count"] = max(state.get("players_count", 0), len(visited))
@@ -274,9 +308,11 @@ def collect_matches(args, patches, riot, db, log=print, progress=None) -> dict:
         save()
         results[tier] = {"new_matches": state["new_matches"], "players": state["players_count"],
                          "reused_matches": state.get("reused_matches", 0),
+                         "target": targets[tier], "window_matches": state.get("window_matches"),
                          "examined": state["examined_count"],
                          "outside_window_or_invalid": state["outside_window_or_invalid"]}
-        log(f"{tier}: {state['new_matches']} new matching records, {state.get('reused_matches', 0)} reused, {state['players_count']} players visited.")
+        count = state.get("window_matches", 0) if population else state["new_matches"] + state.get("reused_matches", 0)
+        log(f"{tier}: {count}/{targets[tier]} usable records, {state['new_matches']} new, {state['players_count']} players visited.")
     return results
 
 
@@ -500,6 +536,9 @@ def _run(args, log=print) -> int:
     if args.patches and args.end_patch:
         raise ValueError("Use --end-patch with --last-patches, not with explicit --patches.")
     args.tiers = list(dict.fromkeys(args.tiers))
+    targets = rank_targets(args, cfg.DATASET_TARGETS)
+    if args.matches_per_tier is None and any(goal < args.min_matches for goal in targets.values()):
+        raise ValueError("Every population target must be at least --min-matches.")
     progress = None
     if args.dry_run:
         patches = resolve_patch_window(args)
@@ -511,14 +550,14 @@ def _run(args, log=print) -> int:
         if args.end_patch:
             request["end_patch"] = normalize_patch(args.end_patch)
         request["database"] = {key: getattr(cfg, key, None) for key in ("DB_NAME", "DB_HOST", "DB_PORT")}
-        request["training_config"] = {"champion_count": cfg.CHAMPION_COUNT,
-                    "role_weights": cfg.ROLE_WEIGHTS, "division_weights": cfg.DIVISION_WEIGHTS}
-        for name in ("champion_id.json", "golden_dataset.json"):
+        request["training_config"] = {"role_weights": cfg.ROLE_WEIGHTS, "division_weights": cfg.DIVISION_WEIGHTS}
+        request["targets"] = targets
+        for name in ("golden_dataset.json",):
             path = APP_DIR / "data" / name
             request[name] = file_digest(path) if path.is_file() else None
         progress = UpdateProgress.open(APP_DIR / ".model_update", request,
                     lambda: resolve_patch_window(args), fresh=args.fresh and not args.resume,
-                    resume_completed=args.resume)
+                    resume_completed=args.resume, upgrade=compatible_profile_upgrade)
         args._progress = progress
         patches = progress.state["patches"]
         if progress.state["status"] == "complete":
@@ -540,6 +579,8 @@ def _run(args, log=print) -> int:
     plan = {"patches": patches, "region": args.region, "continent": args.continent,
             "tiers": args.tiers + ["MIXED"], "scrape": not args.skip_scrape,
             "max_new_matches_per_tier": args.matches_per_tier,
+            "dataset_targets": targets,
+            "champion_catalog_update": not args.no_catalog,
             "max_players_per_tier": args.players_per_tier,
             "minimum_usable_matches_per_tier": args.min_matches,
             "stages": ["collect", "filter", "statistics/off-meta", "train 3 models per tier", "QA/retry", "calibrate", "publish"]}
@@ -554,12 +595,16 @@ def _run(args, log=print) -> int:
     snapshot_ready = (snapshot.is_file() and progress.state.get("snapshot_sha256") == file_digest(snapshot))
     if progress.state.get("snapshot_sha256") and not snapshot_ready:
         raise PermanentUpdateError("Saved training data is damaged or missing. Use --fresh; existing database matches are preserved.")
-    db = DataManager(dev_mode=not snapshot_ready)
+    catalog, catalog_outputs = prepare_catalog(APP_DIR, progress, patches, refresh=not args.no_catalog)
+    if catalog["count"] != catalog["installed_count"] and set(args.tiers) != set(cfg.TARGET_TIERS):
+        raise PermanentUpdateError("New champions require updating every tier together. Omit --tiers or use --no-catalog.")
+    db = CatalogData(DataManager(dev_mode=not snapshot_ready), catalog)
     try:
         if snapshot_ready:
             records = json.loads(snapshot.read_text(encoding="utf-8"))
             collection = progress.state.get("collection_report", {})
             rejected = progress.state.get("excluded_records", {})
+            available = progress.state.get("available_matches", {})
             log("[Update] A mentett tanítóadatok betöltve; az adatgyűjtést nem ismétli meg.")
         else:
             collection = {}
@@ -572,18 +617,46 @@ def _run(args, log=print) -> int:
             raw = db.get_all_matches(patches=patches, tiers=args.tiers, region=args.region)
             records, rejected = usable_matches(raw, db.get_champion_mapping(), patches, args.tiers, args.region)
             counts = Counter(m["tier"] for m in records)
+            available = dict(counts)
             log(f"Usable matches: {dict(counts)}; excluded: {rejected}")
             if rejected.get("unknown_champion"):
-                log("WARNING: Matches containing champions absent from the installed catalog were excluded. This run does not add new champions to existing model architectures.")
+                log("Matches containing champions absent from the selected Data Dragon catalog were excluded.")
+            if args.matches_per_tier is None:
+                short = {tier: {"available": counts[tier], "target": goal}
+                         for tier, goal in targets.items() if counts[tier] < goal}
+                if short:
+                    message = f"Population targets not reached: {short}. Collected matches were saved."
+                    if args.skip_scrape or args.players_per_tier or args.pages_per_division:
+                        raise PermanentUpdateError(message + " Remove collection caps or adjust --tier-target.")
+                    # The next retry rescans exhausted player lists for new matches.
+                    # Already stored matches stay in SQL and are never downloaded twice.
+                    for tier in short:
+                        progress.state["collection"][tier] = dict(_collection_state(),
+                            new_matches=progress.state["collection"][tier]["new_matches"])
+                    progress.save()
+                    raise RuntimeError(message + " Retrying available players after a pause.")
+                records = balanced_snapshot(records, targets, patches)
+                log(f"Profiled training snapshot: {dict(Counter(m['tier'] for m in records))}")
             missing = {tier: counts[tier] for tier in args.tiers if counts[tier] < args.min_matches}
             if missing:
                 raise PermanentUpdateError(f"Insufficient selected-patch records (need {args.min_matches} each): {missing}. No model/cache files published; collected matches remain for the next run.")
             atomic_json(snapshot, records)
             progress.state.update(snapshot_sha256=file_digest(snapshot), collection_report=collection,
-                                  excluded_records=rejected)
+                                  excluded_records=rejected, available_matches=available)
             progress.save()
         staging = progress.staging
-        reports, outputs = train_outputs(args, patches, db, records, staging, log)
+        with champion_dimensions(catalog["count"]):
+            reports, outputs = train_outputs(args, patches, db, records, staging, log)
+        outputs.extend(catalog_outputs)
+        runtime = {"ALLOWED_PATCHES": patches, "CHAMPION_COUNT": catalog["count"],
+                   "DATASET_TARGETS": dict(cfg.DATASET_TARGETS)}
+        runtime["DATASET_TARGETS"].update(targets if args.matches_per_tier is None else {})
+        if catalog["version"]:
+            runtime["CHAMPION_CATALOG_VERSION"] = catalog["version"]
+        elif getattr(cfg, "CHAMPION_CATALOG_VERSION", None):
+            runtime["CHAMPION_CATALOG_VERSION"] = cfg.CHAMPION_CATALOG_VERSION
+        atomic_json(staging / "data/runtime_config.json", runtime)
+        outputs.append(Path("data/runtime_config.json"))
         # A deliberately restricted --tiers run must not remove the lookup
         # data for other, unchanged tiers in the installed application.
         for name in ("stats_cache.json", "meta_champs.json"):
@@ -601,6 +674,9 @@ def _run(args, log=print) -> int:
             stats_path.write_text(json.dumps(scoped_stats, indent=2), encoding="utf-8")
         manifest = {"completed_at": datetime.now(timezone.utc).isoformat(),
                     "plan": plan, "collection": collection, "excluded_records": rejected,
+                    "available_matches": available, "champion_count": catalog["count"],
+                    "champion_catalog_version": catalog["version"],
+                    "training_patch_counts": dict(Counter(m["patch"] for m in records)),
                     "results": reports}
         (staging / "data/update_manifest.json").write_text(json.dumps(manifest, indent=2), encoding="utf-8")
         outputs.append(Path("data/update_manifest.json"))

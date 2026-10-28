@@ -43,7 +43,7 @@ class UpdateProgress:
         self.staging = self.root / ("run-" + run_id)
 
     @classmethod
-    def open(cls, root, request, resolve_patches, fresh=False, resume_completed=False):
+    def open(cls, root, request, resolve_patches, fresh=False, resume_completed=False, upgrade=None):
         root = Path(root)
         path = root / "state.json"
         state = None
@@ -56,8 +56,20 @@ class UpdateProgress:
                 raise ValueError("Unsupported update checkpoint; use --fresh for a new update.")
             if state.get("request") != request:
                 if state.get("status") != "complete":
-                    raise ValueError("An unfinished update uses different parameters. Run with the original parameters, or --fresh.")
-                state = None
+                    if upgrade is None or not upgrade(state["request"], request):
+                        raise ValueError("An unfinished update uses different parameters. Run with the original parameters, or --fresh.")
+                    if state.get("publication"):
+                        # Finish a possibly partial installation with its original,
+                        # verified sources before applying a new collection profile.
+                        state["request"] = request
+                    else:
+                        state = {"version": 1, "run_id": uuid.uuid4().hex, "request": request,
+                                 "patches": state.get("patches"), "status": "running",
+                                 "collection": state.get("collection", {}), "training": {},
+                                 "adopt_existing": True, "upgraded_from": state["run_id"]}
+                    cls(root, state).save()
+                else:
+                    state = None
             elif state.get("status") == "complete" and not resume_completed:
                 state = None
         if state is None:
