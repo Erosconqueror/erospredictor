@@ -1,4 +1,4 @@
-import json
+from configs import CHAMPION_COUNT
 from model.statistical import StatisticalModel
 from model.data_manager import DataManager
 from model.core_model import CoreModel
@@ -9,6 +9,11 @@ class Controller:
         self.view = view
         self.db = DataManager(dev_mode=dev_mode)
         self.stat_model = StatisticalModel(self.db)
+        self.cache_error = None
+        try:
+            self.stat_model.load_cache()
+        except (OSError, ValueError, TypeError) as exc:
+            self.cache_error = str(exc)
         self.core_model = CoreModel(self.stat_model)
         
         meta_data = self.db.load_meta_champs()
@@ -17,10 +22,17 @@ class Controller:
 
     def validate_draft(self, blue_picks: list, red_picks: list, blue_bans: list, red_bans: list) -> tuple:
         """Validates the draft by checking for duplicate picks/bans and ensuring picks are not banned."""
-        b_bans = [i for i in blue_bans if i > 0]
-        r_bans = [i for i in red_bans if i > 0]
-        b_picks = [i for i in blue_picks if i > 0]
-        r_picks = [i for i in red_picks if i > 0]
+        try:
+            CoreModel._validate_draft_shape(blue_picks, red_picks)
+        except ValueError as exc:
+            return False, str(exc)
+        if any(not isinstance(cid, int) or isinstance(cid, bool) or not -1 <= cid < CHAMPION_COUNT
+               for cid in list(blue_bans) + list(red_bans)):
+            return False, "Érvénytelen hősazonosító a tiltások között."
+        b_bans = [i for i in blue_bans if i >= 0]
+        r_bans = [i for i in red_bans if i >= 0]
+        b_picks = [i for i in blue_picks if i >= 0]
+        r_picks = [i for i in red_picks if i >= 0]
 
         if len(b_bans) != len(set(b_bans)): 
             return False, "A Kék csapat nem bannolhatja ugyanazt kétszer!"
@@ -68,3 +80,9 @@ class Controller:
         for rec in recs:
             rec['display_color'] = self.get_winrate_color(rec['wr'])
         return recs
+
+    def explain_recommendations(self, div: str, blue: list, red: list, team: str,
+                                r_idx: int, recommendations: list, max_items: int = 5) -> list:
+        """Run optional diagnostics only after the user requests a second stage."""
+        return self.core_model.explain_recommendations(
+            div, blue, red, team, r_idx, recommendations, max_items=max_items)

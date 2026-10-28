@@ -2,6 +2,8 @@
 __pycache__/
 *.pyc
 env/
+erospredictor/.model_update.lock
+erospredictor/.update-*/
 erospredictor/__pycache__/
 erospredictor/model/__pycache__/
 erospredictor/controller/__pycache__/

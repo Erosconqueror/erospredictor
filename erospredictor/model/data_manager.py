@@ -57,8 +57,9 @@ class DataManager:
                 data.get("blue_team"),
                 data.get("red_team")
             ))
+            inserted = cur.rowcount > 0
         self.conn.commit()
-        return True
+        return inserted
 
     def get_match(self, match_id: str) -> dict:
         """Retrieves a single match record by ID."""
@@ -82,13 +83,26 @@ class DataManager:
             cur.execute("SELECT match_id FROM matches;")
             return [row[0] for row in cur.fetchall()]
 
-    def get_all_matches(self) -> list:
+    def get_all_matches(self, patches=None, tiers=None, region=None) -> list:
         """Returns a list of dictionaries containing all stored matches."""
         with self.conn.cursor() as cur:
-            cur.execute("""
+            query = """
                 SELECT match_id, region, patch, tier, blue_win, blue_team, red_team 
-                FROM matches;
-            """)
+                FROM matches
+            """
+            conditions, params = [], []
+            if patches is not None:
+                conditions.append("patch = ANY(%s)")
+                params.append(list(patches))
+            if tiers is not None:
+                conditions.append("tier = ANY(%s)")
+                params.append(list(tiers))
+            if region is not None:
+                conditions.append("region = %s")
+                params.append(region)
+            if conditions:
+                query += " WHERE " + " AND ".join(conditions)
+            cur.execute(query, tuple(params))
             
             return [{
                 "match_id": r[0], "region": r[1], "patch": r[2], "tier": r[3],

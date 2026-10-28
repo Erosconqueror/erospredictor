@@ -26,7 +26,7 @@ class TestController(unittest.TestCase):
         is_valid, msg = self.controller.validate_draft(b_picks, r_picks, b_bans, r_bans)
         self.assertFalse(is_valid)
         self.assertEqual(msg, "A Kék csapat nem bannolhatja ugyanazt kétszer!")
-        
+
     def test_duplicate_pick(self):
         b_picks, r_picks = [1, 2, 3, 4, 5], [1, 7, 8, 9, 10]
         b_bans, r_bans = [11, 12, 13, 14, 15], [16, 17, 18, 19, 20]
@@ -49,7 +49,7 @@ class TestModelLogic(unittest.TestCase):
         self.core.device = "cpu"
 
     def test_id_mapping(self):
-        blue = [5, 0, 10, 0, 0] 
+        blue = [5, -1, 10, -1, -1]
         red = [0, 0, 0, 0, 0]
         c_ra = [0.0] * (172 * 10)
         for i, c_id in enumerate(blue):
@@ -101,7 +101,7 @@ class TestRecommendationsRealFiles(unittest.TestCase):
                 self.core.meta_data = json.load(f)
         except Exception:
             self.core.meta_data = {}
-            
+
         self.patcher = patch.object(CoreModel, 'calc_win_prob_fast', return_value=0.55)
         self.mock_calc = self.patcher.start()
 
@@ -112,7 +112,7 @@ class TestRecommendationsRealFiles(unittest.TestCase):
         div = "ALL RANKS" if "ALL RANKS" in self.core.meta_data else list(self.core.meta_data.keys())[0]
         if div in self.core.meta_data and "strict" in self.core.meta_data[div]:
             allowed = self.core.meta_data[div]["strict"]["0"]
-            recs = self.core.recommend_champs(div, [0]*5, [0]*5, bans=[], team="blue", r_idx=0, top_k=5, filter_off_meta=True)
+            recs = self.core.recommend_champs(div, [-1]*5, [-1]*5, bans=[], team="blue", r_idx=0, top_k=5, filter_off_meta=True)
             for r in recs:
                 self.assertIn(r['id'], allowed)
 
@@ -120,21 +120,21 @@ class TestRecommendationsRealFiles(unittest.TestCase):
         div = "ALL RANKS" if "ALL RANKS" in self.core.meta_data else list(self.core.meta_data.keys())[0]
         if div in self.core.meta_data and "loose" in self.core.meta_data[div]:
             allowed = self.core.meta_data[div]["loose"]["0"]
-            recs = self.core.recommend_champs(div, [0]*5, [0]*5, bans=[], team="blue", r_idx=0, top_k=5, filter_off_meta=False)
+            recs = self.core.recommend_champs(div, [-1]*5, [-1]*5, bans=[], team="blue", r_idx=0, top_k=5, filter_off_meta=False)
             for r in recs:
                 self.assertIn(r['id'], allowed)
 
     def test_recommend_unavailable(self):
         div = "MIXED"
-        bans = [1, 2, 3] 
-        recs = self.core.recommend_champs(div, [0]*5, [0]*5, bans=bans, team="blue", r_idx=0, top_k=20, filter_off_meta=False)
+        bans = [1, 2, 3]
+        recs = self.core.recommend_champs(div, [-1]*5, [-1]*5, bans=bans, team="blue", r_idx=0, top_k=20, filter_off_meta=False)
         rec_ids = [r['id'] for r in recs]
         for b in bans:
             self.assertNotIn(b, rec_ids)
 
     def test_recommend_sorting(self):
         self.mock_calc.side_effect = lambda d, b, r: 0.50 + (b[0] * 0.001)
-        recs = self.core.recommend_champs("MIXED", [0]*5, [0]*5, bans=[], team="blue", r_idx=0, top_k=3, filter_off_meta=False)
+        recs = self.core.recommend_champs("MIXED", [-1]*5, [-1]*5, bans=[], team="blue", r_idx=0, top_k=3, filter_off_meta=False)
         if len(recs) == 3:
             self.assertTrue(recs[0]['wr'] >= recs[1]['wr'])
             self.assertTrue(recs[1]['wr'] >= recs[2]['wr'])

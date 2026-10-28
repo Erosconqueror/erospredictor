@@ -37,24 +37,27 @@ def quick_evaluate_model(model_id: str, model_obj: Any, div: str, dataset: Golde
             c_rw = [0.0] * (CHAMPION_COUNT * 2)
             vw = list(ROLE_WEIGHTS.values())
             for i, c in enumerate(blue):
-                if c > 0: c_rw[c] = vw[i]
+                if c >= 0: c_rw[c] = vw[i]
             for i, c in enumerate(red):
-                if c > 0: c_rw[c + CHAMPION_COUNT] = vw[i]
+                if c >= 0: c_rw[c + CHAMPION_COUNT] = vw[i]
             x = torch.tensor([c_rw], dtype=torch.float32).to(device)
             with torch.no_grad(): prob = model_obj(x).item()
         elif model_id == "roleaware":
             c_ra = [0.0] * (CHAMPION_COUNT * 10)
             for i, c in enumerate(blue):
-                if c > 0: c_ra[i * CHAMPION_COUNT + c] = 1.0
+                if c >= 0: c_ra[i * CHAMPION_COUNT + c] = 1.0
             for i, c in enumerate(red):
-                if c > 0: c_ra[(i + 5) * CHAMPION_COUNT + c] = 1.0
+                if c >= 0: c_ra[(i + 5) * CHAMPION_COUNT + c] = 1.0
             x = torch.tensor([c_ra], dtype=torch.float32).to(device)
             with torch.no_grad(): prob = model_obj(x).item()
         return {"blue_win_prob": prob * 100}
 
     def recommend_fn(div: str, blue: list, red: list, bans: list, team: str, r_idx: int, top_k: int) -> list:
         recs = []
-        for c_id in range(1, CHAMPION_COUNT):
+        unavailable = {cid for cid in blue + red + bans if cid >= 0}
+        for c_id in range(CHAMPION_COUNT):
+            if c_id in unavailable:
+                continue
             t_blue, t_red = list(blue), list(red)
             if team == "blue": t_blue[r_idx] = c_id
             else: t_red[r_idx] = c_id

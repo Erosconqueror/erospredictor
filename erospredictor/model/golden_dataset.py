@@ -21,7 +21,7 @@ class GoldenDataset:
 
     def _names_to_ids(self, names: List[str]) -> List[int]:
         """Converts a list of champion names to their corresponding numerical IDs."""
-        return [self.name_map.get(n, 0) if n else 0 for n in names]
+        return [self.name_map.get(n, -1) if n else -1 for n in names]
 
     def validate_recommendations(self, recommendation_fn: Callable, div: str) -> Dict:
         """Validates champion recommendations. Must-picks in Top 5, Avoid-picks NOT in Top 8."""

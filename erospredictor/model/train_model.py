@@ -19,8 +19,11 @@ class DynamicTrainer:
         "GOLD": 25912, "SILVER": 26362, "BRONZE": 21428, "IRON": 18814
     }
     
-    def __init__(self, div: str):
+    def __init__(self, div: str, output_dir=None, dataset_size=None, seed=42):
         self.div = div
+        self.output_dir = os.fspath(output_dir) if output_dir is not None else MODELS_DIR
+        self.dataset_size = dataset_size
+        self.seed = seed
         self.config = self._get_config(div)
         self.best_loss = float('inf')
         self.patience_counter = 0
@@ -28,7 +31,7 @@ class DynamicTrainer:
     
     def _get_config(self, div: str) -> dict:
         """Get adaptive hyperparameters based on dataset size."""
-        size = self.DATASET_SIZES.get(div, 20000)
+        size = self.dataset_size if self.dataset_size is not None else self.DATASET_SIZES.get(div, 20000)
         
         if size < 5000:
             bs, ep, lr = 16, 50, 0.0005
@@ -44,7 +47,7 @@ class DynamicTrainer:
     def train_single_model(self, X: list, y: list, name: str, in_size: int, 
                            m_type: str = "standard", w: list = None, fallback: bool = False) -> dict:
         """Trains model with dynamic hyperparameters, early stopping, and optional fallback generalization."""
-        if not X:
+        if len(X) < 4:
             return {"status": "failed", "reason": "no_data"}
         
         config = self.config
@@ -60,11 +63,12 @@ class DynamicTrainer:
         w_t = torch.tensor(np.array(w, dtype=np.float32)).unsqueeze(1) if w else torch.ones_like(y_t)
         
         val_size = max(1, int(0.2 * len(X)))
-        val_indices = np.random.choice(len(X), val_size, replace=False)
-        train_indices = np.array([i for i in range(len(X)) if i not in val_indices])
+        order = np.random.default_rng(self.seed).permutation(len(X))
+        val_indices, train_indices = order[:val_size], order[val_size:]
         
         train_ds = TensorDataset(x_t[train_indices], y_t[train_indices], w_t[train_indices])
-        loader = TorchDataLoader(train_ds, batch_size=bs, shuffle=True, num_workers=0, pin_memory=True)
+        loader = TorchDataLoader(train_ds, batch_size=bs, shuffle=True, num_workers=0,
+                                 pin_memory=self.device.type == "cuda", drop_last=len(train_ds) % bs == 1)
         
         model = ChampionPredictor(in_size).to(self.device) if m_type == "standard" \
                 else RoleAwareEmbeddingPredictor().to(self.device)
@@ -123,14 +127,16 @@ class DynamicTrainer:
         if best_state:
             model.load_state_dict(best_state)
         
-        os.makedirs(MODELS_DIR, exist_ok=True)
-        torch.save(model.state_dict(), os.path.join(MODELS_DIR, f"{name}.pth"))
+        if not best_state:
+            return {"status": "failed", "reason": "non_finite_validation_loss"}
+        os.makedirs(self.output_dir, exist_ok=True)
+        torch.save(model.state_dict(), os.path.join(self.output_dir, f"{name}.pth"))
         
         return {"status": "success", "epochs_trained": epoch + 1, "best_loss": float(self.best_loss)}
     
     def train_gnn_model(self, graphs: list, name: str, fallback: bool = False) -> dict:
         """Trains GNN model with dynamic hyperparameters and optional fallback generalization."""
-        if not graphs:
+        if len(graphs) < 4:
             return {"status": "failed", "reason": "no_data"}
         
         config = self.config
@@ -141,7 +147,13 @@ class DynamicTrainer:
         
         print(f"[{name}] BS={bs}, EP={ep}, LR={lr:.6f}, WD={weight_decay}, Fallback={fallback}")
         
-        loader = GeoDataLoader(graphs, batch_size=bs, shuffle=True, num_workers=0, pin_memory=True)
+        order = np.random.default_rng(self.seed).permutation(len(graphs))
+        val_size = max(1, int(len(graphs) * 0.2))
+        val_graphs = [graphs[i] for i in order[:val_size]]
+        train_graphs = [graphs[i] for i in order[val_size:]]
+        loader = GeoDataLoader(train_graphs, batch_size=bs, shuffle=True, num_workers=0,
+                              pin_memory=self.device.type == "cuda", drop_last=len(train_graphs) % bs == 1)
+        val_loader = GeoDataLoader(val_graphs, batch_size=bs, shuffle=False, num_workers=0)
         
         model = LeagueGNN().to(self.device)
         opt = optim.Adam(model.parameters(), lr=lr, weight_decay=weight_decay)
@@ -165,15 +177,23 @@ class DynamicTrainer:
             
             train_loss /= len(loader)
             
-            if train_loss < self.best_loss - 1e-5:
-                self.best_loss = train_loss
+            model.eval()
+            val_loss = 0.0
+            with torch.no_grad():
+                for batch in val_loader:
+                    batch = batch.to(self.device)
+                    out = model(batch.x, batch.edge_index, batch.batch)
+                    val_loss += (crit(out, batch.y) * batch.weight).sum().item()
+            val_loss /= len(val_graphs)
+            if val_loss < self.best_loss - 1e-5:
+                self.best_loss = val_loss
                 self.patience_counter = 0
                 best_state = {k: v.cpu().clone() for k, v in model.state_dict().items()}
             else:
                 self.patience_counter += 1
             
             if epoch % 10 == 0:
-                print(f"  Ep {epoch}/{ep} TL={train_loss:.4f} P={self.patience_counter}/15")
+                print(f"  Ep {epoch}/{ep} TL={train_loss:.4f} VL={val_loss:.4f} P={self.patience_counter}/15")
             
             if self.patience_counter >= 15:
                 print(f"  Early stop at epoch {epoch}")
@@ -186,8 +206,10 @@ class DynamicTrainer:
         if best_state:
             model.load_state_dict(best_state)
         
-        os.makedirs(MODELS_DIR, exist_ok=True)
-        torch.save(model.state_dict(), os.path.join(MODELS_DIR, f"{name}.pth"))
+        if not best_state:
+            return {"status": "failed", "reason": "non_finite_validation_loss"}
+        os.makedirs(self.output_dir, exist_ok=True)
+        torch.save(model.state_dict(), os.path.join(self.output_dir, f"{name}.pth"))
         
         return {"status": "success", "epochs_trained": epoch + 1, "best_loss": float(self.best_loss)}
 

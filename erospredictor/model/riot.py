@@ -1,4 +1,5 @@
 import time
+import os
 import urllib.parse
 import requests
 from riotwatcher import LolWatcher
@@ -7,8 +8,10 @@ from configs import RIOT_API_KEY, REGION, CONTINENT
 class Riot:
     """Handles Riot API requests and data extraction."""
     
-    def __init__(self):
-        self.api = LolWatcher(RIOT_API_KEY)
+    def __init__(self, api_key=None, strict_errors=False):
+        self.api_key = api_key or os.environ.get("RIOT_API_KEY") or RIOT_API_KEY
+        self.strict_errors = strict_errors
+        self.api = LolWatcher(self.api_key)
         self.region = REGION
         self.cont = CONTINENT
     
@@ -18,10 +21,12 @@ class Riot:
             q_name = urllib.parse.quote(name)
             q_tag = urllib.parse.quote(tag)
             url = f"https://{self.cont}.api.riotgames.com/riot/account/v1/accounts/by-riot-id/{q_name}/{q_tag}"
-            res = requests.get(url, headers={"X-Riot-Token": RIOT_API_KEY})
+            res = requests.get(url, headers={"X-Riot-Token": self.api_key}, timeout=15)
             res.raise_for_status()
             return res.json()
         except Exception as e:
+            if self.strict_errors:
+                raise
             print(f"Account fetch error: {e}")
             return None
             
@@ -42,9 +47,13 @@ class Riot:
                 return league.get("entries", [])
             return self.api.league.entries(self.region, q_type, tier, div, page=page)
         except requests.exceptions.ConnectionError:
+            if self.strict_errors:
+                raise
             time.sleep(15)
             return []
         except Exception as e:
+            if self.strict_errors:
+                raise
             print(f"Player fetch error: {e}")
             return []
 
@@ -53,9 +62,13 @@ class Riot:
         try:
             return self.api.match.matchlist_by_puuid(self.cont, puuid, queue=q_id, count=limit)
         except requests.exceptions.ConnectionError:
+            if self.strict_errors:
+                raise
             time.sleep(3)
             return []
         except Exception as e:
+            if self.strict_errors:
+                raise
             print(f"Match ID fetch error: {e}")
             return []
 
@@ -65,10 +78,22 @@ class Riot:
         if not info or len(info.get("participants", [])) != 10:
             return None
 
+        if info.get("queueId") != 420 or info.get("gameDuration", 0) < 300:
+            return None
         parts = info["participants"]
-        blue_win = info["teams"][0]["win"]
-        b_team = [p["championId"] for p in parts[:5]]
-        r_team = [p["championId"] for p in parts[5:]]
+        roles = ["TOP", "JUNGLE", "MIDDLE", "BOTTOM", "UTILITY"]
+        teams = {}
+        for team_id in (100, 200):
+            participants = [p for p in parts if p.get("teamId") == team_id]
+            by_role = {p.get("teamPosition"): p.get("championId") for p in participants}
+            if len(participants) != 5 or set(by_role) != set(roles):
+                return None
+            teams[team_id] = [by_role[role] for role in roles]
+        outcomes = {team.get("teamId"): team.get("win") for team in info.get("teams", [])}
+        if not isinstance(outcomes.get(100), bool):
+            return None
+        blue_win = outcomes[100]
+        b_team, r_team = teams[100], teams[200]
         
         raw_patch = info.get("gameVersion", "UNKNOWN")
         patch = ".".join(raw_patch.split(".")[:2]) if raw_patch != "UNKNOWN" else "UNKNOWN"
@@ -87,8 +112,12 @@ class Riot:
             raw = self.api.match.by_id(self.cont, match_id)
             return self._clean_data(raw, tier)
         except requests.exceptions.ConnectionError:
+            if self.strict_errors:
+                raise
             time.sleep(3)
             return None
         except Exception as e:
+            if self.strict_errors:
+                raise
             print(f"Match fetch error ({match_id}): {e}")
             return None

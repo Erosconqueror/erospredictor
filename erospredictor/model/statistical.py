@@ -11,10 +11,9 @@ class StatisticalModel:
 
     def build_stats(self): 
         """Builds lookup tables for champion matchup statistics and bot lane synergies based on historical data."""
+        self.matchups = {}
         matches = self.db.get_all_matches()
         if not matches: return
-
-        self.matchups = {}
         roles = ["TOP", "JUNGLE", "MIDDLE", "BOTTOM", "UTILITY", "BOT_SYNERGY"]
         
         for m in matches:
@@ -71,7 +70,8 @@ class StatisticalModel:
             total_weighted_prob = 0.0
             total_weight_sum = 0.0
             
-            for tier_name, tier_weight in DIVISION_WEIGHTS.items():
+            for tier_name in self._tiers(div):
+                tier_weight = DIVISION_WEIGHTS[tier_name]
                 prob, m_count = self._predict_tier(tier_name, blue, red)
                 
                 if m_count > 0:
@@ -86,6 +86,73 @@ class StatisticalModel:
             prob, _ = self._predict_tier(div, blue, red)
             return prob
 
+    def _tiers(self, div: str):
+        """Respect a partial update's MIXED scope while retaining other tier caches."""
+        if div != "MIXED":
+            return (div,)
+        scope = self.matchups.get("__scope__", {})
+        selected = scope.get("mixed_tiers") if isinstance(scope, dict) else None
+        if selected is None:
+            return tuple(DIVISION_WEIGHTS)
+        if not isinstance(selected, list):
+            return ()
+        return tuple(dict.fromkeys(tier for tier in selected if tier in DIVISION_WEIGHTS))
+
+    def _observed_summary(self, div: str, records: list, kind: str):
+        """Pool actual observations; expose both raw counts and tier weighting."""
+        matches, wins, weighted_matches, weighted_wins = 0, 0, 0.0, 0.0
+        tiers = set()
+        for tier, record, reverse in records:
+            if not record or record.get("m", 0) <= 0:
+                continue
+            count, won = record["m"], record["w"]
+            if reverse:
+                won = count - won
+            weight = DIVISION_WEIGHTS.get(tier, 1.0) if div == "MIXED" else 1.0
+            matches += count
+            wins += won
+            weighted_matches += count * weight
+            weighted_wins += won * weight
+            tiers.add(tier)
+        if not matches:
+            return None
+        return {"kind": kind, "matches": matches, "wins": wins,
+                "winrate": wins / matches * 100,
+                "weighted_winrate": weighted_wins / weighted_matches * 100,
+                "tiers": sorted(tiers)}
+
+    def get_lane_matchup(self, div: str, champion_id: int, opponent_id: int, role_index: int):
+        """Historical champion-vs-champion results in a role, pooling both sides.
+
+        This describes whole-match outcomes for a lane pairing; it is not a
+        measurement of who won the laning phase, nor a neural attribution.
+        """
+        if champion_id < 0 or opponent_id < 0 or not 0 <= role_index < 5:
+            return None
+        role = ("TOP", "JUNGLE", "MIDDLE", "BOTTOM", "UTILITY")[role_index]
+        records = []
+        for tier in self._tiers(div):
+            matchups = self.matchups.get(tier, {}).get(role, {})
+            direct = matchups.get(str(champion_id), {}).get(str(opponent_id))
+            reverse = matchups.get(str(opponent_id), {}).get(str(champion_id))
+            records.extend(((tier, direct, False), (tier, reverse, True)))
+        summary = self._observed_summary(div, records, "historical_lane_matchup")
+        if summary:
+            summary.update({"champion_id": champion_id, "opponent_id": opponent_id,
+                            "role_index": role_index})
+        return summary
+
+    def get_bot_synergy(self, div: str, adc_id: int, support_id: int):
+        """Observed whole-match results for a concrete ADC/support pair."""
+        if adc_id < 0 or support_id < 0:
+            return None
+        records = [(tier, self.matchups.get(tier, {}).get("BOT_SYNERGY", {})
+                    .get(str(adc_id), {}).get(str(support_id)), False) for tier in self._tiers(div)]
+        summary = self._observed_summary(div, records, "historical_bot_synergy")
+        if summary:
+            summary.update({"adc_id": adc_id, "support_id": support_id})
+        return summary
+
     def _predict_tier(self, div: str, blue: list, red: list):
         """Helper function to predict win probability for a specific division based on champion matchups and bot lane synergies."""
         probs = []
@@ -93,6 +160,8 @@ class StatisticalModel:
         total_m = 0.0
         
         for i, r in enumerate(["TOP", "JUNGLE", "MIDDLE", "BOTTOM", "UTILITY"]):
+            if blue[i] < 0 or red[i] < 0:
+                continue
             bc, rc = str(blue[i]), str(red[i])
             c_stats = self.matchups.get(div, {}).get(r, {}).get(bc, {}).get(rc)
             

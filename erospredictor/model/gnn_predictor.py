@@ -32,7 +32,10 @@ class LeagueGNN(nn.Module):
     def forward(self, x, edge_idx, batch):
         c_ids, r_ids, t_ids = x[:, 0], x[:, 1], x[:, 2].float().unsqueeze(1)
         
-        x = torch.cat([self.champ_emb(c_ids), self.role_emb(r_ids), t_ids], dim=1)
+        # Keep checkpoint indices intact: champion 0 is Aatrox, -1 is an unknown pick.
+        champion_features = self.champ_emb(c_ids.clamp(min=0))
+        champion_features = champion_features * (c_ids >= 0).unsqueeze(1)
+        x = torch.cat([champion_features, self.role_emb(r_ids), t_ids], dim=1)
         
         x = F.relu(self.bn1(self.conv1(x, edge_idx)))
         x = self.dropout(x)

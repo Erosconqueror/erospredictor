@@ -53,8 +53,11 @@ class RoleAwareEmbeddingPredictor(nn.Module):
         
         for i in range(10): 
             r_tensor = self.r_emb(torch.tensor([i], device=device)).expand(bs, -1)
-            c_idx = torch.argmax(x[:, i * CHAMPION_COUNT : (i + 1) * CHAMPION_COUNT], dim=1)
-            embs.append(self.c_emb(c_idx) + r_tensor)
+            role_segment = x[:, i * CHAMPION_COUNT : (i + 1) * CHAMPION_COUNT]
+            c_idx = torch.argmax(role_segment, dim=1)
+            # An empty role must not silently acquire Aatrox's embedding (index 0).
+            known = role_segment.any(dim=1).unsqueeze(1)
+            embs.append(self.c_emb(c_idx) * known + r_tensor)
         
         x = torch.cat(embs, dim=1)
         x = F.relu(self.bn1(self.fc1(x)))

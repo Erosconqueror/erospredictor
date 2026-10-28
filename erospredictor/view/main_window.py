@@ -1,10 +1,13 @@
 from PyQt6.QtWidgets import (QMainWindow, QWidget, QVBoxLayout, QHBoxLayout, 
                              QPushButton, QLabel, QComboBox, QApplication, 
                              QCheckBox, QGroupBox, QProgressBar, QFrame, 
-                             QButtonGroup, QDialog, QTextEdit, QScrollArea, QCompleter)
+                             QButtonGroup, QDialog, QTextEdit, QScrollArea, QCompleter,
+                             QFileDialog)
 from PyQt6.QtCore import Qt, QSize
 from PyQt6.QtGui import QIcon
 from configs import TARGET_TIERS, CHAMPION_COUNT
+from html import escape
+from view.background_task import BackgroundTask
 
 class MainWindow(QMainWindow):
     """Main graphical user interface for the application."""
@@ -17,15 +20,21 @@ class MainWindow(QMainWindow):
         self.controller = None
         self.meta_data = {}
         self.roles = ["Top", "Jungle", "Mid", "ADC", "Support"]
+        self._task = None
+        self._busy = False
+        self._recommendation_context = None
+        self._lockfile_path = None
         
         self._setup_window()
         self._apply_style()
         self._build_ui()
+        self._connect_draft_changes()
 
     def _setup_window(self):
         """Configures basic window properties."""
         self.setWindowTitle("Erospredictor")
-        self.setFixedSize(1280, 880)
+        self.resize(1280, 940)
+        self.setMinimumSize(1180, 900)
         self.setWindowIcon(QIcon("assets/mainicon.png"))
         
         self.main_widget = QWidget()
@@ -39,6 +48,8 @@ class MainWindow(QMainWindow):
             * { font-family: 'Segoe UI', sans-serif; }
             QWidget#centralwidget { background: qlineargradient(x1:0, y1:0, x2:1, y2:1, stop:0 #14141A, stop:1 #262633); }
             QLabel { color: #E0E0E0; }
+            QPushButton { background-color: #343440; color: #E0E0E0; border: 1px solid #555; border-radius: 6px; padding: 7px; }
+            QPushButton:disabled { color: #777; border-color: #3A3A45; }
             QComboBox { background-color: #2D2D36; border: 1px solid #444; border-radius: 6px; padding: 4px; color: white; }
             QComboBox::drop-down { border: none; }
             QComboBox QAbstractItemView { background-color: #1A1A22; color: white; selection-background-color: #3949AB; border-radius: 4px; width: 0px; }
@@ -105,6 +116,14 @@ class MainWindow(QMainWindow):
         layout.addWidget(lbl_rank)
         layout.addWidget(self.cb_rank)
         layout.addStretch()
+        self.btn_import = QPushButton("LoL-kliens beolvasása")
+        self.btn_import.setToolTip("A már kiválasztott hősök és tiltások beolvasása a saját kliensből.")
+        self.btn_import.clicked.connect(self._on_import_draft)
+        layout.addWidget(self.btn_import)
+        self.btn_lockfile = QPushButton("Kliens útvonala…")
+        self.btn_lockfile.setToolTip("Ha az automatikus keresés nem találja a LoL-kliens lockfile fájlját.")
+        self.btn_lockfile.clicked.connect(self._choose_lockfile)
+        layout.addWidget(self.btn_lockfile)
         return layout
 
     def _create_bans(self) -> QGroupBox:
@@ -308,6 +327,12 @@ class MainWindow(QMainWindow):
         row_action.addWidget(self.chk_meta)
         row_action.addWidget(self.btn_rec)
         rec_layout.addLayout(row_action)
+
+        self.btn_explain = QPushButton("Miért? – Az első 5 részletes elemzése")
+        self.btn_explain.setEnabled(False)
+        self.btn_explain.setToolTip("Opcionális második lépés: további számításokat csak erre a gombra indít.")
+        self.btn_explain.clicked.connect(self._on_explain)
+        rec_layout.addWidget(self.btn_explain)
         
         bottom_area.addWidget(group_rec)
         right_panel = QVBoxLayout()
@@ -366,12 +391,12 @@ class MainWindow(QMainWindow):
 
     def _get_ids(self, combos: list) -> list:
         """Extracts champion IDs from a list of comboboxes."""
-        return [self.name_map.get(cb.currentText().strip(), 0) for cb in combos]
+        return [self.name_map.get(cb.currentText().strip(), -1) for cb in combos]
 
     def _get_unavailable(self) -> set:
         """Returns a set of already picked or banned champion IDs."""
-        picks = [i for i in self._get_ids(self.blue_picks) + self._get_ids(self.red_picks) if i > 0]
-        bans = [i for i in self._get_ids(self.blue_bans) + self._get_ids(self.red_bans) if i > 0]
+        picks = [i for i in self._get_ids(self.blue_picks) + self._get_ids(self.red_picks) if i >= 0]
+        bans = [i for i in self._get_ids(self.blue_bans) + self._get_ids(self.red_bans) if i >= 0]
         return set(picks).union(set(bans))
 
     def _reset_dash(self):
@@ -390,7 +415,7 @@ class MainWindow(QMainWindow):
 
     def _on_predict(self):
         """Handles predict button click by coordinating with the controller."""
-        if not self.controller: return
+        if not self.controller or self._busy: return
         self._reset_dash()
         
         blue = self._get_ids(self.blue_picks)
@@ -406,9 +431,10 @@ class MainWindow(QMainWindow):
         div_ui = self.cb_rank.currentText()
         div = "MIXED" if div_ui == "ALL RANKS" else div_ui
         self.lbl_dash_title.setText("Számítás folyamatban...")
-        QApplication.instance().processEvents() 
-        
-        res = self.controller.predict_match(div, blue, red)
+        self._start_task(lambda: self.controller.predict_match(div, blue, red),
+                         lambda result: self._display_prediction(result, div_ui))
+
+    def _display_prediction(self, res, div_ui):
         self.lbl_dash_title.setText(f"<span style='color: #FFFFFF; font-size: 20px;'>Prediktált Győzelmi Arány ({div_ui})</span>")
         self.lbl_blue_wr.setText(res['blue_text'])
         self.lbl_red_wr.setText(res['red_text'])
@@ -419,7 +445,8 @@ class MainWindow(QMainWindow):
 
     def _on_recommend(self):
         """Handles recommend button click by requesting and displaying results from controller."""
-        if not self.controller: return
+        if not self.controller or self._busy: return
+        self._invalidate_recommendations()
         self._reset_dash()
         
         blue = self._get_ids(self.blue_picks)
@@ -439,14 +466,21 @@ class MainWindow(QMainWindow):
         r_id = self.grp_role.checkedId()
         picking = "blue" if t_id == 0 else "red"
         
-        if (blue[r_id] if picking == "blue" else red[r_id]) > 0:
+        if (blue[r_id] if picking == "blue" else red[r_id]) >= 0:
             self.lbl_dash_title.setText("<span style='color: #FFCA28;'>Erre a pozícióra már választottál hőst!</span>")
             return
         
         self.lbl_dash_title.setText("Szimuláció futtatása...")
-        QApplication.instance().processEvents()
-        
-        recs = self.controller.recommend_champs(div, blue, red, bans, picking, r_id, CHAMPION_COUNT, self.chk_meta.isChecked())
+        context = dict(div=div, blue=blue, red=red, team=picking, r_idx=r_id)
+        filter_meta = self.chk_meta.isChecked()
+        self._start_task(
+            lambda: self.controller.recommend_champs(div, blue, red, bans, picking,
+                                                      r_id, CHAMPION_COUNT, filter_meta),
+            lambda result: self._display_recommendations(result, context))
+
+    def _display_recommendations(self, recs, context):
+        picking, r_id = context['team'], context['r_idx']
+        self._recommendation_context = dict(context, recommendations=recs[:5]) if recs else None
         id_name = {v: k for k, v in self.name_map.items()}
         t_name = "Kék" if picking == "blue" else "Piros"
         r_name = self.roles[r_id]
@@ -463,7 +497,7 @@ class MainWindow(QMainWindow):
         colors = ["#323242", "#2C2C3A", "#262632", "#20202A", "#1A1A22"]
         for i, rec in enumerate(recs):
             cid, wr, color = rec['id'], rec['wr'], rec['display_color']
-            name = id_name.get(cid, "Unknown")
+            name = escape(id_name.get(cid, "Unknown"))
             row_color = colors[min(i, len(colors) - 1)]
             html += f"<tr bgcolor='{row_color}'>"
             html += f"<td style='width: 45px;'><img src='assets/icons/{cid}.png' width='38' height='38' style='border-radius: 6px;'></td>"
@@ -473,6 +507,117 @@ class MainWindow(QMainWindow):
         html += "</table>"
         self.lbl_recommend.setText(html)
         self.scroll_recommend.show()
+
+    def _connect_draft_changes(self):
+        for combo in self.blue_picks + self.red_picks + self.blue_bans + self.red_bans:
+            combo.currentTextChanged.connect(self._invalidate_recommendations)
+        self.cb_rank.currentTextChanged.connect(self._invalidate_recommendations)
+        self.grp_team.idClicked.connect(self._invalidate_recommendations)
+        self.grp_role.idClicked.connect(self._invalidate_recommendations)
+        self.chk_meta.toggled.connect(self._invalidate_recommendations)
+
+    def _invalidate_recommendations(self, *_):
+        self._recommendation_context = None
+        self.btn_explain.setEnabled(False)
+
+    def _set_busy(self, busy):
+        self._busy = busy
+        controls = (self.blue_picks + self.red_picks + self.blue_bans + self.red_bans
+                    + [self.cb_rank, self.btn_predict, self.btn_rec, self.btn_clear,
+                       self.btn_import, self.btn_lockfile, self.chk_meta]
+                    + self.grp_team.buttons() + self.grp_role.buttons())
+        for control in controls:
+            control.setEnabled(not busy)
+        self.btn_explain.setEnabled(not busy and self._recommendation_context is not None)
+
+    def _start_task(self, operation, on_success):
+        """Serialize model/client operations and keep GUI responsive."""
+        if self._busy:
+            return
+        self._set_busy(True)
+        task = BackgroundTask(operation, self)
+        self._task = task
+
+        def receive(result):
+            try:
+                on_success(result)
+            except Exception as exc:
+                self._show_task_error(str(exc))
+
+        task.succeeded.connect(receive)
+        task.failed.connect(self._show_task_error)
+        task.finished.connect(self._task_finished)
+        task.start()
+
+    def _show_task_error(self, message):
+        self._reset_dash()
+        self.lbl_dash_title.setWordWrap(True)
+        self.lbl_dash_title.setText(f"<span style='color: #EF5350;'>HIBA: {escape(message)}</span>")
+
+    def _task_finished(self):
+        task = self._task
+        self._task = None
+        self._set_busy(False)
+        if task is not None:
+            task.deleteLater()
+
+    def _on_explain(self):
+        if self._busy or not self._recommendation_context:
+            return
+        context = self._recommendation_context
+        self.lbl_dash_title.setText("Az első öt ajánlás részletes elemzése…")
+        self._start_task(lambda: self.controller.explain_recommendations(**context),
+                         self._display_explanations)
+
+    def _display_explanations(self, records):
+        from view.explanation_dialog import ExplanationDialog
+        self.lbl_dash_title.setText("Az ajánlások részletes elemzése elkészült.")
+        ExplanationDialog(records, {v: k for k, v in self.name_map.items()}, self).exec()
+
+    def _choose_lockfile(self):
+        path, _ = QFileDialog.getOpenFileName(self, "A LoL-kliens lockfile fájlja", "",
+                                               "Lockfile (lockfile);;Minden fájl (*)")
+        if path:
+            self._lockfile_path = path
+            self.btn_import.setToolTip("Beolvasás a kézzel megadott kliensből.")
+
+    def _on_import_draft(self):
+        if self._busy:
+            return
+        self._reset_dash()
+        self.lbl_dash_title.setText("A LoL-kliens hősválasztásának beolvasása…")
+        def read_client():
+            from services.draft_import import LcuDraftClient
+            return LcuDraftClient(lockfile_path=self._lockfile_path).read_draft()
+        self._start_task(read_client, self._review_import)
+
+    def _review_import(self, snapshot):
+        from view.draft_import_dialog import DraftImportDialog
+        dialog = DraftImportDialog(snapshot, {v: k for k, v in self.name_map.items()}, self)
+        if dialog.exec() != QDialog.DialogCode.Accepted:
+            self.lbl_dash_title.setText("A kliens beolvasása megszakítva.")
+            return
+        self._apply_import(dialog.draft_values())
+
+    def _apply_import(self, values):
+        """Apply only the reviewed snapshot, replacing the previous draft."""
+        names = {v: k for k, v in self.name_map.items()}
+        for key, combos in (("blue", self.blue_picks), ("red", self.red_picks),
+                            ("blue_bans", self.blue_bans), ("red_bans", self.red_bans)):
+            ids = values.get(key, [])
+            for index, combo in enumerate(combos):
+                champion_id = ids[index] if index < len(ids) else None
+                combo.setCurrentText(names[champion_id] if champion_id is not None else "")
+        self._invalidate_recommendations()
+        self._reset_dash()
+        self.lbl_dash_title.setText("A hősök és tiltások beolvasva. Kérhetsz ajánlást vagy predikciót.")
+
+    def closeEvent(self, event):
+        if self._busy:
+            event.ignore()
+            self.lbl_dash_title.setText("A folyamat befejezése után bezárható az ablak.")
+        else:
+            super().closeEvent(event)
             
     def _show_help(self):
         """Displays the help dialog."""

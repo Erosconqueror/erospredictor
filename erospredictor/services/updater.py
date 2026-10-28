@@ -58,6 +58,9 @@ def get_local_version() -> float:
 
 def update_files():
     """Checks for a new version on the server and downloads updated files if necessary."""
+    if os.path.isfile("data/update_manifest.json"):
+        print("[Updater] Locally trained models detected. Use update_models.bat to refresh them.")
+        return
     print("[Updater] Checking for updates...")
     
     try:

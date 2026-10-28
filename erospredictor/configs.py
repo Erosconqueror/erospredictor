@@ -50,3 +50,13 @@ ALLOWED_PATCHES = ["16.3", "16.4", "16.5", "16.6", "16.7"]
 
 TARGET_TIERS = [ "IRON", "BRONZE", "SILVER", "GOLD", "PLATINUM", "EMERALD", "DIAMOND", "MASTER", "GRANDMASTER", "CHALLENGER" ][::-1] 
 TARGET_DIVISIONS = ["I", "II", "III", "IV"]
+
+# Environment overrides allow the unattended updater to use local credentials.
+# Existing local configuration remains the fallback for manual developer tools.
+import os as _os
+RIOT_API_KEY = _os.environ.get("RIOT_API_KEY", RIOT_API_KEY)
+DB_NAME = _os.environ.get("DB_NAME", DB_NAME)
+DB_USER = _os.environ.get("DB_USER", DB_USER)
+DB_PASS = _os.environ.get("DB_PASS", DB_PASS)
+DB_HOST = _os.environ.get("DB_HOST", DB_HOST)
+DB_PORT = _os.environ.get("DB_PORT", DB_PORT)

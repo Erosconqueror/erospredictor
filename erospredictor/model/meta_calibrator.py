@@ -31,18 +31,18 @@ class MetaLearningCalibrator:
                 c_rw = [0.0] * (CHAMPION_COUNT * 2)
                 vw = list(ROLE_WEIGHTS.values())
                 for i, c_id in enumerate(blue):
-                    if c_id > 0: c_rw[c_id] = vw[i]
+                    if c_id >= 0: c_rw[c_id] = vw[i]
                 for i, c_id in enumerate(red):
-                    if c_id > 0: c_rw[c_id + CHAMPION_COUNT] = vw[i]
+                    if c_id >= 0: c_rw[c_id + CHAMPION_COUNT] = vw[i]
                 x_rw = torch.tensor([c_rw], dtype=torch.float32).to(self.device)
                 with torch.no_grad():
                     prob = model_obj(x_rw).item()
             elif model_name == "roleaware":
                 c_ra = [0.0] * (CHAMPION_COUNT * 10)
                 for i, c_id in enumerate(blue):
-                    if c_id > 0: c_ra[i * CHAMPION_COUNT + c_id] = 1.0
+                    if c_id >= 0: c_ra[i * CHAMPION_COUNT + c_id] = 1.0
                 for i, c_id in enumerate(red):
-                    if c_id > 0: c_ra[(i + 5) * CHAMPION_COUNT + c_id] = 1.0
+                    if c_id >= 0: c_ra[(i + 5) * CHAMPION_COUNT + c_id] = 1.0
                 x_ra = torch.tensor([c_ra], dtype=torch.float32).to(self.device)
                 with torch.no_grad():
                     prob = model_obj(x_ra).item()

@@ -6,8 +6,9 @@ from model.gnn_predictor import create_graph
 class Preprocessor:
     """Prepares and transforms match data for ML model training, keeping data in RAM for fast access."""
     
-    def __init__(self):
-        self.db = DataManager(True)
+    def __init__(self, db=None, allowed_patches=None):
+        self.db = db if db is not None else DataManager(True)
+        self.allowed_patches = list(allowed_patches if allowed_patches is not None else ALLOWED_PATCHES)
         self.c_rw = None
         self.c_ra = None
         self.c_gnn = None
@@ -18,9 +19,14 @@ class Preprocessor:
     def _calc_weights(self) -> dict:
         """Calculates weights for each patch based on recency, with a minimum threshold to prevent zeroing out."""
         w_map = {}
-        for i, p in enumerate(reversed(ALLOWED_PATCHES)):
+        for i, p in enumerate(reversed(self.allowed_patches)):
             w_map[p] = max(0.1, 1.0 - (i * 0.2))
         return w_map
+
+    def _get_matches(self):
+        """Keep every representation, including off-meta lists, in one patch window."""
+        return [m for m in self.db.get_all_matches()
+                if m.get("patch") in self.weights and m.get("tier") in DIVISION_WEIGHTS]
 
     def clear_cache(self):
         """Clears cached"""
@@ -33,7 +39,7 @@ class Preprocessor:
         if use_cache and self.c_rw:
             return self.c_rw
         
-        matches = self.db.get_all_matches()
+        matches = self._get_matches()
         if not matches: return [], [], [], []
             
         x_lst, y_lst, d_lst, w_lst = [], [], [], []
@@ -66,7 +72,7 @@ class Preprocessor:
         if use_cache and self.c_ra:
             return self.c_ra
             
-        matches = self.db.get_all_matches()
+        matches = self._get_matches()
         if not matches: return [], [], [], []
             
         x_lst, y_lst, d_lst, w_lst = [], [], [], []
@@ -97,7 +103,7 @@ class Preprocessor:
         if use_cache and self.c_gnn:
             return self.c_gnn
                 
-        matches = self.db.get_all_matches()
+        matches = self._get_matches()
         if not matches: return [], []
             
         graphs, divs = [], []
@@ -122,14 +128,17 @@ class Preprocessor:
 
     def gen_meta_champs(self):
         """Generates meta champion lists for each role and division based on pick frequency, saving results to the database."""
-        matches = self.db.get_all_matches()
+        matches = self._get_matches()
         if not matches: return
 
         totals, stats = {}, {}
         for m in matches:
             tier = m.get("tier", "UNKNOWN")
-            b_team = [int(self.c_map[str(c)]) for c in m.get("blue_team", []) if str(c) in self.c_map]
-            r_team = [int(self.c_map[str(c)]) for c in m.get("red_team", []) if str(c) in self.c_map]
+            b_raw, r_raw = m.get("blue_team", []), m.get("red_team", [])
+            if isinstance(b_raw, str): b_raw = b_raw.strip("{}").split(",")
+            if isinstance(r_raw, str): r_raw = r_raw.strip("{}").split(",")
+            b_team = [int(self.c_map[str(c)]) for c in b_raw if str(c) in self.c_map]
+            r_team = [int(self.c_map[str(c)]) for c in r_raw if str(c) in self.c_map]
 
             if len(b_team) != 5 or len(r_team) != 5: continue
 

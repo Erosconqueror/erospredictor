@@ -1,199 +1,281 @@
+import math
 import os
-import torch
+import pickle
+
+try:
+    import torch
+except ImportError:
+    torch = None
+
 from configs import CHAMPION_COUNT, MODELS_DIR, ROLE_WEIGHTS
-from model.predictor import ChampionPredictor, RoleAwareEmbeddingPredictor
+
+
+EMPTY_CHAMPION = -1
+
 
 class CoreModel:
-    """Main interface for fast, deterministic match predictions and recommendations."""
-    
+    """Match inference, recommendations, and explicitly requested diagnostics."""
+
     def __init__(self, stat_model):
         self.stat_model = stat_model
         self.models = {}
         self.active_div = None
-        self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+        self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu") if torch else "cpu"
         self.meta_data = {}
         self.ensemble_weights = self._default_weights()
+        self.load_errors = {}
 
     def _default_weights(self) -> dict:
-        """Returns the default ensemble weights."""
-        return {
-            "gnn": 0.58,
-            "roleweighted": 0.11,
-            "roleaware": 0.12,
-            "statistical": 0.19
-        }
+        return {"gnn": 0.58, "roleweighted": 0.11, "roleaware": 0.12, "statistical": 0.19}
 
     def load_meta_data(self, data):
-        """Loads champion meta information for filtering recommendations."""
         self.meta_data = data
 
     def load_ensemble_weights(self, div: str = "MIXED") -> bool:
-        """Loads learned ensemble weights from the meta-calibrator."""
+        """Load a calibrated ensemble, falling back to the packaged defaults."""
         try:
-            from model.meta_calibrator import MetaLearningCalibrator
-            calibrator = MetaLearningCalibrator()
-            path = f"models/{div}_meta_calibrator.pkl"
-            
+            path = os.path.join(MODELS_DIR, f"{div}_meta_calibrator.pkl")
             if os.path.exists(path):
-                calibrator.load(path)
-                self.ensemble_weights = calibrator.get_weights()
-                return True
-        except Exception:
-            pass
-        
+                with open(path, "rb") as stream:
+                    saved = pickle.load(stream)
+                weights = saved.get("weights", saved) if isinstance(saved, dict) else saved
+                if (isinstance(weights, dict) and weights
+                        and all(isinstance(v, (int, float)) and math.isfinite(v) and v >= 0
+                                for v in weights.values()) and sum(weights.values()) > 0):
+                    self.ensemble_weights = weights
+                    return True
+        except Exception as exc:
+            self.load_errors["calibration"] = str(exc)
         self.ensemble_weights = self._default_weights()
         return False
 
     def load_models(self, div: str):
-        """Loads all required prediction models for a specific division in evaluation mode."""
-        if self.active_div == div and self.models:
-            return 
-            
+        """Load once per division; record unavailable components for diagnostics."""
+        if self.active_div == div:
+            return
         self.models = {}
         self.active_div = div
+        self.load_errors = {}
         self.load_ensemble_weights(div)
+        if torch is None:
+            self.load_errors["neural_models"] = "A PyTorch nincs telepítve; csak a statisztikai modell érhető el."
+            return
 
-        try:
-            from model.gnn_predictor import LeagueGNN
-            gnn_path = f"models/{div}_gnn.pth"
-            if not os.path.exists(gnn_path):
-                gnn_path = "models/gnn_model.pth"
-            
-            if os.path.exists(gnn_path):
-                gnn = LeagueGNN()
-                gnn.load_state_dict(torch.load(gnn_path, map_location=self.device, weights_only=True))
-                gnn.to(self.device)
-                gnn.eval() 
-                self.models["gnn"] = gnn
-        except Exception: 
-            pass
+        for name in ("gnn", "roleweighted", "roleaware"):
+            path = os.path.join(MODELS_DIR, f"{div}_{name}.pth")
+            if name == "gnn" and not os.path.exists(path):
+                path = os.path.join(MODELS_DIR, "gnn_model.pth")
+            if not os.path.exists(path):
+                self.load_errors[name] = "A modell súlyfájlja nem található."
+                continue
+            try:
+                if name == "gnn":
+                    from model.gnn_predictor import LeagueGNN
+                    model = LeagueGNN()
+                elif name == "roleweighted":
+                    from model.predictor import ChampionPredictor
+                    model = ChampionPredictor(input_size=CHAMPION_COUNT * 2)
+                else:
+                    from model.predictor import RoleAwareEmbeddingPredictor
+                    model = RoleAwareEmbeddingPredictor()
+                model.load_state_dict(torch.load(path, map_location=self.device, weights_only=True))
+                model.to(self.device)
+                model.eval()
+                self.models[name] = model
+            except Exception as exc:
+                self.load_errors[name] = str(exc)
 
-        try:
-            rw_path = os.path.join(MODELS_DIR, f"{div}_roleweighted.pth")
-            if os.path.exists(rw_path):
-                rw = ChampionPredictor(input_size=CHAMPION_COUNT * 2).to(self.device)
-                rw.load_state_dict(torch.load(rw_path, map_location=self.device, weights_only=True))
-                rw.eval()
-                self.models["roleweighted"] = rw
-        except Exception: 
-            pass
+    @staticmethod
+    def _validate_draft_shape(blue, red):
+        if len(blue) != 5 or len(red) != 5:
+            raise ValueError("Mindkét csapathoz pontosan öt pozíció szükséges.")
+        if any(not isinstance(cid, int) or isinstance(cid, bool)
+               or not EMPTY_CHAMPION <= cid < CHAMPION_COUNT for cid in list(blue) + list(red)):
+            raise ValueError("Érvénytelen hősazonosító a draftban.")
 
+    @classmethod
+    def _validate_recommendation_request(cls, blue, red, team, r_idx):
+        cls._validate_draft_shape(blue, red)
+        if team not in ("blue", "red") or not isinstance(r_idx, int) or not 0 <= r_idx < 5:
+            raise ValueError("Érvénytelen csapat vagy pozíció.")
+        if (blue if team == "blue" else red)[r_idx] != EMPTY_CHAMPION:
+            raise ValueError("Erre a pozícióra már választottál hőst!")
+
+    def _component_predictions(self, div, blue, red):
+        """Return successful model probabilities and their effective normalized weights."""
+        self.load_models(div)
+        predictions = {}
+        for name, model in self.models.items():
+            try:
+                if name == "gnn":
+                    from model.gnn_predictor import predict_gnn
+                    probability = predict_gnn(model, blue, red, self.device)
+                else:
+                    if name == "roleweighted":
+                        features = [0.0] * (CHAMPION_COUNT * 2)
+                        role_weights = list(ROLE_WEIGHTS.values())
+                        for side, champs in enumerate((blue, red)):
+                            for role, cid in enumerate(champs):
+                                if cid >= 0:
+                                    features[side * CHAMPION_COUNT + cid] = role_weights[role]
+                    else:
+                        features = [0.0] * (CHAMPION_COUNT * 10)
+                        for side, champs in enumerate((blue, red)):
+                            for role, cid in enumerate(champs):
+                                if cid >= 0:
+                                    features[(side * 5 + role) * CHAMPION_COUNT + cid] = 1.0
+                    inputs = torch.tensor([features], dtype=torch.float32).to(self.device)
+                    with torch.no_grad():
+                        probability = model(inputs).item()
+                if math.isfinite(probability) and 0 <= probability <= 1:
+                    predictions[name] = probability
+            except Exception as exc:
+                self.load_errors[name] = str(exc)
         try:
-            ra_path = os.path.join(MODELS_DIR, f"{div}_roleaware.pth")
-            if os.path.exists(ra_path):
-                ra = RoleAwareEmbeddingPredictor().to(self.device)
-                ra.load_state_dict(torch.load(ra_path, map_location=self.device, weights_only=True))
-                ra.eval()
-                self.models["roleaware"] = ra
-        except Exception: 
-            pass
+            probability = self.stat_model.predict(div, blue, red)
+            if probability is not None and math.isfinite(probability) and 0 <= probability <= 1:
+                predictions["statistical"] = probability
+        except Exception as exc:
+            self.load_errors["statistical"] = str(exc)
+
+        weights = {name: self.ensemble_weights.get(name, 0.0) for name in predictions}
+        total = sum(weights.values())
+        if predictions and total <= 0:
+            weights = {name: 1.0 for name in predictions}
+            total = len(predictions)
+        return [{"model": name, "probability": probability, "weight": weights[name] / total}
+                for name, probability in predictions.items() if weights[name] > 0]
+
+    @staticmethod
+    def _component_mean(components):
+        return sum(item["probability"] * item["weight"] for item in components) if components else 0.5
 
     def calc_win_prob_fast(self, div: str, blue: list, red: list) -> float:
-        """Calculates deterministic win probability using ensemble weighted average."""
-        self.load_models(div)
-        
-        preds = []
-        weights = []
-
-        if "gnn" in self.models:
-            from model.gnn_predictor import predict_gnn
-            try:
-                p = predict_gnn(self.models["gnn"], blue, red, self.device)
-                preds.append(p)
-                weights.append(self.ensemble_weights["gnn"])
-            except Exception: 
-                pass
-
-        if "roleweighted" in self.models:
-            c_rw = [0.0] * (CHAMPION_COUNT * 2)
-            vw = list(ROLE_WEIGHTS.values())
-            for i, c_id in enumerate(blue):
-                if c_id > 0: c_rw[c_id] = vw[i]
-            for i, c_id in enumerate(red):
-                if c_id > 0: c_rw[c_id + CHAMPION_COUNT] = vw[i]
-            
-            x_rw = torch.tensor([c_rw], dtype=torch.float32).to(self.device)
-            with torch.no_grad():
-                out = self.models["roleweighted"](x_rw)
-            preds.append(out.item())
-            weights.append(self.ensemble_weights["roleweighted"])
-
-        if "roleaware" in self.models:
-            c_ra = [0.0] * (CHAMPION_COUNT * 10)
-            for i, c_id in enumerate(blue):
-                if c_id > 0: c_ra[i * CHAMPION_COUNT + c_id] = 1.0
-            for i, c_id in enumerate(red):
-                if c_id > 0: c_ra[(i + 5) * CHAMPION_COUNT + c_id] = 1.0
-            
-            x_ra = torch.tensor([c_ra], dtype=torch.float32).to(self.device)
-            with torch.no_grad():
-                out = self.models["roleaware"](x_ra)
-            preds.append(out.item())
-            weights.append(self.ensemble_weights["roleaware"])
-
-        try:
-            p_stat = self.stat_model.predict(div, blue, red)
-            if p_stat is not None:
-                preds.append(p_stat)
-                weights.append(self.ensemble_weights["statistical"])
-        except Exception: 
-            pass
-
-        if not preds:
-            return 0.50
-
-        tot_w = sum(weights)
-        norm_w = [w / tot_w for w in weights]
-        
-        blue_prob = sum(p * w for p, w in zip(preds, norm_w))
-        return blue_prob
+        return self._component_mean(self._component_predictions(div, blue, red))
 
     def predict_match(self, div: str, blue: list, red: list) -> dict:
-        """Predicts match outcome deterministically with balanced side evaluation."""
-        blue_prob_orig = self.calc_win_prob_fast(div, blue, red)
-        blue_prob_swap = self.calc_win_prob_fast(div, red, blue)
-        
-        red_prob_from_swap = 1.0 - blue_prob_swap
-        blue_final = (blue_prob_orig * 0.58) + (red_prob_from_swap * 0.42)
-        
-        return {
-            "blue_win_prob": blue_final * 100,
-            "red_win_prob": (1.0 - blue_final) * 100
-        }
+        """Evaluate both orientations with the same side balance as recommendations."""
+        self._validate_draft_shape(blue, red)
+        blue_prob = self.calc_win_prob_fast(div, blue, red)
+        swapped_prob = self.calc_win_prob_fast(div, red, blue)
+        final = blue_prob * 0.58 + (1.0 - swapped_prob) * 0.42
+        return {"blue_win_prob": final * 100, "red_win_prob": (1.0 - final) * 100}
 
-    def recommend_champs(self, div: str, blue: list, red: list, bans: list, 
-                        team: str, r_idx: int, top_k: int = 5, 
+    def recommend_champs(self, div: str, blue: list, red: list, bans: list,
+                        team: str, r_idx: int, top_k: int = 5,
                         filter_off_meta: bool = True) -> list:
-        """Recommends champions deterministically based on maximum win probability."""
-        unavail = set(bans).union(set([c for c in blue + red if c > 0]))
-        res = []
-        
-        allowed = set()
+        """Rank candidates only. Explanation inference is a separate optional call."""
+        self._validate_recommendation_request(blue, red, team, r_idx)
+        unavailable = {cid for cid in list(bans) + list(blue) + list(red) if cid >= 0}
+        allowed = None
         if self.meta_data:
             lookup_div = div if div in self.meta_data else "MIXED"
             mode = "strict" if filter_off_meta else "loose"
-            try:
-                allowed = set(self.meta_data[lookup_div][mode][str(r_idx)])
-            except KeyError:
-                pass
-        
-        for c_id in range(1, CHAMPION_COUNT):
-            if c_id in unavail:
+            role_list = self.meta_data.get(lookup_div, {}).get(mode, {}).get(str(r_idx))
+            if role_list is not None:
+                allowed = set(role_list)
+        results = []
+        if top_k <= 0:
+            return results
+        for cid in range(CHAMPION_COUNT):
+            if cid in unavailable or (allowed is not None and cid not in allowed):
                 continue
-            if allowed and c_id not in allowed:
+            candidate_blue, candidate_red = list(blue), list(red)
+            (candidate_blue if team == "blue" else candidate_red)[r_idx] = cid
+            score = self.predict_match(div, candidate_blue, candidate_red)[f"{team}_win_prob"]
+            results.append({"id": cid, "wr": score, "uncertainty": 0.0, "confidence": 100.0})
+        results.sort(key=lambda item: item["wr"], reverse=True)
+        return results[:top_k]
+
+    def _prediction_components(self, div, blue, red, team):
+        """Explain the actual side-balanced ensemble, including asymmetric failures."""
+        direct = self._component_predictions(div, blue, red)
+        swapped = self._component_predictions(div, red, blue)
+        direct = direct or [{"model": "fallback", "probability": 0.5, "weight": 1.0}]
+        swapped = swapped or [{"model": "fallback", "probability": 0.5, "weight": 1.0}]
+        weights, contributions = {}, {}
+        for orientation, balance in ((direct, 0.58), (swapped, 0.42)):
+            for component in orientation:
+                name = component["model"]
+                weight = balance * component["weight"]
+                probability = component["probability"] if orientation is direct else 1 - component["probability"]
+                weights[name] = weights.get(name, 0.0) + weight
+                contributions[name] = contributions.get(name, 0.0) + weight * probability
+        details = []
+        for name, weight in weights.items():
+            probability = contributions[name] / weight
+            if team == "red":
+                probability = 1 - probability
+            details.append({"model": name, "win_prob": probability * 100,
+                            "weight": weight, "weighted_win_prob": weight * probability * 100})
+        return details
+
+    def explain_recommendations(self, div: str, blue: list, red: list, team: str,
+                                r_idx: int, recommendations: list, max_items: int = 5) -> list:
+        """Diagnose at most five candidates without changing the original draft.
+
+        Conditional effects compare the candidate's gain before/after omitting one
+        known champion. They are sensitivity measurements, not causal or additive
+        attribution, and their baseline contains a deliberately unknown position.
+        """
+        self._validate_recommendation_request(blue, red, team, r_idx)
+        limit = max(0, min(int(max_items), 5))
+        if not limit or not recommendations:
+            return []
+        cache = {}
+
+        def score(b, r):
+            key = (tuple(b), tuple(r))
+            if key not in cache:
+                cache[key] = self.predict_match(div, b, r)[f"{team}_win_prob"]
+            return cache[key]
+
+        base_blue, base_red = list(blue), list(red)
+        baseline = score(base_blue, base_red)
+        result, seen = [], set()
+        for recommendation in recommendations[:limit]:
+            cid = recommendation["id"]
+            if (not isinstance(cid, int) or not 0 <= cid < CHAMPION_COUNT
+                    or cid in list(blue) + list(red)):
+                raise ValueError("Az ajánlás már nem illik az aktuális drafthoz. Kérj új ajánlást!")
+            if cid in seen:
                 continue
-
-            t_blue, t_red = list(blue), list(red)
-            if team == "blue": 
-                t_blue[r_idx] = c_id
-            else: 
-                t_red[r_idx] = c_id
-
-            pred = self.predict_match(div, t_blue, t_red)
-            score = pred["blue_win_prob"] if team == "blue" else pred["red_win_prob"]
-            
-            res.append((c_id, score, 0.0, 100.0))
-
-        res.sort(key=lambda x: (x[1] if x[1] != 50.0 else -1.0), reverse=True)
-        return [{"id": cid, "wr": prob, "uncertainty": unc, "confidence": conf} 
-                for cid, prob, unc, conf in res[:top_k]]
+            seen.add(cid)
+            candidate_blue, candidate_red = list(blue), list(red)
+            (candidate_blue if team == "blue" else candidate_red)[r_idx] = cid
+            components = self._prediction_components(div, candidate_blue, candidate_red, team)
+            current = sum(item["weighted_win_prob"] for item in components)
+            cache[(tuple(candidate_blue), tuple(candidate_red))] = current
+            gain = current - baseline
+            interactions = []
+            for side, champions in (("blue", blue), ("red", red)):
+                for role, champion in enumerate(champions):
+                    if champion < 0:
+                        continue
+                    without_blue, without_red = list(candidate_blue), list(candidate_red)
+                    empty_blue, empty_red = list(base_blue), list(base_red)
+                    (without_blue if side == "blue" else without_red)[role] = EMPTY_CHAMPION
+                    (empty_blue if side == "blue" else empty_red)[role] = EMPTY_CHAMPION
+                    without_score = score(without_blue, without_red)
+                    gain_without = without_score - score(empty_blue, empty_red)
+                    interactions.append({
+                        "champion_id": champion, "side": "ally" if side == team else "opponent",
+                        "role_index": role, "delta_pp": gain - gain_without,
+                        "score_delta_pp": current - without_score,
+                        "is_lane_opponent": side != team and role == r_idx,
+                    })
+            interactions.sort(key=lambda item: abs(item["delta_pp"]), reverse=True)
+            own = candidate_blue if team == "blue" else candidate_red
+            enemy = candidate_red if team == "blue" else candidate_blue
+            lane = self.stat_model.get_lane_matchup(div, cid, enemy[r_idx], r_idx) if enemy[r_idx] >= 0 else None
+            synergy = self.stat_model.get_bot_synergy(div, own[3], own[4]) if r_idx in (3, 4) else None
+            result.append({
+                "id": cid, "wr": current, "baseline_win_prob": baseline,
+                "candidate_delta_pp": gain, "components": components,
+                "interactions": interactions, "lane_matchup": lane, "bot_synergy": synergy,
+                "unavailable_models": dict(self.load_errors),
+                "explanation_kind": "conditional_leave_one_out",
+                "note": "Feltételes modellérzékenység; a hatások nem összeadhatók, és nem bizonyítanak ok-okozatot. "
+                        "A hiányos draft becslése bizonytalanabb. A lane-adat külön, megfigyelt statisztika.",
+            })
+        return result
