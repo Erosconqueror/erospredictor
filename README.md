@@ -38,6 +38,9 @@ Az alkalmazást a modellcsere idejére zárd be.
 
 # Meglévő adatbázisból, új scrape nélkül.
 .\update_models.bat --last-patches 3 --skip-scrape
+
+# Az eddigi folytatási pont helyett tudatosan új futás indítása.
+.\update_models.bat --last-patches 3 --fresh
 ```
 
 Az automatikus patchlista a Riot Data Dragon megjelent verzióiból készül, így
@@ -59,13 +62,44 @@ a már begyűjtött meccsek pedig felhasználhatók a következő indításkor.
 Az eredmény és a kihagyott adatok száma a `data/update_manifest.json` fájlba kerül.
 Egyszerre csak egy modellfrissítés futhat.
 
+A frissítő automatikusan folytatja a félbemaradt futást. Az első, javított verziós
+indítás a korábban már letöltött, a kiválasztott patchekhez és rangokhoz tartozó,
+használható meccseket is beszámítja a gyűjtési kvótába. Ha például a CHALLENGER
+2000 megfelelő meccse már megvan, továbblép a következő rangra.
+
+A `.model_update/state.json` tartósan megjegyzi a patchablakot, a kész rangokat,
+az aktuális oldalt, játékost és meccset. A meccs adatbázisba mentését újraindítás
+után is biztonságosan lezárja, dupla beszúrás és dupla kvótaszámolás nélkül.
+Az adatgyűjtés után rögzített tanítóadat-pillanatképet használ, így a már kész
+modellek és a folytatott tanítás ugyanabból az adatból dolgoznak.
+
+A tanítás minden lezárt korszak után atomikusan menti a modellt, az optimalizálót,
+a legjobb súlyokat és a véletlengenerátor állapotát. Újraindítás után az utolsó
+lezárt korszaktól folytatja; a félbeszakadt korszakot újrafuttatja. A teljesen kész,
+QA-ellenőrzött modellek ellenőrzőösszegét is megvizsgálja, és ezeket nem tanítja újra.
+A végső modellcsere megszakadása után a megőrzött forrásokból fejezi be a cserét.
+
+Váratlan Python-folyamatleállásnál az indító tíz másodperc múlva újraindítja a
+frissítést a mentett ponttal. Kapcsolati vagy adatbázis-hibánál a futó program
+várakozás után magától újrapróbálkozik. **Ctrl+C** vagy az ablak bezárása leállítja;
+felhasználói megszakítás után nem indítja újra magát. A következő kézi indítás
+ugyanazokkal a paraméterekkel ismét folytatható. A `--fresh` szándékosan új futást
+kezd, a már adatbázisba gyűjtött meccseket megtartva.
+
+Hibás kulcs, hiányzó függőség, elégtelen használható adat vagy sikertelen QA esetén
+beavatkozást kér, és megtartja a folytatási pontot. Megváltoztatott futási/tanítási
+paraméterekhez új futás szükséges, hogy ne keveredjenek eltérő adatok és modellek.
+
 A Riot-kérések közös ütemezést kapnak: alapból legfeljebb 20 kérés/másodperc és
 100 kérés/120 másodperc egy kulcs és route alatt. A szerver által közölt alkalmazás-
 és metóduskereteket, valamint számlálókat is figyeli. A magasabb metóduslimit nem
 növeli meg az alkalmazás teljes keretét. A 429-es válasznál kivárja a teljes
-`Retry-After` időt, majd ugyanazt a kérést legfeljebb ötször újrapróbálja;
+`Retry-After` időt, majd ugyanazt a kérést újrapróbálja. Az egyindításos frissítő
+kapcsolatbontás, timeout és átmeneti szerverhiba (pl. 502/503/504) esetén is
+folyamatosan próbálkozik, 5 másodpercről legfeljebb 120 másodpercre növekvő szünettel;
 hosszabb várakozáskor kiírja a hátralévő időt. Így egy nagyobb adatgyűjtésnél
-a várakozás normális. Más HTTP-hibákat nem ismétel korlátlanul.
+a várakozás normális. A már nem elérhető meccset/játékost kihagyja, a hibás
+hitelesítést nem próbálja hálózati hibaként újra és újra elküldeni.
 A [Riot limitkezelési leírása](https://developer.riotgames.com/docs/portal#web-apis_rate-limiting)
 részletezi az egymás mellett érvényes kereteket.
 

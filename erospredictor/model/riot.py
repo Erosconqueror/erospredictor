@@ -9,11 +9,13 @@ from services.riot_rate_limit import shared_limiter
 class Riot:
     """Handles Riot API requests and data extraction."""
     
-    def __init__(self, api_key=None, strict_errors=False, rate_limiter=None, max_rate_retries=5):
+    def __init__(self, api_key=None, strict_errors=False, rate_limiter=None, max_rate_retries=5,
+                 retry_transient=False):
         self.api_key = api_key or os.environ.get("RIOT_API_KEY") or RIOT_API_KEY
         self.strict_errors = strict_errors
         self.rate_limiter = rate_limiter if rate_limiter is not None else shared_limiter(self.api_key)
         self.max_rate_retries = max_rate_retries
+        self.retry_transient = retry_transient
         self.api = LolWatcher(self.api_key, timeout=15, rate_limiter=self.rate_limiter)
         self.region = REGION
         self.cont = CONTINENT
@@ -32,6 +34,8 @@ class Riot:
                 return res.json()
             return self._call(request, self.cont)
         except Exception as e:
+            if getattr(getattr(e, "response", None), "status_code", None) == 404:
+                return None
             if self.strict_errors:
                 raise
             print(f"Account fetch error: {e}")
@@ -59,6 +63,8 @@ class Riot:
             time.sleep(15)
             return []
         except Exception as e:
+            if getattr(getattr(e, "response", None), "status_code", None) == 404:
+                return []
             if self.strict_errors:
                 raise
             print(f"Player fetch error: {e}")
@@ -74,6 +80,8 @@ class Riot:
             time.sleep(3)
             return []
         except Exception as e:
+            if getattr(getattr(e, "response", None), "status_code", None) == 404:
+                return []
             if self.strict_errors:
                 raise
             print(f"Match ID fetch error: {e}")
@@ -124,10 +132,13 @@ class Riot:
             time.sleep(3)
             return None
         except Exception as e:
+            if getattr(getattr(e, "response", None), "status_code", None) == 404:
+                return None
             if self.strict_errors:
                 raise
             print(f"Match fetch error ({match_id}): {e}")
             return None
 
     def _call(self, operation, region):
-        return self.rate_limiter.call(operation, region, self.max_rate_retries)
+        return self.rate_limiter.call(operation, region, self.max_rate_retries,
+                                      retry_transient=self.retry_transient)

@@ -114,6 +114,39 @@ class LimiterTests(unittest.TestCase):
                     self.limiter.call(operation, "europe")
                 self.assertEqual(calls, [status])
 
+    def test_unattended_mode_recovers_after_more_than_five_connection_failures(self):
+        calls = []
+        def operation():
+            self.limiter.acquire("europe", "match", "fetch")
+            calls.append(self.time.now)
+            if len(calls) <= 8:
+                raise ConnectionError("remote disconnected")
+            return "recovered"
+        self.assertEqual(self.limiter.call(operation, "europe", max_retries=None,
+                                           retry_transient=True), "recovered")
+        self.assertEqual(len(calls), 9)
+        self.assertGreater(calls[-1], calls[0])
+
+    def test_unattended_mode_retries_server_failures_and_respects_retry_after(self):
+        calls = []
+        def operation():
+            self.limiter.acquire("europe", "match", "fetch")
+            calls.append(self.time.now)
+            if len(calls) == 1:
+                raise FakeError(503, {"Retry-After": "125"})
+            return True
+        self.assertTrue(self.limiter.call(operation, "europe", max_retries=None, retry_transient=True))
+        self.assertEqual(calls, [0, 125])
+
+    def test_user_interrupt_is_never_retried(self):
+        calls = []
+        def operation():
+            calls.append(True)
+            raise KeyboardInterrupt
+        with self.assertRaises(KeyboardInterrupt):
+            self.limiter.call(operation, "europe", max_retries=None, retry_transient=True)
+        self.assertEqual(calls, [True])
+
     def test_retry_after_parses_http_date_and_rejects_non_finite(self):
         self.assertEqual(retry_after_seconds("Thu, 01 Jan 1970 00:02:00 GMT", 0), 120)
         self.assertEqual(retry_after_seconds("1.5"), 1.5)
@@ -165,6 +198,27 @@ class RiotWatcherIntegrationTests(unittest.TestCase):
             self.assertEqual(riot.get_account("test-name", "tag"), {})
         self.assertEqual(request.call_count, 2)
         self.assertEqual(self.time.now, 2)
+
+    def test_real_watcher_recovers_from_remote_disconnected(self):
+        import requests
+        from http.client import RemoteDisconnected
+        from model.riot import Riot
+        riot = Riot(api_key="test-not-a-real-key", strict_errors=True, rate_limiter=self.limiter,
+                    max_rate_retries=None, retry_transient=True)
+        dropped = requests.ConnectionError("Connection aborted", RemoteDisconnected("remote closed connection"))
+        with patch.object(riot.api._base_api._session, "get", side_effect=[dropped, self.response(200)]) as request:
+            self.assertEqual(riot.get_match_ids("test-player"), [])
+        self.assertEqual(request.call_count, 2)
+        self.assertEqual(self.time.now, 5)
+
+    def test_deleted_match_or_player_is_skipped_instead_of_aborting_update(self):
+        from model.riot import Riot
+        riot = Riot(api_key="test-not-a-real-key", strict_errors=True, rate_limiter=self.limiter,
+                    max_rate_retries=None, retry_transient=True)
+        with patch.object(riot.api._base_api._session, "get", return_value=self.response(404)) as request:
+            self.assertIsNone(riot.get_match_data("removed-match"))
+            self.assertEqual(riot.get_match_ids("removed-player"), [])
+        self.assertEqual(request.call_count, 2)
 
 
 if __name__ == "__main__":

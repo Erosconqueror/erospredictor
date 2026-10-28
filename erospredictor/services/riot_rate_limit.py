@@ -12,6 +12,7 @@ import hashlib
 import math
 import threading
 import time
+from services.update_retry import is_transient, retry_delay
 
 
 def retry_after_seconds(value, wall_time=None):
@@ -151,26 +152,32 @@ class RiotRateLimiter:
                 if delay is not None:
                     self._blocked_until[region] = max(self._blocked_until.get(region, 0), now + delay)
 
-    def call(self, operation, region, max_retries=5):
-        """Retry only 429 responses, never shortening the server's Retry-After."""
-        if not isinstance(max_retries, int) or max_retries < 0:
+    def call(self, operation, region, max_retries=5, retry_transient=False):
+        """Optionally keep retrying temporary network/server failures until cancelled."""
+        if max_retries is not None and (not isinstance(max_retries, int) or max_retries < 0):
             raise ValueError("max_retries must be a non-negative integer.")
-        for attempt in range(max_retries + 1):
+        attempt = 0
+        while True:
             try:
                 return operation()
             except Exception as exc:
                 response = getattr(exc, "response", None)
-                if response is None or getattr(response, "status_code", None) != 429 or attempt == max_retries:
+                status = getattr(response, "status_code", None) if response is not None else None
+                temporary = is_transient(exc) if retry_transient else status == 429
+                if not temporary or (max_retries is not None and attempt >= max_retries):
                     raise
-                headers = {str(k).lower(): v for k, v in (response.headers or {}).items()}
+                headers = {str(k).lower(): v for k, v in (getattr(response, "headers", {}) or {}).items()}
                 delay = retry_after_seconds(headers.get("retry-after"), self.wall_clock())
                 if delay is None:
-                    delay = 5.0 * (2 ** attempt)
+                    delay = retry_delay(attempt)
                 with self._lock:
                     self._blocked_until[region] = max(self._blocked_until.get(region, 0), self.clock() + delay)
                 if self.logger:
-                    self.logger(f"[Riot API] 429: azonos kérés újrapróbálása várakozás után "
-                                f"({attempt + 1}/{max_retries}).")
+                    limit = str(max_retries) if max_retries is not None else "folyamatos"
+                    reason = str(status) if status is not None else "kapcsolati hiba"
+                    self.logger(f"[Riot API] {reason}: azonos kérés újrapróbálása várakozás után "
+                                f"({attempt + 1}/{limit}); Ctrl+C: leállítás.")
+                attempt += 1
 
 
 _SHARED = {}

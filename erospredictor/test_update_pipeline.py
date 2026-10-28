@@ -164,9 +164,12 @@ class PublicationTests(unittest.TestCase):
                 (dest / name).write_text("old-" + name)
                 (staging / name).write_text("new-" + name)
             original_replace = pipeline.os.replace
+            failed = False
 
             def replace(source, target):
-                if Path(source) == staging / "two":
+                nonlocal failed
+                if Path(target) == dest / "two" and not failed:
+                    failed = True
                     raise OSError("simulated full disk")
                 return original_replace(source, target)
 

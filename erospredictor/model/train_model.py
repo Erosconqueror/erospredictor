@@ -4,6 +4,9 @@ import torch
 import torch.nn as nn
 import torch.optim as optim
 import numpy as np
+from pathlib import Path
+import tempfile
+import pickle
 from torch.utils.data import DataLoader as TorchDataLoader, TensorDataset
 from torch_geometric.loader import DataLoader as GeoDataLoader
 from model.predictor import ChampionPredictor, RoleAwareEmbeddingPredictor
@@ -19,11 +22,12 @@ class DynamicTrainer:
         "GOLD": 25912, "SILVER": 26362, "BRONZE": 21428, "IRON": 18814
     }
     
-    def __init__(self, div: str, output_dir=None, dataset_size=None, seed=42):
+    def __init__(self, div: str, output_dir=None, dataset_size=None, seed=42, checkpoint_dir=None):
         self.div = div
         self.output_dir = os.fspath(output_dir) if output_dir is not None else MODELS_DIR
         self.dataset_size = dataset_size
         self.seed = seed
+        self.checkpoint_dir = Path(checkpoint_dir) if checkpoint_dir is not None else None
         self.config = self._get_config(div)
         self.best_loss = float('inf')
         self.patience_counter = 0
@@ -43,6 +47,55 @@ class DynamicTrainer:
             bs, ep, lr = 128, 15, 0.0015
         
         return {"batch_size": bs, "epochs": ep, "learning_rate": lr, "dataset_size": size}
+
+    @staticmethod
+    def _atomic_torch_save(value, path):
+        path = Path(path)
+        path.parent.mkdir(parents=True, exist_ok=True)
+        temporary = None
+        try:
+            with tempfile.NamedTemporaryFile(dir=path.parent, prefix=".training-", delete=False) as output:
+                temporary = Path(output.name)
+                torch.save(value, output)
+                output.flush()
+                os.fsync(output.fileno())
+            os.replace(temporary, path)
+        finally:
+            if temporary is not None:
+                temporary.unlink(missing_ok=True)
+
+    def _resume(self, name, fallback, model, opt, signature):
+        self.best_loss, self.patience_counter = float('inf'), 0
+        if self.checkpoint_dir is None:
+            return 0, None
+        path = self.checkpoint_dir / f"{name}_{'fallback' if fallback else 'normal'}.pth"
+        if not path.is_file():
+            return 0, None
+        try:
+            state = torch.load(path, map_location="cpu", weights_only=True)
+        except (EOFError, pickle.UnpicklingError, RuntimeError):
+            print(f"[{name}] A korszakmentés sérült; csak ezt a modellt kezdi újra.")
+            return 0, None
+        if state.get("signature") != signature:
+            raise ValueError(f"Training checkpoint parameters changed for {name}; use --fresh.")
+        model.load_state_dict(state["model"])
+        opt.load_state_dict(state["optimizer"])
+        self.best_loss, self.patience_counter = state["best_loss"], state["patience"]
+        torch.set_rng_state(state["rng"])
+        if self.device.type == "cuda" and state.get("cuda_rng") is not None:
+            torch.cuda.set_rng_state_all(state["cuda_rng"])
+        print(f"[{name}] Folytatás a(z) {state['next_epoch']}. mentett korszak után.")
+        return state["next_epoch"], state["best_state"]
+
+    def _save_epoch(self, name, fallback, model, opt, signature, epoch, best_state):
+        if self.checkpoint_dir is None:
+            return
+        self._atomic_torch_save({"signature": signature, "next_epoch": epoch + 1,
+            "model": model.state_dict(), "optimizer": opt.state_dict(), "best_state": best_state,
+            "best_loss": self.best_loss, "patience": self.patience_counter,
+            "rng": torch.get_rng_state(),
+            "cuda_rng": torch.cuda.get_rng_state_all() if self.device.type == "cuda" else None},
+            self.checkpoint_dir / f"{name}_{'fallback' if fallback else 'normal'}.pth")
     
     def train_single_model(self, X: list, y: list, name: str, in_size: int, 
                            m_type: str = "standard", w: list = None, fallback: bool = False) -> dict:
@@ -75,11 +128,13 @@ class DynamicTrainer:
         opt = optim.Adam(model.parameters(), lr=lr, weight_decay=weight_decay)
         crit = nn.BCELoss(reduction='none')
         
-        self.best_loss = float('inf')
-        self.patience_counter = 0
-        best_state = None
-        
-        for epoch in range(ep):
+        signature = {"kind": m_type, "count": len(X), "size": in_size,
+                     "epochs": ep, "batch_size": bs, "lr": lr, "wd": weight_decay, "seed": self.seed}
+        start, best_state = self._resume(name, fallback, model, opt, signature)
+        epochs_trained = start
+        for epoch in range(start, ep):
+            if self.patience_counter >= 15:
+                break
             model.train()
             train_loss = 0.0
             for bx, by, bw in loader:
@@ -116,13 +171,11 @@ class DynamicTrainer:
             if epoch % 10 == 0:
                 print(f"  Ep {epoch}/{ep} TL={train_loss:.4f} VL={val_loss:.4f} P={self.patience_counter}/15")
             
-            if self.patience_counter >= 15:
-                print(f"  Early stop at epoch {epoch}")
-                break
-            
             if self.patience_counter >= 10:
                 for pg in opt.param_groups:
                     pg['lr'] *= 0.5
+            self._save_epoch(name, fallback, model, opt, signature, epoch, best_state)
+            epochs_trained = epoch + 1
         
         if best_state:
             model.load_state_dict(best_state)
@@ -130,9 +183,9 @@ class DynamicTrainer:
         if not best_state:
             return {"status": "failed", "reason": "non_finite_validation_loss"}
         os.makedirs(self.output_dir, exist_ok=True)
-        torch.save(model.state_dict(), os.path.join(self.output_dir, f"{name}.pth"))
+        self._atomic_torch_save(model.state_dict(), os.path.join(self.output_dir, f"{name}.pth"))
         
-        return {"status": "success", "epochs_trained": epoch + 1, "best_loss": float(self.best_loss)}
+        return {"status": "success", "epochs_trained": epochs_trained, "best_loss": float(self.best_loss)}
     
     def train_gnn_model(self, graphs: list, name: str, fallback: bool = False) -> dict:
         """Trains GNN model with dynamic hyperparameters and optional fallback generalization."""
@@ -159,11 +212,13 @@ class DynamicTrainer:
         opt = optim.Adam(model.parameters(), lr=lr, weight_decay=weight_decay)
         crit = nn.BCELoss(reduction='none')
         
-        self.best_loss = float('inf')
-        self.patience_counter = 0
-        best_state = None
-        
-        for epoch in range(ep):
+        signature = {"kind": "gnn", "count": len(graphs), "epochs": ep,
+                     "batch_size": bs, "lr": lr, "wd": weight_decay, "seed": self.seed}
+        start, best_state = self._resume(name, fallback, model, opt, signature)
+        epochs_trained = start
+        for epoch in range(start, ep):
+            if self.patience_counter >= 15:
+                break
             model.train()
             train_loss = 0.0
             for batch in loader:
@@ -195,13 +250,11 @@ class DynamicTrainer:
             if epoch % 10 == 0:
                 print(f"  Ep {epoch}/{ep} TL={train_loss:.4f} VL={val_loss:.4f} P={self.patience_counter}/15")
             
-            if self.patience_counter >= 15:
-                print(f"  Early stop at epoch {epoch}")
-                break
-            
             if self.patience_counter >= 10:
                 for pg in opt.param_groups:
                     pg['lr'] *= 0.5
+            self._save_epoch(name, fallback, model, opt, signature, epoch, best_state)
+            epochs_trained = epoch + 1
         
         if best_state:
             model.load_state_dict(best_state)
@@ -209,9 +262,9 @@ class DynamicTrainer:
         if not best_state:
             return {"status": "failed", "reason": "non_finite_validation_loss"}
         os.makedirs(self.output_dir, exist_ok=True)
-        torch.save(model.state_dict(), os.path.join(self.output_dir, f"{name}.pth"))
+        self._atomic_torch_save(model.state_dict(), os.path.join(self.output_dir, f"{name}.pth"))
         
-        return {"status": "success", "epochs_trained": epoch + 1, "best_loss": float(self.best_loss)}
+        return {"status": "success", "epochs_trained": epochs_trained, "best_loss": float(self.best_loss)}
 
 class MetaLearningTrainer:
     """Trains meta-model to learn optimal ensemble weights."""
