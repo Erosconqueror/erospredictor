@@ -22,7 +22,7 @@ import tempfile
 from urllib.request import urlopen
 from services.update_progress import UpdateProgress, atomic_json, file_digest
 from services.update_retry import http_status, retry_delay, wait_for_retry
-from services.dataset_profile import rank_targets, balanced_snapshot
+from services.dataset_profile import rank_targets, balanced_snapshot, collection_steps
 from services.catalog_update import CatalogData, prepare_catalog, champion_dimensions
 
 import configs as cfg
@@ -172,7 +172,9 @@ def parser() -> argparse.ArgumentParser:
     cli.add_argument("--min-matches", type=positive_int, default=200, help="Minimum usable records required for EVERY requested tier")
     cli.add_argument("--epochs", type=positive_int, help="Override adaptive training epochs")
     cli.add_argument("--qa-min-pass", type=float, default=0.25, help="Minimum Golden Dataset pass fraction after retry (default: 0.25)")
-    cli.add_argument("--skip-scrape", action="store_true", help="Train from selected patches already in PostgreSQL")
+    mode = cli.add_mutually_exclusive_group()
+    mode.add_argument("--skip-scrape", action="store_true", help="Train from selected patches already in PostgreSQL")
+    mode.add_argument("--scrape-only", action="store_true", help="Collect beyond fixed quotas in profile proportions until available players are exhausted; never train")
     cli.add_argument("--dry-run", action="store_true", help="Print plan without API collection, database access or file changes")
     cli.add_argument("--fresh", action="store_true", help="Explicitly start over instead of resuming the unfinished update")
     cli.add_argument("--resume", action="store_true", help="Resume the saved update, including completion after a process crash")
@@ -186,35 +188,54 @@ def _collection_state():
             "match_ids": None, "match_index": 0, "pending": None, "done": False}
 
 
-def collect_matches(args, patches, riot, db, log=print, progress=None) -> dict:
+def _collection_report(state, target):
+    return {"new_matches": state["new_matches"],
+            "players": max(state.get("players_count", 0), len(state["visited"])),
+            "reused_matches": state.get("reused_matches", 0), "target": target,
+            "window_matches": state.get("window_matches"), "exhausted": bool(state.get("exhausted")),
+            "examined": max(state.get("examined_count", 0), len(state["examined_ids"])),
+            "outside_window_or_invalid": state["outside_window_or_invalid"]}
+
+
+def collect_matches(args, patches, riot, db, log=print, progress=None, *, targets=None,
+                    preserve_cursor=False, context=None) -> dict:
     """Persist page/player/match position; replay a DB write safely after a crash."""
-    known = set(db.get_all_match_ids())
+    context = context if context is not None else {}
+    if "known" not in context:
+        context["known"] = set(db.get_all_match_ids())
+        context["mapping"] = db.get_champion_mapping()
+    known, mapping = context["known"], context["mapping"]
     states = progress.state["collection"] if progress else {}
     save = progress.save if progress else lambda: None
     results = {}
-    targets = rank_targets(args, cfg.DATASET_TARGETS)
+    targets = targets if targets is not None else rank_targets(args, cfg.DATASET_TARGETS)
     population = args.matches_per_tier is None
-    mapping = db.get_champion_mapping()
     riot.region, riot.cont = args.region, args.continent
-    if population or (progress and progress.state.get("adopt_existing")):
+    if (population or (progress and progress.state.get("adopt_existing"))) and not context.get("counts_loaded"):
         raw = db.get_all_matches(patches=patches, tiers=args.tiers, region=args.region)
-        existing, _ = usable_matches(raw, db.get_champion_mapping(), patches, args.tiers, args.region)
+        existing, _ = usable_matches(raw, mapping, patches, args.tiers, args.region)
         counts = Counter(item["tier"] for item in existing)
         for tier in args.tiers:
             state = states.setdefault(tier, _collection_state())
             goal = targets[tier]
             state["window_matches"] = counts[tier]
-            state["reused_matches"] = max(0, min(goal, counts[tier]) - state["new_matches"])
-            if population and state["done"] and counts[tier] < goal:
-                state.update(done=False, division=0, page=1, players=None, player_index=0,
-                             active_player=None, match_ids=None, match_index=0)
+            credited = counts[tier] if preserve_cursor else min(goal, counts[tier])
+            state["reused_matches"] = max(0, credited - state["new_matches"])
             if state["reused_matches"]:
                 log(f"[Update] {tier}: {state['reused_matches']} meglévő mérkőzés átvéve a korábbi gyűjtésből.")
         if progress:
             progress.state["adopt_existing"] = False
+        context["counts_loaded"] = True
         save()
     for tier in args.tiers:
         state = states.setdefault(tier, _collection_state())
+        if population and state["done"] and state.get("window_matches", 0) < targets[tier]:
+            if preserve_cursor:
+                if not state.get("exhausted"):
+                    state["done"] = False
+            else:
+                state.update(done=False, exhausted=False, division=0, page=1, players=None, player_index=0,
+                             active_player=None, match_ids=None, match_index=0)
         divisions = ["I"] if tier in {"MASTER", "GRANDMASTER", "CHALLENGER"} else cfg.TARGET_DIVISIONS
         visited, examined = set(state["visited"]), set(state["examined_ids"])
         if state["done"]:
@@ -229,13 +250,19 @@ def collect_matches(args, patches, riot, db, log=print, progress=None) -> dict:
                 if population and inserted:
                     state["window_matches"] += 1
                 state["new_matches"] += 1
+                if population:
+                    credited = state["window_matches"] if preserve_cursor else min(targets[tier], state["window_matches"])
+                    state["reused_matches"] = max(0, credited - state["new_matches"])
                 state["match_index"] += 1
                 state["pending"] = None
                 save()
             count = state.get("window_matches", 0) if population else state["new_matches"] + state.get("reused_matches", 0)
-            if (count >= targets[tier]
-                    or state["division"] >= len(divisions)):
+            if count >= targets[tier]:
                 state["done"] = True
+                save()
+                break
+            if state["division"] >= len(divisions):
+                state.update(done=True, exhausted=True)
                 save()
                 break
             if state["players"] is None:
@@ -263,7 +290,7 @@ def collect_matches(args, patches, riot, db, log=print, progress=None) -> dict:
                     save()
                     continue
                 if args.players_per_tier is not None and len(visited) >= args.players_per_tier:
-                    state["done"] = True
+                    state.update(done=True, exhausted=True)
                     save()
                     break
                 state["active_player"] = puuid
@@ -304,13 +331,10 @@ def collect_matches(args, patches, riot, db, log=print, progress=None) -> dict:
         state["examined_count"] = max(state.get("examined_count", 0), len(examined))
         # Completed tiers no longer need their large cursor/ID arrays in every
         # subsequent atomic checkpoint write.
-        state.update(visited=[], examined_ids=[], players=None, match_ids=None, active_player=None)
+        if not preserve_cursor or state.get("exhausted"):
+            state.update(visited=[], examined_ids=[], players=None, match_ids=None, active_player=None)
         save()
-        results[tier] = {"new_matches": state["new_matches"], "players": state["players_count"],
-                         "reused_matches": state.get("reused_matches", 0),
-                         "target": targets[tier], "window_matches": state.get("window_matches"),
-                         "examined": state["examined_count"],
-                         "outside_window_or_invalid": state["outside_window_or_invalid"]}
+        results[tier] = _collection_report(state, targets[tier])
         count = state.get("window_matches", 0) if population else state["new_matches"] + state.get("reused_matches", 0)
         log(f"{tier}: {count}/{targets[tier]} usable records, {state['new_matches']} new, {state['players_count']} players visited.")
     return results
@@ -526,17 +550,96 @@ def train_outputs(args, patches, db, records, staging, log=print):
     return reports, outputs
 
 
+def _run_scrape_only(args, targets, log=print):
+    """A separate collection journal; the installed application is never published."""
+    if args.matches_per_tier is not None:
+        raise ValueError("Use --tier-target for --scrape-only proportions, not --matches-per-tier.")
+    steps = collection_steps(targets)
+    progress = None
+    if args.dry_run:
+        patches = resolve_patch_window(args)
+    else:
+        request = {key: value for key, value in vars(args).items()
+                   if not key.startswith("_") and key not in
+                   {"dry_run", "fresh", "resume", "epochs", "qa_min_pass", "min_matches"}}
+        if args.patches:
+            request["patches"] = sorted({normalize_patch(value) for value in args.patches})
+        if args.end_patch:
+            request["end_patch"] = normalize_patch(args.end_patch)
+        request["targets"] = targets
+        request["database"] = {key: getattr(cfg, key, None) for key in ("DB_NAME", "DB_HOST", "DB_PORT")}
+        progress = UpdateProgress.open(APP_DIR / ".scrape_only", request,
+            lambda: resolve_patch_window(args), fresh=args.fresh and not args.resume,
+            resume_completed=args.resume)
+        patches = progress.state["patches"]
+        if progress.state["status"] == "complete":
+            log("The saved scrape-only run already completed successfully.")
+            return 0
+    plan = {"mode": "scrape-only", "patches": patches, "region": args.region,
+            "tiers": args.tiers, "profile_proportions": targets, "records_per_round": steps,
+            "fixed_match_limit": None, "stages": ["collect"]}
+    log(json.dumps(plan, indent=2))
+    if args.dry_run:
+        return 0
+    log(f"[Scrape] Folytatási pont: {progress.root / 'state.json'}. Ctrl+C: leállítás.")
+    from model.data_manager import DataManager
+    from model.riot import Riot
+    catalog, _ = prepare_catalog(APP_DIR, progress, patches, refresh=not args.no_catalog, include_icons=False)
+    db = CatalogData(DataManager(dev_mode=True), catalog)
+    try:
+        riot = Riot(strict_errors=True, max_rate_retries=None, retry_transient=True)
+        if not riot.api_key:
+            raise ValueError("Set RIOT_API_KEY before collecting matches.")
+        context = {}
+        while True:
+            states = progress.state["collection"]
+            active = [tier for tier in args.tiers if not states.get(tier, {}).get("exhausted")]
+            if not active:
+                break
+            goals = progress.state.get("scrape_goals")
+            if goals is None:
+                # Catch up underrepresented ranks first, considering SQL records
+                # already collected in this window. Exhausted ranks cannot block others.
+                level = min(states.get(tier, {}).get("window_matches", 0) // steps[tier]
+                            for tier in active) + 1
+                goals = {tier: (steps[tier] * level if tier in active else states[tier]["window_matches"])
+                         for tier in args.tiers}
+                progress.state["scrape_goals"] = goals
+                progress.save()
+            report = collect_matches(args, patches, riot, db, log, progress=progress,
+                                     targets=goals, preserve_cursor=True, context=context)
+            progress.state["collection_report"] = report
+            del progress.state["scrape_goals"]
+            progress.save()
+        # Also reconstruct the final report after a crash between the last SQL
+        # cursor checkpoint and the end-of-round report checkpoint.
+        report = {tier: _collection_report(progress.state["collection"][tier], None) for tier in args.tiers}
+        progress.state["collection_report"] = report
+        progress.state.pop("scrape_goals", None)
+        progress.save()
+        summary = {"completed_at": datetime.now(timezone.utc).isoformat(), "plan": plan,
+                   "collection": report, "reason": "available_players_or_search_caps_exhausted"}
+        atomic_json(progress.root / "last_collection.json", summary)
+        progress.complete()
+        log("[Scrape] Az elérhető játékosok feldolgozva. A meccsek elmentve; a gyűjtés befejeződött.")
+        return 0
+    finally:
+        db.close()
+
+
 def _run(args, log=print) -> int:
     if args.matches_per_player > 100:
         raise ValueError("--matches-per-player cannot exceed Riot's 100-record limit.")
-    if args.min_matches < 4:
-        raise ValueError("--min-matches must be at least 4 for training and validation.")
-    if not 0 <= args.qa_min_pass <= 1:
-        raise ValueError("--qa-min-pass must be between 0 and 1.")
     if args.patches and args.end_patch:
         raise ValueError("Use --end-patch with --last-patches, not with explicit --patches.")
     args.tiers = list(dict.fromkeys(args.tiers))
     targets = rank_targets(args, cfg.DATASET_TARGETS)
+    if args.scrape_only:
+        return _run_scrape_only(args, targets, log)
+    if args.min_matches < 4:
+        raise ValueError("--min-matches must be at least 4 for training and validation.")
+    if not 0 <= args.qa_min_pass <= 1:
+        raise ValueError("--qa-min-pass must be between 0 and 1.")
     if args.matches_per_tier is None and any(goal < args.min_matches for goal in targets.values()):
         raise ValueError("Every population target must be at least --min-matches.")
     progress = None
@@ -544,7 +647,7 @@ def _run(args, log=print) -> int:
         patches = resolve_patch_window(args)
     else:
         request = {key: value for key, value in vars(args).items()
-                   if not key.startswith("_") and key not in {"dry_run", "fresh", "resume"}}
+                   if not key.startswith("_") and key not in {"dry_run", "fresh", "resume", "scrape_only"}}
         if args.patches:
             request["patches"] = sorted({normalize_patch(patch) for patch in args.patches})
         if args.end_patch:

@@ -43,6 +43,38 @@ Az alkalmazást a modellcsere idejére zárd be.
 .\update_models.bat --last-patches 3 --fresh
 ```
 
+Külön, csak adatgyűjtésre szolgáló mód:
+
+```powershell
+.\update_models.bat --scrape-only
+
+# A terv ellenőrzése konkrét patchablakkal, hálózat és adatbázis nélkül.
+.\update_models.bat --scrape-only --patches 16.19 16.20 16.21 --dry-run
+```
+
+A `--scrape-only` a jóváhagyott rangprofil számait **arányként** használja,
+és nagyjából ezer meccses körökben gyűjt tovább, rögzített teljes meccslimit nélkül.
+A már meglévő adatokat is figyelembe veszi, először az alulreprezentált rangokat
+tölti fel. Ha egy rang elérhető játékosai elfogynak, a többinél tovább keres;
+emiatt az elérhető adatoktól függően az arány eltérhet a céltól. Az összes
+elérhető játékos feldolgozása vagy kézi keresési korlát elérése után befejeződik.
+Játékosonként alapból a legutóbbi 50 meccset kéri le; `--matches-per-player 100`
+a kérésenként megengedett nagyobb előzménylistát használja.
+
+Ebben a módban nincs tanítás, QA, kalibráció vagy modellcsere. A friss hőslistát
+csak a gyűjtéshez használja, a telepített katalógust, ikonokat és konfigurációt
+nem publikálja. A normál frissítő később fel tudja használni az elmentett meccseket.
+A `--skip-scrape` és `--scrape-only` egymást kizárja; az arányt a `--tier-target`
+kapcsolóval lehet módosítani, a `--matches-per-tier` ehhez a módhoz nem használható.
+
+A gyűjtés külön `.scrape_only/state.json` folytatási pontot használ, így a normál
+frissítés esetleges tanítási mentése megmarad. **Ctrl+C** után ugyanazzal a
+paranccsal folytatható; kapcsolatbontásnál automatikusan újrapróbálkozik. Egyszerre
+a két mód közül csak az egyik futhat. A befejezett gyűjtés összesítése a
+`.scrape_only/last_collection.json` fájlba kerül; a következő kézi indítás új
+gyűjtési menetet indít. A `--fresh` ebben a módban csak a külön gyűjtési mentését
+kezdi újra, az adatbázisban tárolt meccsek megmaradnak.
+
 Az automatikus patchlista a Riot Data Dragon megjelent verzióiból készül, így
 évfordulón sem egyszerű sorszámcsökkentést használ. Explicit `--patches` mellett
 a `--dry-run` hálózati kapcsolat nélkül is működik.

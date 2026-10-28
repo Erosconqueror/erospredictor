@@ -19,6 +19,12 @@ def rank_targets(args, configured):
     return targets
 
 
+def collection_steps(targets):
+    """Roughly 1000 records per round, proportional to the chosen profile."""
+    divisor = max(1, sum(targets.values()) // 1000)
+    return {tier: max(1, (goal + divisor // 2) // divisor) for tier, goal in targets.items()}
+
+
 def balanced_snapshot(records, targets, patches, seed=42):
     """Cap large historical tiers; include every available patch where possible."""
     groups = defaultdict(list)

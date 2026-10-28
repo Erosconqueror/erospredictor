@@ -107,7 +107,7 @@ def complete_png(payload):
     return False
 
 
-def prepare_catalog(app_dir, progress, patches, refresh=True):
+def prepare_catalog(app_dir, progress, patches, refresh=True, include_icons=True):
     app_dir = Path(app_dir)
     snapshot = progress.staging / "catalog.json"
     expected = progress.state.get("catalog_sha256")
@@ -137,7 +137,7 @@ def prepare_catalog(app_dir, progress, patches, refresh=True):
             relative = Path("data") / name
             atomic_json(progress.staging / relative, value)
             outputs.append(relative)
-        for image in catalog["images"]:
+        for image in catalog["images"] if include_icons else []:
             relative = Path("assets/icons") / f"{image['index']}.png"
             if (app_dir / relative).is_file():
                 continue
