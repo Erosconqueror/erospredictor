@@ -82,10 +82,11 @@ class Controller:
         return recs
 
     def explain_recommendations(self, div: str, blue: list, red: list, team: str,
-                                r_idx: int, recommendations: list, max_items: int = 5) -> list:
+                                r_idx: int, recommendations: list, max_items: int = 5,
+                                selected_id=None) -> list:
         """Run optional diagnostics only after the user requests a second stage."""
         return self.core_model.explain_recommendations(
-            div, blue, red, team, r_idx, recommendations, max_items=max_items)
+            div, blue, red, team, r_idx, recommendations, max_items=max_items, selected_id=selected_id)
 
     def explain_champion_effects(self, div: str, blue: list, red: list, team: str,
                                  r_idx: int, champion_id=None) -> dict:

@@ -1,4 +1,4 @@
-"""Optional detailed view for the first five champion recommendations."""
+"""Optional detailed view for the selected champion and the top five."""
 
 from PyQt6.QtWidgets import QDialog, QDialogButtonBox, QTextBrowser, QVBoxLayout
 from services.explanation_format import explanations_html

@@ -78,6 +78,31 @@ class TestRecommendationExplanations(unittest.TestCase):
         self.assertEqual([item["id"] for item in recommendations], [0, 3])
         self.assertEqual(len(self.model.calls), 4)
 
+    def test_selected_outside_top_five_is_added_first_with_ranked_five_intact(self):
+        candidates = [{"id": cid} for cid in (0, 3, 4, 5, 6, 7, 8)]
+        result = self.model.explain_recommendations(
+            "GOLD", self.blue, self.red, "blue", 0, candidates, selected_id=8)
+        self.assertEqual([item["id"] for item in result], [8, 0, 3, 4, 5, 6])
+        self.assertTrue(result[0]["is_selected"])
+        self.assertIsNone(result[0]["recommendation_rank"])
+        self.assertEqual([item["recommendation_rank"] for item in result[1:]], [1, 2, 3, 4, 5])
+        self.assertEqual(sum(item["is_selected"] for item in result), 1)
+        self.assertEqual(self.model.calls.count((tuple(self.blue), tuple(self.red))), 1)
+
+    def test_selected_inside_top_five_is_not_analyzed_twice(self):
+        candidates = [{"id": cid} for cid in (0, 3, 4, 5, 6)]
+        result = self.model.explain_recommendations(
+            "GOLD", self.blue, self.red, "blue", 0, candidates, selected_id=4)
+        self.assertEqual([item["id"] for item in result], [4, 0, 3, 5, 6])
+        self.assertEqual(result[0]["recommendation_rank"], 3)
+        self.assertEqual(sum(item["is_selected"] for item in result), 1)
+
+    def test_invalid_selection_stops_before_expensive_explanation(self):
+        with self.assertRaises(ValueError):
+            self.model.explain_recommendations(
+                "GOLD", self.blue, self.red, "blue", 0, [{"id": 0}], selected_id=2)
+        self.assertEqual(self.model.calls, [])
+
     def test_empty_meta_list_does_not_disable_filter(self):
         self.model.meta_data = {"GOLD": {"strict": {"0": []}}}
         self.assertEqual(self.model.recommend_champs("GOLD", self.blue, self.red, [], "blue", 0), [])

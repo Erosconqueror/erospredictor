@@ -113,9 +113,15 @@ igényelhet. Közvetítés, képernyőkép és profi draft felismerése egy köv
 
 ## Opcionális magyarázat az első öt ajánláshoz
 
-Először kérj normál **AJÁNLÁS**-t. A **Miért? – Az első 5 részletes elemzése**
+Először kérj normál **AJÁNLÁS**-t. A **Miért? – Kijelölt hős + első 5**
 gomb külön, második lépésként számol; kikapcsolt állapotban nincs extra inferencia.
 A felület a hosszabb számítások alatt is reagál.
+
+A részletes ablak elején külön **Kijelölt hős** szakaszban látható az ajánlási
+listában kiválasztott hős. Utána az első öt ajánlás következik, az eredeti
+helyezésükkel. Ha a kijelölt hős köztük van, csak egyszer jelenik meg; ha nincs,
+összesen hat különböző hős elemzése látható. A kijelölt hős az egyszerű nyilas
+hatások kikapcsolása mellett is bekerül a részletes elemzésbe.
 
 A részletek megmutatják a modellek győzelmiesély-becslését és tényleges súlyát,
 az ajánlott hős becsült többletét az üres pozícióhoz képest, valamint azt,
@@ -131,7 +137,7 @@ Draft-, rang- vagy szűrőváltás után előbb új ajánlást kell kérni.
 A felső **Egyszerű hőshatások** kapcsoló alapból ki van kapcsolva, ilyenkor
 nincs hozzáadott hatásszámítás. Bekapcsolva a hősök és szerepköreik mellett
 zöld **▲**, piros **▼**, illetve semleges **→** jelzi a hatást. Az erősebb
-szín nagyobb eltérést jelent, az **arany keret** pedig a fókuszhős lane-ellenfelét
+szín nagyobb eltérést jelent, a **fehér keret** pedig a fókuszhős lane-ellenfelét
 emeli ki. A **● Fókusz** felirat jelöli a kiválasztott pozíciót.
 
 Predikcióhoz válaszd ki lent a csapatot és szerepkört, töltsd ki ott a vizsgált
@@ -141,7 +147,7 @@ a normál predikció továbbra is lefut, csak a nyilas elemzéshez kér hősvál
 
 Ajánlásnál először az első jelölt a fókusz. A listában bármelyik ajánlott hős
 nevére kattintva átválthatsz rá, anélkül, hogy a draftba beírná. A kijelölt ajánlás
-színes hátteret kap. Ez egyetlen hőst vizsgál, nem indítja el az ötös részletes
+színes hátteret kap. Ez egyetlen hőst vizsgál, nem indítja el a részletes
 elemzést. Teljes draftnál legfeljebb 20 gyors, kétoldali predikciót számol.
 
 A szám **százalékpontban** mutatja, hogyan változik a fókuszhős becsült többlete

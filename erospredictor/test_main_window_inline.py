@@ -4,7 +4,7 @@ import importlib.util
 import inspect
 import os
 import unittest
-from unittest.mock import MagicMock
+from unittest.mock import MagicMock, patch
 
 
 @unittest.skipUnless(importlib.util.find_spec("PyQt6"), "PyQt6 is not installed")
@@ -149,6 +149,24 @@ class InlineEffectsWindowTests(unittest.TestCase):
         self.window._on_recommendation_selected("champion:1")
         self.wait_for_worker()
         self.controller.explain_champion_effects.assert_not_called()
+
+    def test_detailed_analysis_includes_selected_candidate_outside_top_five(self):
+        ids = [0, 1, 2, 4, 5, 6]
+        self.controller.recommend_champs.return_value = [
+            {"id": cid, "wr": 55.0 - index, "display_color": "#FFFFFF"}
+            for index, cid in enumerate(ids)]
+        self.controller.explain_recommendations.return_value = []
+        self.window._on_recommend()
+        self.wait_for_worker()
+        self.window._on_recommendation_selected("champion:6")
+        with patch.object(self.window, "_display_explanations") as display:
+            self.window._on_explain()
+            self.wait_for_worker()
+        request = self.controller.explain_recommendations.call_args.kwargs
+        self.assertEqual(request["selected_id"], 6)
+        self.assertEqual([item["id"] for item in request["recommendations"]], ids[:5])
+        self.controller.explain_champion_effects.assert_not_called()
+        display.assert_called_once_with([])
 
     def test_draft_edit_removes_stale_arrows_and_focus(self):
         self.window.blue_picks[0].setCurrentText("Aatrox")

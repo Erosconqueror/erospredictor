@@ -278,8 +278,9 @@ class CoreModel:
         }
 
     def explain_recommendations(self, div: str, blue: list, red: list, team: str,
-                                r_idx: int, recommendations: list, max_items: int = 5) -> list:
-        """Diagnose at most five candidates without changing the original draft.
+                                r_idx: int, recommendations: list, max_items: int = 5,
+                                selected_id=None) -> list:
+        """Diagnose the selection and up to five ranked candidates, without repeats.
 
         Conditional effects compare the candidate's gain before/after omitting one
         known champion. They are sensitivity measurements, not causal or additive
@@ -287,8 +288,18 @@ class CoreModel:
         """
         self._validate_recommendation_request(blue, red, team, r_idx)
         limit = max(0, min(int(max_items), 5))
-        if not limit or not recommendations:
+        if not limit or (not recommendations and selected_id is None):
             return []
+        ranked = recommendations[:limit]
+        targets = ([{"id": selected_id}] if selected_id is not None else []) + list(ranked)
+        for recommendation in targets:
+            cid = recommendation["id"]
+            if (not isinstance(cid, int) or isinstance(cid, bool) or not 0 <= cid < CHAMPION_COUNT
+                    or cid in list(blue) + list(red)):
+                raise ValueError("Az ajánlás már nem illik az aktuális drafthoz. Kérj új ajánlást!")
+        ranks = {}
+        for position, recommendation in enumerate(ranked, 1):
+            ranks.setdefault(recommendation["id"], position)
         cache = {}
 
         def score(b, r):
@@ -300,11 +311,8 @@ class CoreModel:
         base_blue, base_red = list(blue), list(red)
         baseline = score(base_blue, base_red)
         result, seen = [], set()
-        for recommendation in recommendations[:limit]:
+        for recommendation in targets:
             cid = recommendation["id"]
-            if (not isinstance(cid, int) or not 0 <= cid < CHAMPION_COUNT
-                    or cid in list(blue) + list(red)):
-                raise ValueError("Az ajánlás már nem illik az aktuális drafthoz. Kérj új ajánlást!")
             if cid in seen:
                 continue
             seen.add(cid)
@@ -338,6 +346,7 @@ class CoreModel:
             synergy = self.stat_model.get_bot_synergy(div, own[3], own[4]) if r_idx in (3, 4) else None
             result.append({
                 "id": cid, "wr": current, "baseline_win_prob": baseline,
+                "is_selected": cid == selected_id, "recommendation_rank": ranks.get(cid),
                 "candidate_delta_pp": gain, "components": components,
                 "interactions": interactions, "lane_matchup": lane, "bot_synergy": synergy,
                 "unavailable_models": dict(self.load_errors),

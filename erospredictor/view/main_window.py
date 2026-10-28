@@ -358,9 +358,9 @@ class MainWindow(QMainWindow):
         row_action.addWidget(self.btn_rec)
         rec_layout.addLayout(row_action)
 
-        self.btn_explain = QPushButton("Miért? – Az első 5 részletes elemzése")
+        self.btn_explain = QPushButton("Miért? – Kijelölt hős + első 5")
         self.btn_explain.setEnabled(False)
-        self.btn_explain.setToolTip("Opcionális második lépés: további számításokat csak erre a gombra indít.")
+        self.btn_explain.setToolTip("Opcionális második lépés: a kijelölt hős és az első öt ajánlás, legfeljebb hat különböző hős elemzése.")
         self.btn_explain.clicked.connect(self._on_explain)
         rec_layout.addWidget(self.btn_explain)
         self.lbl_effects_hint = QLabel("")
@@ -645,11 +645,10 @@ class MainWindow(QMainWindow):
             lane = bool(item.get('is_lane_opponent'))
             badge.setText(text)
             badge.setProperty("laneOpponent", lane)
-            border = "#E7BC52" if lane else "transparent"
-            background = "rgba(231, 188, 82, 24)" if lane else "transparent"
+            border = "#FFFFFF" if lane else "transparent"
             badge.setStyleSheet(f"font-size: 13px; font-weight: bold; color: {self._effect_color(delta)}; "
                                f"border: {'2' if lane else '1'}px solid {border}; "
-                               f"border-radius: 5px; padding: 3px; background: {background};")
+                               "border-radius: 5px; padding: 3px; background: transparent;")
             badge.setToolTip(("Azonos pozícióban játszó lane-ellenfél. " if lane else "")
                              + f"A fókuszhős becsült többletének változása: {delta:+.2f} százalékpont. "
                              "Pozitív: kedvező; negatív: kedvezőtlen. A hatások külön vizsgálatok, nem összeadhatók.")
@@ -664,7 +663,7 @@ class MainWindow(QMainWindow):
         focus.setToolTip(f"Kijelölt hős: {name}. A többi jelzés ehhez a hőshöz és a {side} csapathoz viszonyít.")
         self.lbl_effects_hint.setText(
             f"Fókusz: {side} {self.roles[result['role_index']]} – {name}. "
-            "▲ kedvező, ▼ kedvezőtlen hatás (százalékpont). Aranykeret: lane-ellenfél.")
+            "▲ kedvező, ▼ kedvezőtlen hatás (százalékpont). Fehér keret: lane-ellenfél.")
         self.lbl_effects_hint.show()
 
     def _on_effects_toggled(self, enabled):
@@ -777,8 +776,8 @@ class MainWindow(QMainWindow):
     def _on_explain(self):
         if self._busy or not self._recommendation_context:
             return
-        context = self._recommendation_context
-        self.lbl_dash_title.setText("Az első öt ajánlás részletes elemzése…")
+        context = dict(self._recommendation_context, selected_id=self._selected_recommendation_id)
+        self.lbl_dash_title.setText("Kijelölt hős + első 5: részletes elemzés…")
         self._start_task(lambda: self.controller.explain_recommendations(**context),
                          self._display_explanations)
 
