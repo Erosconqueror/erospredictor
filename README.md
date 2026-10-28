@@ -95,6 +95,18 @@ fájlját vagy a Riot API-kulcsot kell megadni. Nyisd meg a klienst és a hősv�
 Alternatív beállítás: `EROSPREDICTOR_LCU_LOCKFILE` környezeti változó.
 A helyi hitelesítési token nem jelenik meg a hibaüzenetekben.
 
+Az `install.bat` telepítéskor automatikusan megkeresi a kliens helyét, és elmenti
+az adott gépen. Bezárt kliensnél a telepítési mappa `LeagueClient.exe` fájlja
+alapján is felismeri a helyet. Ha a LoL még nincs telepítve, az alapértelmezés
+`C:\Riot Games\League of Legends\lockfile`; a program később újra keres, ha ez
+nem létezik. Az első sikeresen olvasott lockfile és a kézzel kiválasztott hely
+is megmarad a következő alkalmazásindításokra.
+
+Az útvonal a `%LOCALAPPDATA%\Erospredictor\settings.json` helyi beállításába kerül,
+így más felhasználó gépéhez nem viszi át. Csak a helyét jegyzi meg: a lockfile
+változó jelszavát és portját minden beolvasáskor újra kiolvassa. A fájlválasztó
+is a megjegyzett vagy alapértelmezett útvonalról indul.
+
 A [League Client API](https://developer.riotgames.com/docs/lol#league-client-api)
 Riot által nem támogatott helyi interfész, ezért kliensfrissítés után élő ellenőrzést
 igényelhet. Közvetítés, képernyőkép és profi draft felismerése egy következő fejlesztés.

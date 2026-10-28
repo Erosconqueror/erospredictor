@@ -1,6 +1,8 @@
 @echo off
+setlocal
+pushd "%~dp0"
 color 0B
-echo [1/3] Python 3.11 ellenorzese a gepen...
+echo [1/4] Python 3.11 ellenorzese a gepen...
 py -3.11 --version >nul 2>&1
 if %errorlevel% neq 0 (
     echo [!] Python 3.11 nem talalhato, letoltes es telepites a hatterben...
@@ -14,13 +16,23 @@ if %errorlevel% neq 0 (
 
 echo.
 echo Erospredictor program elofelteteleinek telepitese:
-echo [2/3] Virtualis kornyezet letrehozasa es aktivalasa...
+echo [2/4] Virtualis kornyezet letrehozasa es aktivalasa...
 py -3.11 -m venv env
 call env\Scripts\activate.bat
 
-echo [3/3] Szukseges python csomagok telepitese...
+echo [3/4] Szukseges python csomagok telepitese...
 python -m pip install --upgrade pip
 pip install -r erospredictor\data\requirements.txt
+if errorlevel 1 (
+    echo A csomagok telepitese nem sikerult. Javitsd a hibat, majd futtasd ujra a telepitot.
+    popd
+    pause
+    exit /b 1
+)
+
+echo [4/4] A helyi League of Legends kliens megkeresese es utvonalanak mentese...
+python erospredictor\configure_client.py
 
 echo Elofelteleket telepitve, a program futtathato
+popd
 pause

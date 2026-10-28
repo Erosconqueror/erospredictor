@@ -8,6 +8,7 @@ from PyQt6.QtGui import QIcon
 from configs import TARGET_TIERS, CHAMPION_COUNT
 from html import escape
 from view.background_task import BackgroundTask
+from services.client_settings import preferred_lockfile, save_lockfile_path
 
 class MainWindow(QMainWindow):
     """Main graphical user interface for the application."""
@@ -131,7 +132,7 @@ class MainWindow(QMainWindow):
         self.btn_import.clicked.connect(self._on_import_draft)
         layout.addWidget(self.btn_import)
         self.btn_lockfile = QPushButton("LoL lockfile…")
-        self.btn_lockfile.setToolTip("A futó LoL-kliens lockfile fájlja, például C:\\Riot Games\\League of Legends\\lockfile.")
+        self.btn_lockfile.setToolTip(f"A mentett vagy alapértelmezett LoL lockfile helye: {preferred_lockfile()}")
         self.btn_lockfile.clicked.connect(self._choose_lockfile)
         layout.addWidget(self.btn_lockfile)
         return layout
@@ -787,11 +788,15 @@ class MainWindow(QMainWindow):
         ExplanationDialog(records, {v: k for k, v in self.name_map.items()}, self).exec()
 
     def _choose_lockfile(self):
-        path, _ = QFileDialog.getOpenFileName(self, "A LoL-kliens lockfile fájlja", "",
+        path, _ = QFileDialog.getOpenFileName(self, "A LoL-kliens lockfile fájlja",
+                                               str(self._lockfile_path or preferred_lockfile()),
                                                "Lockfile (lockfile);;Minden fájl (*)")
         if path:
             self._lockfile_path = path
-            self.btn_import.setToolTip("Beolvasás a kézzel megadott kliensből.")
+            saved = save_lockfile_path(path)
+            self.btn_lockfile.setToolTip(f"Kiválasztott LoL lockfile: {path}")
+            self.btn_import.setToolTip("Beolvasás a gépen elmentett kliensből." if saved
+                                       else "Beolvasás a kiválasztott kliensből. Az útvonal most nem menthető.")
 
     def _on_import_draft(self):
         if self._busy:
@@ -805,6 +810,7 @@ class MainWindow(QMainWindow):
 
     def _review_import(self, snapshot):
         from view.draft_import_dialog import DraftImportDialog
+        self.btn_lockfile.setToolTip(f"A gépen elmentett LoL lockfile helye: {preferred_lockfile()}")
         dialog = DraftImportDialog(snapshot, {v: k for k, v in self.name_map.items()}, self)
         if dialog.exec() != QDialog.DialogCode.Accepted:
             self.lbl_dash_title.setText("A kliens beolvasása megszakítva.")

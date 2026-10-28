@@ -112,6 +112,10 @@ class LocalClientTests(unittest.TestCase):
         self.addCleanup(self.folder.cleanup)
         self.lockfile = Path(self.folder.name) / "lockfile"
         self.lockfile.write_text("LeagueClient:1234:34567:private-test-token:https", encoding="utf-8")
+        settings = patch("services.client_settings.settings_path",
+                         return_value=Path(self.folder.name) / "preferences/settings.json")
+        settings.start()
+        self.addCleanup(settings.stop)
 
     def test_lockfile_parsing_does_not_expose_token(self):
         credentials = read_lockfile(self.lockfile)

@@ -5,7 +5,7 @@ shape handling here; never guess lanes or sides from the display/cell order.
 Reference: https://developer.riotgames.com/docs/lol#league-client-api
 """
 
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 import json
 import os
 from pathlib import Path
@@ -14,6 +14,9 @@ import warnings
 
 import requests
 from urllib3.exceptions import InsecureRequestWarning
+from services.client_settings import (
+    DEFAULT_LOCKFILE, normalize_lockfile, saved_lockfile, save_lockfile_path,
+)
 
 
 class DraftImportError(RuntimeError):
@@ -84,8 +87,15 @@ def discover_lockfiles(explicit=None) -> list[Path]:
     """Find only likely client paths; never recursively scan the user's drives."""
     supplied = explicit or os.environ.get("EROSPREDICTOR_LCU_LOCKFILE")
     if supplied:
-        candidate = Path(supplied).expanduser()
-        return [candidate / "lockfile" if candidate.is_dir() else candidate]
+        return [normalize_lockfile(supplied)]
+    for candidate in (saved_lockfile(), DEFAULT_LOCKFILE):
+        if candidate is not None and candidate.is_file():
+            return [candidate]
+    return [root / "lockfile" for root in client_install_roots() if (root / "lockfile").is_file()]
+
+
+def client_install_roots() -> list[Path]:
+    """Find installations even when the client is closed and has no lockfile."""
     roots = [Path(f"{drive}:/Riot Games/League of Legends") for drive in ("C", "D", "E", "F", "G")]
     for variable in ("ProgramFiles", "ProgramFiles(x86)"):
         if os.environ.get(variable):
@@ -118,12 +128,31 @@ def discover_lockfiles(explicit=None) -> list[Path]:
             roots.extend(Path(line.strip()).parent for line in result.stdout.splitlines() if line.strip())
         except (OSError, subprocess.SubprocessError):
             pass
-    candidates = []
-    for root in roots:
-        path = root / "lockfile"
-        if path not in candidates and path.is_file():
-            candidates.append(path)
-    return candidates
+    return list(dict.fromkeys(roots))
+
+
+def configure_client_location():
+    """Installer setup: keep a discovered location or a useful default for later."""
+    candidates = discover_lockfiles()
+    for candidate in candidates:
+        try:
+            read_lockfile(candidate)
+        except DraftImportError:
+            continue
+        return candidate, save_lockfile_path(candidate)
+    # A remembered location remains useful while the client is not running.
+    remembered = saved_lockfile()
+    supplied = os.environ.get("EROSPREDICTOR_LCU_LOCKFILE")
+    if supplied:
+        target = normalize_lockfile(supplied)
+    elif remembered is not None and remembered.parent.is_dir():
+        target = remembered
+    else:
+        target = next((root / "lockfile" for root in client_install_roots()
+                       if (root / "LeagueClient.exe").is_file()
+                       or (root / "LeagueClientUx.exe").is_file()),
+                      remembered or DEFAULT_LOCKFILE)
+    return target, save_lockfile_path(target)
 
 
 def _side_from_members(members):
@@ -271,6 +300,7 @@ class LcuDraftClient:
         if not candidates:
             raise DraftImportError("Nem található a LoL lockfile. Indítsd el a klienst, vagy válaszd ki a telepítési mappában lévő lockfile fájlt.")
         credentials = read_lockfile(candidates[0])
+        remembered = save_lockfile_path(candidates[0])
         mapping = self.mapping
         if mapping is None:
             path = Path(__file__).resolve().parents[1] / "data/champion_id.json"
@@ -288,7 +318,11 @@ class LcuDraftClient:
                 gameflow = self._get(transport, credentials, "/lol-gameflow/v1/session", optional=True)
                 if resolve_own_side(session, gameflow) is None:
                     current_summoner = self._get(transport, credentials, "/lol-summoner/v1/current-summoner", optional=True)
-            return parse_draft_session(session, mapping, gameflow, current_summoner)
+            snapshot = parse_draft_session(session, mapping, gameflow, current_summoner)
+            if not remembered:
+                snapshot = replace(snapshot, warnings=snapshot.warnings + (
+                    "A kliens útvonala ezen a gépen nem menthető. A beolvasás ettől még használható.",))
+            return snapshot
         finally:
             if self.transport is None:
                 transport.close()
