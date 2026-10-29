@@ -108,6 +108,14 @@ class Controller:
         return recommend_bans(self.stat_model, load_role_distribution(), self.db.get_champion_mapping(),
                               pool, div, role, unavailable)
 
+    def explain_prediction(self, div: str, blue: list, red: list, team: str, r_idx: int, history=None) -> list:
+        """Explicit second-stage diagnostics for one picked prediction focus."""
+        records = self.core_model.explain_prediction(div, blue, red, team, r_idx)
+        if history is not None and feature_flags.PERSONAL_HISTORY_ENABLED:
+            from services.personal_history import annotate_recommendations
+            records = annotate_recommendations(records, history, self.db.get_champion_mapping(), blue, red, team, r_idx)
+        return records
+
     def explain_recommendations(self, div: str, blue: list, red: list, team: str,
                                 r_idx: int, recommendations: list, max_items: int = 5,
                                 selected_id=None, history=None) -> list:

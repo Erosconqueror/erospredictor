@@ -278,6 +278,20 @@ class CoreModel:
                     "Az egyes hatások nem adhatók össze, és nem bizonyítanak ok-okozatot.",
         }
 
+    def explain_prediction(self, div: str, blue: list, red: list, team: str, r_idx: int) -> list:
+        """Explain only the picked focus champion, using an empty-focus baseline."""
+        self._validate_draft_shape(blue, red)
+        if team not in ("blue", "red") or type(r_idx) is not int or not 0 <= r_idx < 5:
+            raise ValueError("Érvénytelen predikciós fókusz.")
+        champion = (blue if team == "blue" else red)[r_idx]
+        if champion < 0:
+            raise ValueError("A predikció fókuszpozíciójához válassz hőst.")
+        empty_blue, empty_red = list(blue), list(red)
+        (empty_blue if team == "blue" else empty_red)[r_idx] = EMPTY_CHAMPION
+        records = self.explain_recommendations(div, empty_blue, empty_red, team, r_idx,
+                                               [], max_items=1, selected_id=champion)
+        return [dict(record, explanation_context="prediction", team=team, role_index=r_idx) for record in records]
+
     def explain_recommendations(self, div: str, blue: list, red: list, team: str,
                                 r_idx: int, recommendations: list, max_items: int = 5,
                                 selected_id=None) -> list:

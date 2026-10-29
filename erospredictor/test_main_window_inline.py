@@ -89,6 +89,93 @@ class InlineEffectsWindowTests(unittest.TestCase):
         self.controller.predict_match.assert_called_once()
         self.controller.explain_champion_effects.assert_not_called()
         self.controller.explain_recommendations.assert_not_called()
+        self.controller.explain_prediction.assert_not_called()
+
+    def test_prediction_why_analyzes_only_focus_even_with_inline_effects_disabled(self):
+        self.window.blue_picks[0].setCurrentText("Aatrox")
+        self.window._on_predict()
+        self.wait_for_worker()
+        self.assertTrue(self.window.btn_explain.isEnabled())
+        self.assertIn("Predikció fókuszhőse", self.window.btn_explain.text())
+        self.assertIsNone(self.window._recommendation_context)
+        self.controller.explain_prediction.return_value = []
+        with patch.object(self.window, "_display_explanations") as display:
+            self.window.btn_explain.click()
+            self.wait_for_worker()
+        request = self.controller.explain_prediction.call_args.kwargs
+        self.assertEqual((request["team"], request["r_idx"], request["blue"][0]), ("blue", 0, 0))
+        self.assertNotIn("recommendations", request)
+        self.assertNotIn("selected_id", request)
+        self.controller.explain_prediction.assert_called_once()
+        self.controller.recommend_champs.assert_not_called()
+        self.controller.explain_recommendations.assert_not_called()
+        self.controller.explain_champion_effects.assert_not_called()
+        display.assert_called_once_with([])
+
+    def test_prediction_why_respects_red_team_and_selected_position(self):
+        self.window.btn_red.click()
+        self.window.grp_role.button(2).click()
+        self.window.red_picks[2].setCurrentText("Ahri")
+        self.window._on_predict()
+        self.wait_for_worker()
+        self.controller.explain_prediction.return_value = []
+        with patch.object(self.window, "_display_explanations"):
+            self.window._on_explain()
+            self.wait_for_worker()
+        request = self.controller.explain_prediction.call_args.kwargs
+        self.assertEqual((request["team"], request["r_idx"], request["red"][2]), ("red", 2, 1))
+        self.controller.explain_recommendations.assert_not_called()
+
+    def test_prediction_without_focus_discards_old_recommendation_explanation(self):
+        self.window._on_recommend()
+        self.wait_for_worker()
+        self.assertTrue(self.window.btn_explain.isEnabled())
+        self.window._on_predict()
+        self.wait_for_worker()
+        self.assertFalse(self.window.btn_explain.isEnabled())
+        self.assertIsNone(self.window._recommendation_context)
+        self.assertIsNone(self.window._prediction_context)
+        self.window._on_explain()
+        self.controller.explain_prediction.assert_not_called()
+        self.controller.explain_recommendations.assert_not_called()
+
+    def test_draft_role_side_and_rank_changes_invalidate_prediction_explanation(self):
+        for name, change in (("draft", lambda: self.window.red_picks[0].setCurrentText("Akali")),
+                             ("role", lambda: self.window.grp_role.button(2).click()),
+                             ("side", lambda: self.window.btn_red.click()),
+                             ("rank", lambda: self.window.cb_rank.setCurrentIndex(1))):
+            with self.subTest(change=name):
+                self.window.red_picks[0].setCurrentIndex(0)
+                self.window.blue_picks[0].setCurrentText("Aatrox")
+                self.window.btn_blue.click()
+                self.window.grp_role.button(0).click()
+                self.window.cb_rank.setCurrentIndex(0)
+                self.window._on_predict()
+                self.wait_for_worker()
+                self.assertTrue(self.window.btn_explain.isEnabled())
+                change()
+                self.assertFalse(self.window.btn_explain.isEnabled())
+                self.assertIsNone(self.window._prediction_context)
+
+    def test_failed_prediction_does_not_leave_previous_prediction_explainable(self):
+        self.window.blue_picks[0].setCurrentText("Aatrox")
+        self.window._on_predict()
+        self.wait_for_worker()
+        self.controller.predict_match.side_effect = RuntimeError("Failed prediction")
+        self.window._on_predict()
+        self.wait_for_worker()
+        self.assertFalse(self.window.btn_explain.isEnabled())
+        self.assertIsNone(self.window._prediction_context)
+
+    def test_recommendation_after_prediction_restores_selected_plus_top_five_mode(self):
+        self.window.blue_picks[0].setCurrentText("Aatrox")
+        self.window._on_predict()
+        self.wait_for_worker()
+        self.window.blue_picks[0].setCurrentIndex(0)
+        self.window._on_recommend()
+        self.wait_for_worker()
+        self.assertIsNone(self.window._prediction_context)
+        self.assertIn("Kijelölt hős + első 5", self.window.btn_explain.text())
 
     def test_default_recommendation_runs_no_optional_effect_inference(self):
         self.window._on_recommend()

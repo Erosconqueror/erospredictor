@@ -29,7 +29,9 @@ A kapcsolók, az aktív saját lista, a kiválasztott rang, a kézzel választot
 
 A **Bizonytalan ellenfélpozíciók vizsgálata** külön kapcsolható. Az első öt jelöltet legfeljebb három lehetséges ellenfél-kiosztásban ellenőrzi, majd a legrosszabb vizsgált becslés szerint rendezi őket. A fő százalék továbbra is az aktuális drafté; a külön tartományra kattintva megnyithatók a felállások. Kikapcsolva nincs extra számítás.
 
-A **Miért? – Kijelölt hős + első 5** gomb külön részletes elemzést nyit meg. A nyilakhoz a listában egy hősre kattintva választhatsz fókuszt. A fehér keret a fókuszhős lane-ellenfelét emeli ki.
+A **Miért?** gomb külön részletes elemzést nyit meg. Ajánlás után a kijelölt hőst és az első öt jelöltet mutatja. Predikció után kizárólag a kijelölt csapat és pozíció fókuszhősét elemzi, ajánlási lista nélkül. A predikció előtt legyen hős a fókuszpozíción; a funkció a nyilas hőshatások nélkül is működik. Draft-, rang- vagy fókuszváltás után kérj új predikciót vagy ajánlást.
+
+A nyilakhoz az ajánlási listában egy hősre kattintva választhatsz fókuszt. A fehér keret a fókuszhős lane-ellenfelét emeli ki.
 
 ### 6. Predikció
 1. Válaszd ki az összes maradék választott hőst a középső legördülő menükből.

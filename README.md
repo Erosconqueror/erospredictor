@@ -386,9 +386,18 @@ kis mintát jelez. Ezek a jelölések a modellek százalékait és sorrendjét n
 A `services/feature_flags.py` kapcsolójával a teljes funkció továbbra is
 szüneteltethető. A helyi draftbeolvasás ettől függetlenül működik.
 
-## Opcionális magyarázat az első öt ajánláshoz
+## Opcionális részletes elemzés
 
-Először kérj normál **AJÁNLÁS**-t. A **Miért? – Kijelölt hős + első 5**
+A **Miért?** gomb a legutóbbi sikeres művelethez igazodik. Predikcióhoz válaszd
+ki lent a saját csapatot és a vizsgált pozíciót, töltsd ki ott a fókuszhőst,
+majd kérj **PREDIKCIÓ**-t. Ezután a **Miért? – Predikció fókuszhőse** gomb
+kizárólag ezt az egy hőst elemzi: nincs ajánlási rangsorolás vagy első öt jelölt.
+Az aktuális teljes draftot a fókuszhős nélküli állapottal hasonlítja össze,
+ugyanazokkal a modell-, társ-, ellenfél-, lane- és szinergiarészletekkel.
+Üres fókuszpozíciónál a normál predikció lefut, a részletes gomb nem aktív.
+Ez a funkció az egyszerű nyilas hőshatások kikapcsolása mellett is elérhető.
+
+Ajánlási elemzéshez először kérj normál **AJÁNLÁS**-t. A **Miért? – Kijelölt hős + első 5**
 gomb külön, második lépésként számol; kikapcsolt állapotban nincs extra inferencia.
 A felület a hosszabb számítások alatt is reagál.
 
@@ -405,7 +414,7 @@ Ez feltételes modellérzékenység, nem összeadható vagy okozati bizonyíték
 A lane-párosítás és ADC–Support szinergia történeti győzelmi aránya külön,
 a mérkőzésszámmal együtt látható. A lane-statisztika teljes meccsek kimenetelét
 méri, nem az ösvény megnyerésének esélyét. Hiányzó mintát nem pótol kitalált értékkel.
-Draft-, rang- vagy szűrőváltás után előbb új ajánlást kell kérni.
+Draft-, rang-, fókusz- vagy szűrőváltás után új predikciót vagy ajánlást kell kérni.
 
 ## Egyszerű nyilas hőshatások a főablakon
 

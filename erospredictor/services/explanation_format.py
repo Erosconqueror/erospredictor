@@ -53,11 +53,15 @@ def explanations_html(records, champion_names):
         return escape(champion_names.get(champion_id, f"Hős #{champion_id}"))
 
     selected = next((record for record in records if record.get("is_selected")), None)
-    if selected is not None:
+    prediction = selected is not None and selected.get("explanation_context") == "prediction"
+    if prediction:
+        visible = [selected]
+    elif selected is not None:
         visible = [selected] + [record for record in records if record["id"] != selected["id"]][:5]
     else:
         visible = records[:5]
-    title = "A kijelölt hős és az első öt ajánlás" if selected is not None else "Az első öt ajánlás részletesen"
+    title = ("A predikció fókuszhősének részletes elemzése" if prediction else
+             "A kijelölt hős és az első öt ajánlás" if selected is not None else "Az első öt ajánlás részletesen")
     parts = [
         f"<h2>{title}</h2>",
         "<p>A változások <b>százalékpontban</b> értendők. Az üres pozícióhoz "
@@ -68,10 +72,14 @@ def explanations_html(records, champion_names):
     comparisons_started = False
     for position, record in enumerate(visible, 1):
         if record is selected:
-            parts.append("<hr><h2>Kijelölt hős</h2>")
+            parts.append("<hr><h2>Predikció fókuszhőse</h2>" if prediction else "<hr><h2>Kijelölt hős</h2>")
             rank = record.get("recommendation_rank")
-            parts.append(f"<p>Az ajánlási lista {rank}. helyezettje.</p>" if rank is not None
-                         else "<p>A kijelölt hős nincs az első öt ajánlás között.</p>")
+            if prediction:
+                side = "Kék" if record["team"] == "blue" else "Piros"
+                parts.append(f"<p>{side} csapat · {ROLES[record['role_index']]}</p>")
+            else:
+                parts.append(f"<p>Az ajánlási lista {rank}. helyezettje.</p>" if rank is not None
+                             else "<p>A kijelölt hős nincs az első öt ajánlás között.</p>")
             heading = name(record['id'])
         else:
             if selected is not None and not comparisons_started:
@@ -81,9 +89,10 @@ def explanations_html(records, champion_names):
                 comparisons_started = True
             rank = record.get("recommendation_rank") or (position - 1 if selected is not None else position)
             heading = f"{rank}. {name(record['id'])}"
+        baseline_label = "Ugyanez a draft a fókuszhős nélkül" if prediction else "Ugyanez a draft üres ajánlási pozícióval"
         parts.append(
             f"<hr><h2>{heading} — {record['wr']:.2f}%</h2>"
-            f"<p>Ugyanez a draft üres ajánlási pozícióval: "
+            f"<p>{baseline_label}: "
             f"{record['baseline_win_prob']:.2f}%. A hős becsült többlete: "
             f"<b>{record['candidate_delta_pp']:+.2f} százalékpont</b>.</p>"
         )
@@ -103,10 +112,13 @@ def explanations_html(records, champion_names):
                          "Az eredmény az elérhető modellek újrasúlyozott becslése.</p>")
         interactions = record.get("interactions", [])
         if interactions:
-            parts.append("<h3>Melyik ismert hőshöz kapcsolódik az ajánlás?</h3>"
-                         "<p>A szám azt mutatja, mennyivel változik az ajánlott hős "
+            interaction_title = "A társak és ellenfelek hatása a fókuszhősre" if prediction else "Melyik ismert hőshöz kapcsolódik az ajánlás?"
+            champion_label = "a fókuszhős" if prediction else "az ajánlott hős"
+            beneficiary = "a fókuszhős csapatának" if prediction else "az ajánlásnak"
+            parts.append(f"<h3>{interaction_title}</h3>"
+                         f"<p>A szám azt mutatja, mennyivel változik {champion_label} "
                          "többlete, ha az adott társat vagy ellenfelet ismerjük. "
-                         "A pozitív érték kedvez az ajánlásnak.</p>"
+                         f"A pozitív érték {beneficiary} kedvez.</p>"
                          "<table cellpadding='6'><tr><th>Hős</th><th>Viszony</th>"
                          "<th>Pozíció</th><th>Hatás</th></tr>")
             for item in sorted(interactions, key=lambda item: abs(item["delta_pp"]), reverse=True):

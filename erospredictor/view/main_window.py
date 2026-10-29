@@ -34,6 +34,7 @@ class MainWindow(QMainWindow):
         self._task_finish_pending = False
         self._manual_import_active = False
         self._recommendation_context = None
+        self._prediction_context = None
         self._effects_context = None
         self._last_recommendations = []
         self._selected_recommendation_id = None
@@ -525,9 +526,9 @@ class MainWindow(QMainWindow):
         row_action.addWidget(self.btn_options)
         rec_layout.addLayout(row_action)
 
-        self.btn_explain = QPushButton("Miért? – Kijelölt hős + első 5")
+        self.btn_explain = QPushButton("Miért? – Részletes elemzés")
         self.btn_explain.setEnabled(False)
-        self.btn_explain.setToolTip("Opcionális második lépés: a kijelölt hős és az első öt ajánlás, legfeljebb hat különböző hős elemzése.")
+        self.btn_explain.setToolTip("Predikció után a fókuszhőst, ajánlás után a kijelölt hőst és az első öt jelöltet elemzi.")
         self.btn_explain.clicked.connect(self._on_explain)
         rec_layout.addWidget(self.btn_explain)
         self.lbl_effects_hint = QLabel("")
@@ -626,6 +627,7 @@ class MainWindow(QMainWindow):
     def _on_predict(self):
         """Handles predict button click by coordinating with the controller."""
         if not self.controller or self._busy: return
+        self._invalidate_recommendations()
         self._reset_dash()
         
         blue = self._get_ids(self.blue_picks)
@@ -655,6 +657,8 @@ class MainWindow(QMainWindow):
             prediction, effects, error = result
             self._display_prediction(prediction, div_ui)
             self._effects_context = context
+            self._prediction_context = dict(context) if context is not None else None
+            self._update_explain_button()
             if enabled:
                 self._display_optional_effects(effects, error)
 
@@ -738,7 +742,9 @@ class MainWindow(QMainWindow):
 
     def _display_recommendations(self, recs, context):
         picking, r_id = context['team'], context['r_idx']
+        self._prediction_context = None
         self._recommendation_context = dict(context, recommendations=recs[:5]) if recs else None
+        self._update_explain_button()
         self._last_recommendations = list(recs)
         self._selected_recommendation_id = recs[0]['id'] if recs else None
         self._effects_context = dict(context, champion_id=recs[0]['id']) if recs else None
@@ -1051,14 +1057,24 @@ class MainWindow(QMainWindow):
         self.scroll_recommend.hide()
         self.lbl_recommend.clear()
         self._recommendation_context = None
+        self._prediction_context = None
         self._effects_context = None
         self._last_recommendations = []
         self._selected_recommendation_id = None
-        self.btn_explain.setEnabled(False)
+        self._update_explain_button()
         self._clear_effect_badges()
         if self.chk_effects.isChecked():
             self.lbl_effects_hint.setText("Válassz lent csapatot és pozíciót, majd kérj predikciót vagy ajánlást.")
             self.lbl_effects_hint.show()
+
+    def _update_explain_button(self):
+        prediction = self._prediction_context is not None
+        recommendation = self._recommendation_context is not None
+        self.btn_explain.setText("Miért? – Predikció fókuszhőse" if prediction else
+            "Miért? – Kijelölt hős + első 5" if recommendation else "Miért? – Részletes elemzés")
+        self.btn_explain.setToolTip("Csak a kijelölt csapat és pozíció predikcióban szereplő hősének részletes elemzése."
+            if prediction else "Ajánlás után a kijelölt hős + első öt, predikció után a fókuszhős elemezhető. Fókuszhöz válassz hőst a kijelölt pozíción, majd kérj predikciót.")
+        self.btn_explain.setEnabled(not self._busy and (prediction or recommendation))
 
     def _set_busy(self, busy):
         self._busy = busy
@@ -1070,7 +1086,7 @@ class MainWindow(QMainWindow):
                     + self.grp_team.buttons() + self.grp_role.buttons())
         for control in controls:
             control.setEnabled(not busy)
-        self.btn_explain.setEnabled(not busy and self._recommendation_context is not None)
+        self._update_explain_button()
         self.chk_personal.setEnabled(feature_flags.PERSONAL_HISTORY_ENABLED and not busy and self._personal_history is not None and bool(self._personal_history.games))
         self.btn_history.setEnabled(feature_flags.PERSONAL_HISTORY_ENABLED and (not busy or self._history_loading))
         self.cb_history_limit.setEnabled(feature_flags.PERSONAL_HISTORY_ENABLED and not busy)
@@ -1135,16 +1151,18 @@ class MainWindow(QMainWindow):
             self._draft_follower.set_enabled(self.chk_follow.isChecked())
 
     def _on_explain(self):
-        if self._busy or not self._recommendation_context:
+        if self._busy or not (self._recommendation_context or self._prediction_context):
             return
-        context = dict(self._recommendation_context, selected_id=self._selected_recommendation_id)
-        self.lbl_dash_title.setText("Kijelölt hős + első 5: részletes elemzés…")
+        prediction = self._prediction_context is not None
+        context = dict(self._prediction_context) if prediction else dict(self._recommendation_context, selected_id=self._selected_recommendation_id)
+        self.lbl_dash_title.setText("Predikció fókuszhőse: részletes elemzés…" if prediction else "Kijelölt hős + első 5: részletes elemzés…")
         history = self._personal_history if feature_flags.PERSONAL_HISTORY_ENABLED and self.chk_personal.isChecked() else None
         def explain():
             if history is not None:
                 from services.personal_history import LcuHistoryClient
                 LcuHistoryClient(self._lockfile_path).verify_account(history)
-            return self.controller.explain_recommendations(**context, **({"history": history} if history is not None else {}))
+            operation = self.controller.explain_prediction if prediction else self.controller.explain_recommendations
+            return operation(**context, **({"history": history} if history is not None else {}))
         self._start_task(explain,
                          self._display_explanations)
 
@@ -1387,7 +1405,8 @@ class MainWindow(QMainWindow):
 
     def _display_explanations(self, records):
         from view.explanation_dialog import ExplanationDialog
-        self.lbl_dash_title.setText("Az ajánlások részletes elemzése elkészült.")
+        self.lbl_dash_title.setText("A predikció fókuszhősének elemzése elkészült." if self._prediction_context is not None
+                                    else "Az ajánlások részletes elemzése elkészült.")
         ExplanationDialog(records, {v: k for k, v in self.name_map.items()}, self).exec()
 
     def _choose_lockfile(self):

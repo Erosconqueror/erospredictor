@@ -1,4 +1,4 @@
-"""Optional detailed view for the selected champion and the top five."""
+"""Detailed view for a prediction focus or the selection plus ranked five."""
 
 from PyQt6.QtWidgets import QDialog, QDialogButtonBox, QTextBrowser, QVBoxLayout
 from services.explanation_format import explanations_html
@@ -7,7 +7,8 @@ from services.explanation_format import explanations_html
 class ExplanationDialog(QDialog):
     def __init__(self, records, champion_names, parent=None):
         super().__init__(parent)
-        self.setWindowTitle("Miért ezeket a hősöket ajánlja?")
+        prediction = any(record.get("explanation_context") == "prediction" for record in records)
+        self.setWindowTitle("Predikció: a fókuszhős részletes elemzése" if prediction else "Miért ezeket a hősöket ajánlja?")
         self.resize(850, 720)
         self.setStyleSheet("QDialog { background: #20202A; } "
                            "QTextBrowser { background: #181820; color: #E0E0E0; "
