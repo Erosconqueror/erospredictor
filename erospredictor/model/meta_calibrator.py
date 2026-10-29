@@ -3,6 +3,7 @@ import pickle
 import torch
 from typing import Dict, Any
 from configs import CHAMPION_COUNT, ROLE_WEIGHTS
+from services.ensemble_weights import bounded_weights
 
 class MetaLearningCalibrator:
     """Evaluates individual models against the Golden Dataset and calculates optimal ensemble weights."""
@@ -76,7 +77,7 @@ class MetaLearningCalibrator:
             total_score += score
 
         if total_score > 0:
-            self.weights = {k: round(v / total_score, 3) for k, v in scores.items()}
+            self.weights = bounded_weights(scores)
             
         return self.weights
 
@@ -90,7 +91,8 @@ class MetaLearningCalibrator:
         """Loads weights from a file."""
         if os.path.exists(path):
             with open(path, 'rb') as f:
-                self.weights = pickle.load(f)
+                saved = pickle.load(f)
+                self.weights = bounded_weights(saved.get("weights", saved))
         return self.weights
     
     def get_weights(self) -> dict:

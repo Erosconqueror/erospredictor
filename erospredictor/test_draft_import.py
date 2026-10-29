@@ -33,6 +33,47 @@ def draft(own_side=100):
 
 
 class DraftParsingTests(unittest.TestCase):
+    def test_live_normal_draft_team_enum_resolves_side_without_gameflow_identities(self):
+        value = draft(None)
+        value["myTeam"][0].update(teamId=None, team=2)
+        value["theirTeam"][0].update(team=1)
+        result = parse_draft_session(value, MAPPING, {"gameData": {"queue": {"id": 400}, "teamOne": [], "teamTwo": []}})
+        self.assertEqual(result.own_team, "red")
+        self.assertEqual(result.queue_id, 400)
+        self.assertEqual(result.picks[0].team, "red")
+        value["myTeam"][0]["team"] = 1
+        self.assertEqual(parse_draft_session(value, MAPPING).own_team, "blue")
+
+    def test_completed_action_supplies_champion_before_roster_is_updated(self):
+        value = draft()
+        value["myTeam"][0]["championId"] = 0
+        result = parse_draft_session(value, MAPPING)
+        self.assertEqual(result.picks[0].riot_id, 266)
+        value["actions"][0][0]["completed"] = False
+        self.assertEqual(len(parse_draft_session(value, MAPPING).picks), 1)
+
+    def test_explicit_ally_action_can_supply_temporarily_missing_roster_member(self):
+        value = draft()
+        value["actions"][0].append({"actorCellId": 2, "championId": 32, "type": "pick", "completed": True, "isAllyAction": True})
+        result = parse_draft_session(value, MAPPING)
+        added = next(item for item in result.picks if item.riot_id == 32)
+        self.assertEqual(added.team, "blue")
+        self.assertIsNone(added.role)
+
+    def test_normal_solo_flex_and_custom_full_rosters_use_same_parser(self):
+        mapping = {str(1000 + i): i for i in range(10)}
+        for queue in (400, 420, 440, 0):
+            own = [{"cellId": i, "championId": 0, "assignedPosition": ["top", "jungle", "middle", "bottom", "utility"][i], "team": 1} for i in range(5)]
+            enemy = [{"cellId": i + 5, "championId": 0, "assignedPosition": "", "team": 2} for i in range(5)]
+            actions = [{"actorCellId": i, "championId": 1000 + i, "type": "pick", "completed": True, "isAllyAction": i < 5} for i in range(10)]
+            result = parse_draft_session({"myTeam": own, "theirTeam": enemy, "actions": [actions], "isCustomGame": queue == 0},
+                mapping, {"gameData": {"queue": {"id": queue}}})
+            self.assertEqual(len(result.picks), 10)
+            self.assertEqual(result.roster_sizes, (5, 5))
+            self.assertEqual(result.queue_id, queue)
+            self.assertEqual(result.own_team, "blue")
+            self.assertEqual(result.custom_game, queue == 0)
+
     def test_internal_zero_is_a_real_champion(self):
         result = parse_draft_session(draft(), MAPPING)
         self.assertEqual(result.picks[0], DraftPick("blue", 266, 0, 0, 0))

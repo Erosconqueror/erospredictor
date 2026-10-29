@@ -299,6 +299,8 @@ class MetaLearningTrainer:
             "roleaware": float(weights[2]),
             "statistical": float(weights[3])
         }
+        from services.ensemble_weights import bounded_weights
+        weights_dict = bounded_weights(weights_dict)
         
         os.makedirs("models", exist_ok=True)
         import pickle

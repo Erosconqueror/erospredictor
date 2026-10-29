@@ -138,13 +138,10 @@ class CoreModel:
         except Exception as exc:
             self.load_errors["statistical"] = str(exc)
 
-        weights = {name: self.ensemble_weights.get(name, 0.0) for name in predictions}
-        total = sum(weights.values())
-        if predictions and total <= 0:
-            weights = {name: 1.0 for name in predictions}
-            total = len(predictions)
-        return [{"model": name, "probability": probability, "weight": weights[name] / total}
-                for name, probability in predictions.items() if weights[name] > 0]
+        from services.ensemble_weights import bounded_weights
+        weights = bounded_weights(self.ensemble_weights, predictions)
+        return [{"model": name, "probability": probability, "weight": weights[name]}
+                for name, probability in predictions.items()]
 
     @staticmethod
     def _component_mean(components):
@@ -156,14 +153,13 @@ class CoreModel:
     def predict_match(self, div: str, blue: list, red: list) -> dict:
         """Evaluate both orientations with the same side balance as recommendations."""
         self._validate_draft_shape(blue, red)
-        blue_prob = self.calc_win_prob_fast(div, blue, red)
-        swapped_prob = self.calc_win_prob_fast(div, red, blue)
-        final = blue_prob * 0.58 + (1.0 - swapped_prob) * 0.42
-        return {"blue_win_prob": final * 100, "red_win_prob": (1.0 - final) * 100}
+        components = self._prediction_components(div, blue, red, "blue")
+        final = sum(component["weighted_win_prob"] for component in components)
+        return {"blue_win_prob": final, "red_win_prob": 100 - final}
 
     def recommend_champs(self, div: str, blue: list, red: list, bans: list,
                         team: str, r_idx: int, top_k: int = 5,
-                        filter_off_meta: bool = True) -> list:
+                        filter_off_meta: bool = True, candidate_ids=None) -> list:
         """Rank candidates only. Explanation inference is a separate optional call."""
         self._validate_recommendation_request(blue, red, team, r_idx)
         unavailable = {cid for cid in list(bans) + list(blue) + list(red) if cid >= 0}
@@ -177,7 +173,10 @@ class CoreModel:
         results = []
         if top_k <= 0:
             return results
-        for cid in range(CHAMPION_COUNT):
+        candidates = range(CHAMPION_COUNT) if candidate_ids is None else sorted(set(candidate_ids))
+        if any(not isinstance(cid, int) or isinstance(cid, bool) or not 0 <= cid < CHAMPION_COUNT for cid in candidates):
+            raise ValueError("Érvénytelen hős a saját listában.")
+        for cid in candidates:
             if cid in unavailable or (allowed is not None and cid not in allowed):
                 continue
             candidate_blue, candidate_red = list(blue), list(red)
@@ -202,12 +201,14 @@ class CoreModel:
                 weights[name] = weights.get(name, 0.0) + weight
                 contributions[name] = contributions.get(name, 0.0) + weight * probability
         details = []
+        from services.ensemble_weights import bounded_weights
+        effective = bounded_weights(weights)
         for name, weight in weights.items():
             probability = contributions[name] / weight
             if team == "red":
                 probability = 1 - probability
             details.append({"model": name, "win_prob": probability * 100,
-                            "weight": weight, "weighted_win_prob": weight * probability * 100})
+                            "weight": effective[name], "weighted_win_prob": effective[name] * probability * 100})
         return details
 
     def explain_champion_effects(self, div: str, blue: list, red: list, team: str,

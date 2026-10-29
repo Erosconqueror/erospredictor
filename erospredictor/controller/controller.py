@@ -75,15 +75,38 @@ class Controller:
             'red_win_prob': r_wr
         }
 
-    def recommend_champs(self, div: str, blue: list, red: list, bans: list, team: str, r_idx: int, top_k: int = 5, filter_off_meta: bool = True, history=None) -> list:
+    def recommend_champs(self, div: str, blue: list, red: list, bans: list, team: str, r_idx: int, top_k: int = 5, filter_off_meta: bool = True, history=None, candidate_ids=None, pool_tags=None, scenarios=None) -> list:
         """Returns a list of recommended champions based on the current draft state, including win rates and display colors for UI."""
-        recs = self.core_model.recommend_champs(div, blue, red, bans, team, r_idx, top_k, filter_off_meta)
+        recs = self.core_model.recommend_champs(div, blue, red, bans, team, r_idx, top_k, filter_off_meta,
+            **({"candidate_ids": candidate_ids} if candidate_ids is not None else {}))
+        if scenarios is not None:
+            from services.robust_recommendation import rerank
+            recs = rerank(recs, self.core_model.predict_match, div, blue, red, team, r_idx, scenarios)
         for rec in recs:
             rec['display_color'] = self.get_winrate_color(rec['wr'])
+            if pool_tags:
+                rec['pool_tags'] = pool_tags.get(rec['id'], ())
         if history is not None and feature_flags.PERSONAL_HISTORY_ENABLED:
             from services.personal_history import annotate_recommendations
             recs = annotate_recommendations(recs, history, self.db.get_champion_mapping(), blue, red, team, r_idx)
         return recs
+
+    def draft_scenarios(self, div, blue, red, team, previous_roles=None):
+        from services.draft_import import DraftPick, DraftSnapshot
+        from services.draft_assignment import assign_draft
+        from services.role_distribution import load_role_distribution
+        inverse = {int(index): int(riot) for riot, index in self.db.get_champion_mapping().items()}
+        picks = tuple(DraftPick(side, inverse[cid], cid, role if side == team else None, role)
+                      for side, champions in (("blue", blue), ("red", red))
+                      for role, cid in enumerate(champions) if cid >= 0 and cid in inverse)
+        return assign_draft(DraftSnapshot(picks, own_team=team), load_role_distribution(),
+                            previous_roles=previous_roles, tier=div).scenarios
+
+    def recommend_bans(self, div, role, pool, unavailable):
+        from services.ban_advisor import recommend_bans
+        from services.role_distribution import load_role_distribution
+        return recommend_bans(self.stat_model, load_role_distribution(), self.db.get_champion_mapping(),
+                              pool, div, role, unavailable)
 
     def explain_recommendations(self, div: str, blue: list, red: list, team: str,
                                 r_idx: int, recommendations: list, max_items: int = 5,

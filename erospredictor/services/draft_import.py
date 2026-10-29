@@ -54,6 +54,9 @@ class DraftSnapshot:
     warnings: tuple[str, ...] = ()
     session_key: str = ""
     own_role: int | None = None
+    queue_id: int | None = None
+    custom_game: bool = False
+    roster_sizes: tuple[int, int] = (0, 0)
 
 
 _ROLES = {
@@ -162,11 +165,20 @@ def configure_client_location():
 
 
 def _side_from_members(members):
-    # The platform's actual team ids are authoritative. cellId / UI order are not.
-    sides = {_number(member.get("teamId", member.get("team"))) for member in members if isinstance(member, dict)}
-    if sides.intersection({100, 200}) == {100}:
+    # Champ-select's explicit team enum uses 1/2; platform teamId uses 100/200.
+    # Neither cellId nor display order establishes a side.
+    sides = set()
+    for member in members:
+        if not isinstance(member, dict):
+            continue
+        platform = _number(member.get("teamId"))
+        encoded = _number(member.get("team"))
+        side = platform if platform in (100, 200) else {1: 100, 2: 200, 100: 100, 200: 200}.get(encoded)
+        if side:
+            sides.add(side)
+    if sides == {100}:
         return "blue"
-    if sides.intersection({100, 200}) == {200}:
+    if sides == {200}:
         return "red"
     return None
 
@@ -236,7 +248,10 @@ def parse_draft_session(session: dict, mapping: dict, gameflow=None, current_sum
     pick_actions = {}
     for action in actions:
         if action.get("type") == "pick":
-            pick_actions[_number(action.get("actorCellId"), -1)] = action
+            cell = _number(action.get("actorCellId"), -1)
+            if cell >= 0:
+                ally = action.get("isAllyAction")
+                pick_actions[(ally if isinstance(ally, bool) else None, cell)] = action
 
     def translate(riot_id):
         riot_id = _number(riot_id)
@@ -244,23 +259,28 @@ def parse_draft_session(session: dict, mapping: dict, gameflow=None, current_sum
             return None
         value = mapping.get(str(riot_id), mapping.get(riot_id))
         if value is None:
-            notes.append(f"Ismeretlen hősazonosító: {riot_id}. A hősadatok frissítése szükséges; ezt a választást kihagytam.")
+            notes.append(f"Ismeretlen hősazonosító: {riot_id}. A hősadatok frissítése szükséges; ezt a bejegyzést kihagytam.")
             return None
         return _number(value, -1) if _number(value, -1) >= 0 else None
 
-    picks = []
+    picks, roster_cells = [], {}
     for source_key, source_team in (("myTeam", "own"), ("theirTeam", "enemy")):
         members = session.get(source_key, [])
         if len(members) > 5:
             raise DraftImportError("A beolvasás csak az 5 az 5 elleni draftot támogatja.")
+        roster_cells[source_team] = set()
         for member in members:
             if not isinstance(member, dict):
                 continue
             cell = _number(member.get("cellId"), -1)
-            action = pick_actions.get(cell)
+            if cell >= 0:
+                roster_cells[source_team].add(cell)
+            action = pick_actions.get((source_team == "own", cell), pick_actions.get((None, cell)))
             if action is not None and action.get("completed") is not True:
                 continue  # A hover/intent is never a locked pick.
             riot_id = _number(member.get("championId"))
+            if riot_id <= 0 and action is not None and action.get("completed") is True:
+                riot_id = _number(action.get("championId"))
             internal_id = translate(riot_id)
             if internal_id is None:
                 continue
@@ -269,6 +289,22 @@ def parse_draft_session(session: dict, mapping: dict, gameflow=None, current_sum
             if own_team:
                 team = own_team if source_team == "own" else ("red" if own_team == "blue" else "blue")
             picks.append(DraftPick(team, riot_id, internal_id, role, cell))
+    # Some client versions expose a locked action before adding its roster row.
+    # Explicit isAllyAction is required; cell order never establishes a team.
+    for (ally, cell), action in pick_actions.items():
+        if ally is None or action.get("completed") is not True:
+            continue
+        source_team = "own" if ally else "enemy"
+        if cell in roster_cells[source_team]:
+            continue
+        riot_id = _number(action.get("championId"))
+        internal_id = translate(riot_id)
+        if internal_id is None:
+            continue
+        team = (own_team if ally else ("red" if own_team == "blue" else "blue")) if own_team else source_team
+        if sum(pick.team == team for pick in picks) >= 5 or any(pick.riot_id == riot_id for pick in picks):
+            continue
+        picks.append(DraftPick(team, riot_id, internal_id, None, cell))
     if any(p.role is None for p in picks):
         notes.append("A nem közölt szerepköröket kézzel rendeld pozícióhoz; a lista sorrendje nem jelenti az ösvényt.")
 
@@ -302,8 +338,16 @@ def parse_draft_session(session: dict, mapping: dict, gameflow=None, current_sum
                      and local_cell >= 0 and _number(member.get("cellId"), -1) == local_cell]
     own_role = (_ROLES.get(str(local_members[0].get("assignedPosition", "")).upper())
                 if len(local_members) == 1 else None)
+    game_data = gameflow.get("gameData", {}) if isinstance(gameflow, dict) else {}
+    queue = game_data.get("queue", {}) if isinstance(game_data, dict) else {}
+    queue_id = _number(queue.get("id"), -1) if isinstance(queue, dict) else -1
+    custom = session.get("isCustomGame") is True or (isinstance(game_data, dict) and game_data.get("isCustomGame") is True)
+    sizes = (len(session["myTeam"]), len(session.get("theirTeam", [])))
+    if custom:
+        notes.append("Custom draft: csak a kliens által közölt, rögzített hősök olvashatók; a botok választásai hiányozhatnak.")
     return DraftSnapshot(tuple(picks), blue_bans, red_bans, own_team, own_bans, enemy_bans,
-                         tuple(dict.fromkeys(notes)), _session_key(session, gameflow), own_role)
+                         tuple(dict.fromkeys(notes)), _session_key(session, gameflow), own_role,
+                         queue_id if queue_id >= 0 else None, custom, sizes)
 
 
 class LcuDraftClient:

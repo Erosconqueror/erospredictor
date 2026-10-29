@@ -140,6 +140,39 @@ class JointRoleAssignmentTests(unittest.TestCase):
         self.assertEqual(assign_draft(snapshot, stats, tier="GOLD").values["red"][4], 10)
         self.assertEqual(assign_draft(snapshot, stats, tier="MISSING").values["red"][2], 10)
 
+    def test_under_five_percent_role_cannot_resolve_partial_team_conflict(self):
+        stats = distribution(**{"101": [0, 0, 4, 0, 96], "201": [0, 0, 0, 0, 100]})
+        snapshot = DraftSnapshot((pick(101, 10), pick(201, 20)), own_team="blue")
+        result = assign_draft(snapshot, stats)
+        self.assertEqual(sum(cid is not None for cid in result.values["red"]), 1)
+        self.assertTrue(any("5%" in note for note in result.warnings))
+        self.assertFalse(any(item.source == "forced" for item in result.assignments))
+        stats["tiers"]["MIXED"]["101"] = entry([0, 0, 5, 0, 95])
+        result = assign_draft(snapshot, stats)
+        self.assertEqual(result.values["red"][2], 10)
+        self.assertEqual(result.values["red"][4], 20)
+
+    def test_only_full_enemy_roster_can_force_a_rare_or_unobserved_position(self):
+        stats = distribution(**{"1": [100, 0, 0, 0, 0], "2": [0, 100, 0, 0, 0],
+                                "3": [0, 0, 4, 0, 96], "4": [0, 0, 0, 100, 0], "5": [0, 0, 0, 0, 100]})
+        full = DraftSnapshot(tuple(pick(i + 1, i) for i in range(5)), own_team="blue")
+        result = assign_draft(full, stats)
+        self.assertTrue(result.complete)
+        self.assertEqual(result.values["red"], [0, 1, 2, 3, 4])
+        self.assertEqual(result.assignments[2].source, "forced")
+        self.assertEqual(result.assignments[2].role_probability, .04)
+        self.assertTrue(result.scenarios[0].forced)
+        own = DraftSnapshot(tuple(pick(i + 1, i, team="own") for i in range(5)), own_team="blue")
+        self.assertFalse(assign_draft(own, stats).complete)
+
+    def test_alternative_layouts_are_unique_normalized_and_obey_the_threshold(self):
+        stats = distribution(**{"101": [0, 0, 60, 0, 40], "201": [0, 0, 30, 0, 70]})
+        result = assign_draft(DraftSnapshot((pick(101, 10), pick(201, 20)), own_team="blue"), stats)
+        self.assertEqual(len(result.scenarios), 2)
+        self.assertAlmostEqual(sum(item.weight for item in result.scenarios), 1)
+        self.assertEqual({item.red for item in result.scenarios}, {(None, None, 10, None, 20), (None, None, 20, None, 10)})
+        self.assertTrue(all(not item.forced for item in result.scenarios))
+
 
 if __name__ == "__main__":
     unittest.main()

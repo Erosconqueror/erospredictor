@@ -8,14 +8,28 @@ A felső legördülő menüben válaszd ki, hogy milyen rangbeli mérkőzést sz
 ### 2. Tiltások (Bans) megadása
 A piros keretes részben adhatod meg azokat a hősöket, akiket a csapatok kitiltottak. **Ezeket a hősöket a program nem fogja ajánlani**. (Ha csak a saját ösvényedre szeretnél ajánlást akkor elegendő a releváns pozícióban játszható kitiltott hősöket megadni)
 
-### 3. Hős Ajánló Rendszer
-1. Állapítsd meg, hogy melyik csapatban játszol: ha nem emlékeznél, hogy melyik oldalra kerültetek **a kék csapat kezd elsőnek 1 darab hőssel, majd 2-2, és a piros csapat fejezi be az utolsó 1 hős választásával a LoL kliensen belül**
-2. A lenti panelen válaszd ki az **Oldalt**, és a **Pozíciót** (Top, Mid stb.).
-3. Válaszd ki az eddig **Kék** és a **Piros** csapat hőseit a legördülő menükből.
-4. A **Off-meta hősök kiszűrése** opció garantálja, hogy a rendszer csak olyan karaktereket ajánl, amiket abban a divízióban gyakrabban játszanak, de ha "off-meta" ájánlásokat is próbálnál akkor ezt hagy kikapcsolva.
-5. Kattints az **AJÁNLÁS** gombra, és a rendszer megppróbálja megállapítani, mely 5 hőssel lenne a legmagasabb eélyetek nyerni.
+### 3. Draft beolvasása
+A **LoL-kliens beolvasása** gombbal egyszeri, ellenőrizhető beolvasás indul. Az **Automatikus draft** kapcsoló a már rögzített hősöket és tiltásokat követi; a hover kimarad. Normal Draft, Ranked Solo/Duo és Ranked Flex ugyanazt a helyi adatforrást használja. Customban a kliens kihagyhat botokat.
 
-### 4. Predikció
+A saját csapat közölt szerepkörei elsőbbséget kapnak. Az ellenfél szerepköreit közösen, ütközésmentesen becsüli. Egy szerepkörhöz a hős megfigyeléseinek legalább 5%-a szükséges. Ettől csak mind az öt látható ellenfélnél térhet el, **⚠ kényszer** jelöléssel. A pozíció alatti százalék szerepgyakoriság, nem győzelmi esély.
+
+### 4. Hősajánlás és saját listák
+1. Válaszd ki lent az **oldalt** és a **pozíciót**. A vizsgált saját pozíció maradjon üres.
+2. Töltsd ki vagy olvasd be az ismert választásokat és tiltásokat.
+3. A **Hőseim és listák…** alatt jelölhetsz Játszom, Komfort és Tanulnám hősöket, valamint külön saját listákat készíthetsz. A jelölések együtt is használhatók.
+4. A **Csak ebből ajánlj** kapcsolóval az aktív listára szűkítheted a jelölteket. Alapból minden megengedett hőst vizsgál.
+5. Kattints az **AJÁNLÁS** gombra. A saját címkék nem módosítják a modell százalékát.
+
+A **Bansegéd** a kiválasztott poolhoz és pozícióhoz ad ötleteket. Csak mentett statisztikát használ, párosításonként legalább 20 meccsből. A részletek megmutatják a pool hőseinek nehéz párosításait és a mintaszámot.
+
+### 5. Beállítások és opcionális elemzések
+A **Beállítások / előzmények…** ablakban találod az off-meta szűrőt, az egyszerű nyilas hőshatásokat, a többkiosztásos ajánlást, a lockfile-választást és a személyes előzményeket.
+
+A **Bizonytalan ellenfélpozíciók vizsgálata** külön kapcsolható. Az első öt jelöltet legfeljebb három lehetséges ellenfél-kiosztásban ellenőrzi, majd a legrosszabb vizsgált becslés szerint rendezi őket. A fő százalék továbbra is az aktuális drafté; a külön tartományra kattintva megnyithatók a felállások. Kikapcsolva nincs extra számítás.
+
+A **Miért? – Kijelölt hős + első 5** gomb külön részletes elemzést nyit meg. A nyilakhoz a listában egy hősre kattintva választhatsz fókuszt. A fehér keret a fókuszhős lane-ellenfelét emeli ki.
+
+### 6. Predikció
 1. Válaszd ki az összes maradék választott hőst a középső legördülő menükből.
 2. Kattints a zöld **PREDIKCIÓ INDÍTÁSA** gombra.
 3. A középső felületen megjelenik, hogy az algoritmus szerint melyik csapatnak hány százalék esélye van a győzelemre az adott felállás alapján.

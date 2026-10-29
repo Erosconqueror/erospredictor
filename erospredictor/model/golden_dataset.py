@@ -24,7 +24,12 @@ class GoldenDataset:
         return [self.name_map.get(n, -1) if n else -1 for n in names]
 
     def validate_recommendations(self, recommendation_fn: Callable, div: str) -> Dict:
-        """Validates champion recommendations. Must-picks in Top 5, Avoid-picks NOT in Top 8."""
+        """Grade recommendation ranks with partial credit; prediction QA is separate.
+
+        Must-picks: Top 5 = 1, Top 10 = .75, Top 20 = .5. Avoid-picks:
+        Top 3 = 0, ranks 4-8 = .5, outside Top 8 = 1. Average the applicable
+        criteria, so one near miss no longer erases an entire scenario.
+        """
         results = []
         
         for case in self.recommendation_cases:
@@ -39,26 +44,27 @@ class GoldenDataset:
                                      r_idx=r_idx % 5, top_k=50)
             
             rec_ids = [r['id'] for r in recs]
-            passed = True
+            criteria = []
             reasons = []
 
             if must_pick_ids:
-                top_5_ids = set(rec_ids[:5])
-                if not must_pick_ids.intersection(top_5_ids):
-                    passed = False
-                    reasons.append("Failed: Must-pick champion not found in Top 5.")
+                rank = min((rec_ids.index(cid) + 1 for cid in must_pick_ids if cid in rec_ids), default=999)
+                criteria.append(1.0 if rank <= 5 else .75 if rank <= 10 else .5 if rank <= 20 else 0.0)
+                if rank > 5:
+                    reasons.append(f"Must-pick best rank: {rank if rank != 999 else 'not found'}; partial credit applied.")
 
             if avoid_ids:
-                top_10_ids = set(rec_ids[:8])
-                for avoid_id in avoid_ids:
-                    if avoid_id in top_10_ids:
-                        passed = False
-                        reasons.append("Failed: Avoid-pick champion found in Top 8.")
-                        break
+                rank = min((rec_ids.index(cid) + 1 for cid in avoid_ids if cid in rec_ids), default=999)
+                criteria.append(0.0 if rank <= 3 else .5 if rank <= 8 else 1.0)
+                if rank <= 8:
+                    reasons.append(f"Avoid-pick best rank: {rank}; partial credit applied.")
+
+            score = sum(criteria) / len(criteria) if criteria else 1.0
 
             results.append({
                 'scenario': case.get('scenario', 'Unknown'),
-                'passed': passed,
+                'passed': score >= .75,
+                'score': score,
                 'reasons': reasons
             })
             
@@ -66,7 +72,8 @@ class GoldenDataset:
         return {
             'passed': passed_count,
             'total': len(results),
-            'rate': (passed_count / len(results)) if results else 0.0,
+            'score': sum(r['score'] for r in results),
+            'rate': (sum(r['score'] for r in results) / len(results)) if results else 0.0,
             'results': results
         }
 

@@ -2,8 +2,8 @@
 
 The client is authoritative for the own team's reported roles. Enemy roles are
 estimates from P(role | champion), never from the roster's display/cell order.
-Every team needs at most 5! role permutations; unknown or unobserved roles stay
-unresolved rather than gaining an invented probability.
+Every team needs at most 5! role permutations. Unsupported roles stay unresolved
+until a complete enemy roster permits an explicitly marked forced placement.
 """
 
 from dataclasses import dataclass, replace
@@ -12,6 +12,16 @@ import math
 
 from services.draft_import import DraftPick
 from services.role_distribution import role_probabilities
+
+MIN_ROLE_PROBABILITY = .05
+
+
+@dataclass(frozen=True)
+class DraftScenario:
+    blue: tuple
+    red: tuple
+    weight: float
+    forced: bool = False
 
 
 @dataclass(frozen=True)
@@ -32,6 +42,7 @@ class DraftAssignment:
     assignments: tuple[PickAssignment, ...]
     unresolved: tuple[DraftPick, ...]
     warnings: tuple[str, ...]
+    scenarios: tuple[DraftScenario, ...] = ()
 
     @property
     def complete(self):
@@ -70,10 +81,9 @@ def assign_draft(snapshot, role_distributions, own_side=None, previous_roles=Non
     takes precedence. When no role data is available, an explicit manual choice
     is required for that pick and ``unresolved`` records the omitted champion.
 
-    With observed positive frequencies, maximize the joint product subject to
-    unique roles. If a full matching is impossible, maximize the number of
-    supported placements first, then the positive-frequency product. An unused
-    empirical 0% role never becomes an automatically accepted placement.
+    Automatic roles need at least 5% of that champion's observations. Only a
+    fully visible five-enemy roster may relax this rule; those placements are
+    explicitly marked forced. Keep up to three likely enemy configurations.
     """
     if snapshot.own_team not in (None, "blue", "red") or own_side not in (None, "blue", "red"):
         raise ValueError("A saját csapat oldala csak Kék vagy Piros lehet.")
@@ -107,7 +117,7 @@ def assign_draft(snapshot, role_distributions, own_side=None, previous_roles=Non
     if any(sum(pick.team == team for pick in picks) > 5 for team in ("blue", "red")):
         raise ValueError("Egy csapatban legfeljebb öt kiválasztott hős szerepelhet.")
 
-    metadata = {}
+    metadata, enemy_plans = {}, []
     for team in ("blue", "red"):
         pending, occupied = [], {}
         team_picks = sorted((pick for pick in picks if pick.team == team),
@@ -140,7 +150,7 @@ def assign_draft(snapshot, role_distributions, own_side=None, previous_roles=Non
                 probability = probabilities[role] if total > 0 else None
                 metadata[(team, pick.internal_id)] = PickAssignment(team, pick.internal_id, pick.riot_id,
                     role, source, probability, total, probabilities if total else ())
-            elif total > 0:
+            elif total > 0 or (team != own and len(team_picks) == 5):
                 pending.append((pick, probabilities, total))
             else:
                 metadata[(team, pick.internal_id)] = PickAssignment(team, pick.internal_id, pick.riot_id,
@@ -148,32 +158,65 @@ def assign_draft(snapshot, role_distributions, own_side=None, previous_roles=Non
                 notes.append(f"A(z) {pick.riot_id} hőshöz nincs szerepkörstatisztika; kézi pozíció szükséges.")
 
         free = [role for role in range(5) if role not in occupied]
-        best, best_score, ties = None, None, 0
+        fallback = team != own and len(team_picks) == 5
+        plans = []
         for roles in permutations(free, len(pending)):
             supported = [(probabilities[role], total) for (_, probabilities, total), role in zip(pending, roles)
-                         if probabilities[role] > 0]
-            score = (len(supported), sum(math.log(probability) for probability, _ in supported),
+                         if total and probabilities[role] >= MIN_ROLE_PROBABILITY]
+            log_probability = (sum(math.log(max(probabilities[role], 1e-9)) for (_, probabilities, _), role in zip(pending, roles))
+                               if fallback else sum(math.log(probability) for probability, _ in supported))
+            score = (len(supported), log_probability,
                      sum(math.log1p(total) for _, total in supported))
-            if best_score is None or score > best_score:
-                best, best_score, ties = roles, score, 1
-            elif score == best_score:
-                ties += 1
+            plans.append((score, roles))
+        plans.sort(key=lambda item: item[0], reverse=True)
+        best_score, best = plans[0] if plans else ((0, 0, 0), ())
+        ties = sum(score == best_score for score, _ in plans)
         if ties > 1 and pending:
             notes.append(f"A {'Kék' if team == 'blue' else 'Piros'} csapat több hasonló szerepkör-felállással is összeegyeztethető; a becslés kézzel javítható.")
         for (pick, probabilities, total), role in zip(pending, best or ()):
             probability = probabilities[role]
-            if probability > 0:
+            supported = total > 0 and probability >= MIN_ROLE_PROBABILITY
+            if supported or fallback:
                 values[team][role] = pick.internal_id
                 metadata[(team, pick.internal_id)] = PickAssignment(team, pick.internal_id, pick.riot_id,
-                    role, "statistics", probability, total, probabilities)
-                if total < 20:
+                    role, "statistics" if supported else "forced", probability if total else None,
+                    total, probabilities if total else ())
+                if not supported:
+                    notes.append(f"A(z) {pick.riot_id} hős kényszerített pozíciót kapott: az összes ellenfél látható, de nincs teljes, legalább 5%-os kiosztás. Ellenőrizd kézzel.")
+                elif total < 20:
                     notes.append(f"A(z) {pick.riot_id} hős szerepköre kis mintából ({total} választás) becsült.")
             else:
                 metadata[(team, pick.internal_id)] = PickAssignment(team, pick.internal_id, pick.riot_id,
                     None, "unresolved", None, total, probabilities)
-                notes.append(f"A(z) {pick.riot_id} hőshöz nincs ütközésmentes, megfigyelt szerepkör; kézi pozíció szükséges.")
+                notes.append(f"A(z) {pick.riot_id} hőshöz nincs ütközésmentes, legalább 5%-os szerepkör; kézi pozíció szükséges.")
+
+        if team != own:
+            seen_lineups = set()
+            for score, roles in plans:
+                if score[0] != best_score[0]:
+                    continue
+                lineup = [None] * 5
+                for role, cid in occupied.items():
+                    lineup[role] = cid
+                forced = False
+                for (pick, probabilities, total), role in zip(pending, roles):
+                    supported = total > 0 and probabilities[role] >= MIN_ROLE_PROBABILITY
+                    if supported or fallback:
+                        lineup[role] = pick.internal_id
+                        forced |= not supported
+                signature = tuple(lineup)
+                if signature in seen_lineups:
+                    continue
+                seen_lineups.add(signature)
+                enemy_plans.append((signature, math.exp(score[1] - best_score[1]), forced))
+                if len(enemy_plans) == 3:
+                    break
 
     assignments = tuple(metadata[(pick.team, pick.internal_id)] for pick in picks)
     unresolved = tuple(replace(pick, role=None) for pick, assignment in zip(picks, assignments)
                        if assignment.role is None)
-    return DraftAssignment(values, assignments, unresolved, tuple(dict.fromkeys(notes)))
+    total_weight = sum(weight for _, weight, _ in enemy_plans)
+    scenarios = tuple(DraftScenario(tuple(values["blue"]) if own == "blue" else lineup,
+                                   lineup if own == "blue" else tuple(values["red"]), weight / total_weight, forced)
+                      for lineup, weight, forced in enemy_plans)
+    return DraftAssignment(values, assignments, unresolved, tuple(dict.fromkeys(notes)), scenarios)

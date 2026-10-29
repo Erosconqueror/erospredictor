@@ -202,10 +202,22 @@ a már elkészült ajánlást/predikciót; draftváltozás után a korábbi ered
 Az automatikus adatbetöltés nem indít ajánlási vagy magyarázó modellfuttatást.
 Kikapcsolás után egy későn beérkező válasz sem írhatja át a mezőket.
 
+Normal Draft (400), Ranked Solo/Duo (420), Ranked Flex (440) és 5v5 custom
+ugyanazt a beolvasási utat használja. Kezeli a kliens explicit `team: 1/2`
+oldalkódját és a platform `teamId: 100/200` formátumát. A már befejezett pick
+akcióból akkor is kiolvassa a hőst, ha a névsor sora még nem frissült.
+Customban csak a ténylegesen közölt hősökkel dolgozik; a hiányzó botokat nem
+találja ki. A státusz a látható és a besorolt hősök számát külön mutatja.
+
 A saját csapat kliens által közölt pozíciói elsőbbséget kapnak. Az ellenfélnél
 az összes kiválasztott hőst együtt vizsgálja: legfeljebb 120 lehetséges kiosztás
 közül keresi a szerepgyakoriságok szorzata alapján legjobb, ütközésmentes
-felállást. Így például Braum Support mellett Xerath kerülhet Midre. A pozíció
+felállást. Automatikus szerepkörhöz a hős saját megfigyeléseinek legalább **5%-a**
+kell azon a pozíción. Részleges ellenfélcsapatnál ez alatti elhelyezést nem fogad
+el az ütközés feloldásához. Csak mind az öt látható ellenfélnél engedi el a küszöböt,
+ha nincs teljes megengedett kiosztás; ezt **⚠ kényszer** jelöléssel és magyarázattal
+mutatja. Saját klienspozíció és kézi megerősítés továbbra is elsőbbséget kap.
+Így például Braum Support mellett Xerath kerülhet Midre. A pozíció
 alatti `~61%` a hős megfigyelt szerepgyakorisága; az egérmutatóval a teljes
 ötpozíciós eloszlás és a mintaszám is látható. Ez becslés, nem biztos szerepkör
 és nem győzelmi esély. Saját kliensadatnál `kliens`, jóváhagyott javításnál `kézi`
@@ -213,7 +225,8 @@ jelölés jelenik meg. Kis mintát külön jelez; megfigyelés nélküli szerepe
 tölt ki kitalált százalékkal.
 
 Adathiánynál vagy bizonytalan oldalnál a **LoL-kliens beolvasása** gomb kézi
-ellenőrző ablaka segít. A kézzel megerősített pozíciót az aktuális draftban
+ellenőrző ablaka segít. Az oldal külön a **Beállítások / LoL-kliens** lapon is
+megadható, a követés kikapcsolása nélkül. A kézzel megerősített pozíciót az aktuális draftban
 megjegyzi; új sessionnél új kiosztást készít. A kliens későbbi egyértelmű saját
 szerepköre felülírja a kézi korrekciót. Kézi ellenőrzés közben az automata követés
 szünetel. Az **Új Draft** kikapcsolja a követést és törli a mezőket.
@@ -236,7 +249,8 @@ Az export alapból a konfigurált patcheket és régiót használja. Nem módos�
 adatbázist, nem indít scrape-et vagy tanítást, és nem kell hozzá Riot API-kulcs.
 Az automatikus draftkövetés is csak a helyi LCU-t használja.
 
-Ha az automatikus keresés nem találja a klienst, a **LoL lockfile…** gombbal
+Ha az automatikus keresés nem találja a klienst, a **Beállítások / LoL-kliens**
+lapon a **LoL lockfile…** gombbal
 válaszd ki a League of Legends telepítési mappájának `lockfile` fájlját.
 Példa: `C:\Riot Games\League of Legends\lockfile` vagy egy másik meghajtón a
 megfelelő telepítési mappa. A fájl a futó klienshez tartozik; nem a kliens `.exe`
@@ -260,7 +274,62 @@ A [League Client API](https://developer.riotgames.com/docs/lol#league-client-api
 Riot által nem támogatott helyi interfész, ezért kliensfrissítés után élő ellenőrzést
 igényelhet. Közvetítés, képernyőkép és profi draft felismerése egy következő fejlesztés.
 
+## Saját hősök, listák és a főablak
+
+A főablakon a draft, a csapat/pozíció választása, a hőspool és a fő műveletek
+maradnak. A **Beállítások / előzmények…** ablak külön lapokra rendezi az
+ajánlási/elemzési kapcsolókat, a LoL-kliens beállításait és a személyes előzményeket.
+
+A **Hőseim és listák…** szerkesztőben egy hős egyszerre kaphat **Játszom**,
+**Komfort** és **Tanulnám** jelölést. Az **Összes saját hős** ezek uniója;
+emellett több külön elnevezett saját lista is létrehozható. A **Listatag** oszlop
+az éppen kiválasztott saját listát szerkeszti. Az előzményből hozzáadás gomb
+csak a már betöltött saját meccseket használja, új lekérést nem indít.
+
+A főablakon kiválasztható az aktív lista. A **Csak ebből ajánlj** kapcsoló
+alapból kikapcsolt; bekapcsolva már a számítás előtt korlátozza a jelölteket.
+A pickek, banok és off-meta szűrő továbbra is érvényesek. Üres listánál nem
+vált át észrevétlenül az összes hősre. A címkék megjelennek az ajánlási listán,
+a modell százalékait nem módosítják.
+
+A listák a `%LOCALAPPDATA%/Erospredictor/champion_pools.json` fájlba kerülnek,
+stabil Riot-hősazonosítókkal, így egy katalógus-átrendezés nem cseréli ki a hősöket.
+Csak a **Mentés** írja felül a helyi listát; a Mégse eldobja a szerkesztést.
+
+## Bansegéd a saját hőspoolhoz
+
+Válassz saját listát és pozíciót, majd kattints a **Bansegéd** gombra.
+A mentett lane-párosítások és szerepgyakoriságok alapján legfeljebb öt ötletet
+mutat. Párosításonként legalább **20 meccs** kell; kisebb mintából nem ad
+szélsőséges ajánlást. A saját pool hősei, a már pickelt és bannolt hősök kimaradnak.
+Figyelembe veszi a pool lefedettségét, a kedvezőtlen párosítás erősségét,
+a mintanagyságot és az ellenfél gyakoriságát az adatmintában.
+
+A részletek a pool adott hősének teljes meccses győzelmi arányát és mintaszámát
+mutatják, nem egy ban feltételezett győzelmi esélyét. A rangsorolási segédpontot
+nem jeleníti meg százalékos predikcióként. Ez a funkció csak helyi statisztikát
+olvas, nincs neurális inferencia, API-hívás vagy automatikus kliensbeli tiltás.
+
+## Opcionális ajánlás több ellenfél-kiosztásra
+
+A **Beállítások / Ajánlás és elemzés** lapon kapcsolható be a
+**Bizonytalan ellenfélpozíciók vizsgálata (első 5)**. Alapból kikapcsolt.
+A normál ajánlás első öt jelöltjét legfeljebb három ütközésmentes ellenfél-kiosztásban
+vizsgálja újra, az aktuális saját csapatot megtartva. A kézzel megerősített
+ellenfélpozíciókat is tiszteletben tartja. A lehetséges automatikus pozícióknál
+ugyanaz az 5%-os küszöb és teljes ellenfélcsapatnál jelölt kivétel érvényes.
+
+Az első öt sorrendjét a legrosszabb vizsgált becslés, egyezéskor a súlyozott átlag
+adja. A fő százalék az aktuális draft becslése marad; alatta külön látható a
+vizsgált kiosztások minimuma és maximuma. Ez nem konfidenciaintervallum.
+A kiosztáslinkre kattintva megnyithatók a konkrét felállások és relatív súlyaik.
+Két különböző használható kiosztás hiányában normál sorrendet és magyarázatot ad.
+Legfeljebb 15 extra kétoldali predikció készül; az alapfelület és a bansegéd
+bekapcsolás nélkül nem futtatja ezt az elemzést.
+
 ## Saját meccselőzmények
+
+Az előzményvezérlők a **Beállítások / Saját előzmények** lapra kerültek.
 
 Indításkor a program megpróbálja a bejelentkezett saját fiók előzményeit a helyi
 LoL-kliensből beolvasni. Az **Előzmények frissítése** gombbal 100, 500 vagy 1000
@@ -293,7 +362,7 @@ gyorsítótár megmarad megszakításkor; a következő frissítés újrahaszná
 Más játékosok nevét és fiókazonosítóját nem tárolja. Fiókváltáskor nem keveri
 össze a személyes statisztikákat.
 
-A **Saját hőseim** jelölések legalább 3 meccsnél mutatnak rendszeresen játszott
+A **Játszott hősök jelölése az előzményből** kapcsoló legalább 3 meccsnél mutat rendszeresen játszott
 hőst, legalább 20 meccs és 55% győzelmi arány felett erősebb keretet kap.
 A lane-párosítás és szinergia mintanagysággal együtt jelenik meg; 20 meccs alatt
 kis mintát jelez. Ezek a jelölések a modellek százalékait és sorrendjét nem módosítják.
@@ -323,7 +392,8 @@ Draft-, rang- vagy szűrőváltás után előbb új ajánlást kell kérni.
 
 ## Egyszerű nyilas hőshatások a főablakon
 
-A felső **Egyszerű hőshatások** kapcsoló alapból ki van kapcsolva, ilyenkor
+A **Beállítások / Ajánlás és elemzés** lapon lévő **Egyszerű hőshatások**
+kapcsoló alapból ki van kapcsolva, ilyenkor
 nincs hozzáadott hatásszámítás. Bekapcsolva a hősök és szerepköreik mellett
 zöld **▲**, piros **▼**, illetve semleges **→** jelzi a hatást. Az erősebb
 szín nagyobb eltérést jelent, a **fehér keret** pedig a fókuszhős lane-ellenfelét
@@ -344,6 +414,22 @@ egy másik ismert hős jelenlétében. Pozitív: kedvező a kiválasztott csapat
 számára; negatív: kedvezőtlen. Ez modellérzékenység, nem biztos lane-győzelem vagy
 összeadható magyarázat. Draft-, rang-, csapat- vagy szerepkörváltás törli a korábbi
 nyilakat, így elavult eredmény nem marad a hősök mellett.
+
+## Golden QA és ensemble minimum
+
+Az ajánlási golden teszt részpontot ad. A legjobb elvárt jelölt Top 5-ben 1,
+Top 10-ben 0,75, Top 20-ban 0,5 pontot ér; ezután 0-t. A legelőrébb álló
+kerülendő jelölt Top 3-ban 0, a 4–8. helyen 0,5, azon kívül 1 pontot ér.
+A meglévő kritériumok átlagát veszi; egy közeli hibás helyezés nem nullázza
+az egész esetet. A tanítás QA-eredménye ezt a részpontot használja.
+A predikciós golden teszt elfogadási tartományai és pontozása változatlanok.
+
+Minden ténylegesen használható ensemble-komponens legalább **8%** súlyt kap
+normalizálás után. Ez az aktuális predikcióra, ajánlásra és magyarázatra is
+érvényes, régi kalibrációs fájlok mellett is. Hiányzó vagy hibás komponens
+nem kap kitalált hozzájárulást; a megmaradt komponensek újranormalizálódnak.
+Mindkét kalibrációs út már a minimumot betartó súlyokat menti. A golden
+adatfájl kézi eseteit a pontozás változtatása nem írja át.
 
 ## Ellenőrzések
 

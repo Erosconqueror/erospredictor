@@ -86,7 +86,7 @@ def quick_evaluate_model(model_id: str, model_obj: Any, div: str, dataset: Golde
     if total_tests == 0:
         return 1.0
         
-    passed = res_pred['passed'] + res_rec['passed']
+    passed = res_pred['passed'] + res_rec.get('score', res_rec['passed'])
     return passed / total_tests
 
 def run_trainer():
