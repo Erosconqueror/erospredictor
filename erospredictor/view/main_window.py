@@ -3,7 +3,7 @@ from PyQt6.QtWidgets import (QMainWindow, QWidget, QVBoxLayout, QHBoxLayout,
                              QCheckBox, QGroupBox, QProgressBar, QFrame, 
                              QButtonGroup, QDialog, QTextEdit, QScrollArea, QCompleter,
                              QFileDialog)
-from PyQt6.QtCore import Qt, QSize
+from PyQt6.QtCore import Qt, QSize, QThread
 from PyQt6.QtGui import QIcon
 from configs import TARGET_TIERS, CHAMPION_COUNT
 from html import escape
@@ -28,6 +28,8 @@ class MainWindow(QMainWindow):
         self._last_recommendations = []
         self._selected_recommendation_id = None
         self._lockfile_path = None
+        self._personal_history = None
+        self._history_loading = False
         
         self._setup_window()
         self._apply_style()
@@ -251,6 +253,7 @@ class MainWindow(QMainWindow):
         self.scroll_recommend.setStyleSheet("background: transparent;")
         
         self.lbl_recommend = QLabel("")
+        self.lbl_recommend.setWordWrap(True)
         self.lbl_recommend.setAlignment(Qt.AlignmentFlag.AlignTop | Qt.AlignmentFlag.AlignHCenter)
         self.lbl_recommend.setStyleSheet("background: transparent;")
         self.lbl_recommend.setTextInteractionFlags(Qt.TextInteractionFlag.LinksAccessibleByMouse)
@@ -346,6 +349,30 @@ class MainWindow(QMainWindow):
             self.grp_role.addButton(btn, i)
             row_roles.addWidget(btn)
         rec_layout.addLayout(row_roles)
+
+        row_history = QHBoxLayout()
+        self.chk_personal = QCheckBox("Saját hőseim")
+        self.chk_personal.setChecked(True)
+        self.chk_personal.setEnabled(False)
+        self.chk_personal.setToolTip(
+            "Kék keret: legalább 3 saját meccs. Arany keret: legalább 20 meccs és 55% saját győzelmi arány. "
+            "A százalék és a sorrend a modell ajánlása marad; saját matchupok és szinergiák a részletes elemzésben.")
+        self.chk_personal.toggled.connect(self._on_personal_toggled)
+        self.lbl_history = QLabel("Előzmények betöltése indításkor…")
+        self.lbl_history.setTextFormat(Qt.TextFormat.PlainText)
+        self.lbl_history.setStyleSheet("font-size: 11px; color: #BDBDCB;")
+        self.lbl_history.setMaximumWidth(240)
+        self.cb_history_limit = QComboBox()
+        for count in (100, 500, 1000):
+            self.cb_history_limit.addItem(str(count), count)
+        self.cb_history_limit.setToolTip("Ennyi legutóbbi meccset vizsgál. A már mentett részleteket újra felhasználja.")
+        self.btn_history = QPushButton("Előzmények frissítése")
+        self.btn_history.clicked.connect(self._on_refresh_history)
+        row_history.addWidget(self.chk_personal)
+        row_history.addWidget(self.lbl_history, 1)
+        row_history.addWidget(self.cb_history_limit)
+        row_history.addWidget(self.btn_history)
+        rec_layout.addLayout(row_history)
         
         row_action = QHBoxLayout()
         self.chk_meta = QCheckBox("Off-Meta hősök szűrése")
@@ -528,10 +555,15 @@ class MainWindow(QMainWindow):
         context = dict(div=div, blue=blue, red=red, team=picking, r_idx=r_id)
         filter_meta = self.chk_meta.isChecked()
         enabled = self.chk_effects.isChecked()
+        history = self._personal_history if self.chk_personal.isChecked() else None
 
         def recommend():
+            if history is not None:
+                from services.personal_history import LcuHistoryClient
+                LcuHistoryClient(self._lockfile_path).verify_account(history)
             recs = self.controller.recommend_champs(div, blue, red, bans, picking,
-                                                     r_id, CHAMPION_COUNT, filter_meta)
+                                                     r_id, CHAMPION_COUNT, filter_meta,
+                                                     **({"history": history} if history is not None else {}))
             focus = dict(context, champion_id=recs[0]['id']) if recs else None
             effects, error = self._optional_inline_effects(focus, enabled and bool(recs))
             return recs, effects, error
@@ -574,11 +606,22 @@ class MainWindow(QMainWindow):
             if selected:
                 row_color = "#34475D"
             name_color = "#FFE082" if selected else "#FFFFFF"
+            personal = rec.get("personal") if self.chk_personal.isChecked() else None
+            marker = personal.get("marker") if personal else None
+            frame_color = "#FFD166" if marker == "good" else "#64B5F6" if marker == "played" else None
+            frame = f"border-top: 2px solid {frame_color}; border-bottom: 2px solid {frame_color};" if frame_color else ""
+            left = f"border-left: 2px solid {frame_color};" if frame_color else ""
+            right = f"border-right: 2px solid {frame_color};" if frame_color else ""
             html += f"<tr bgcolor='{row_color}'>"
-            html += f"<td style='width: 45px;'><img src='assets/icons/{cid}.png' width='38' height='38' style='border-radius: 6px;'></td>"
-            html += (f"<td style='font-size: 18px; font-weight: bold; text-align: left;'>"
-                     f"<a href='champion:{cid}' style='color: {name_color}; text-decoration: none;'>{name}</a></td>")
-            html += f"<td style='font-size: 18px; color: {color}; font-weight: bold; text-align: right;'>{wr:.2f}%</td>"
+            html += f"<td style='width: 45px; {frame} {left}'><img src='assets/icons/{cid}.png' width='38' height='38' style='border-radius: 6px;'></td>"
+            html += (f"<td style='font-size: 18px; font-weight: bold; text-align: left; {frame}'>"
+                     f"<a href='champion:{cid}' style='color: {name_color}; text-decoration: none;'>{name}</a>")
+            if personal:
+                from services.explanation_format import personal_history_html
+                summary = escape(personal_history_html(personal, id_name))
+                html += f"<br><span style='font-size: 11px; color: #CDD6E5;'>{summary}</span>"
+            html += "</td>"
+            html += f"<td width='85' style='font-size: 18px; color: {color}; font-weight: bold; text-align: right; {frame} {right}'>{wr:.2f}%</td>"
             html += "</tr>"
         html += "</table>"
         self.lbl_recommend.setText(html)
@@ -721,6 +764,9 @@ class MainWindow(QMainWindow):
         self.chk_meta.toggled.connect(self._invalidate_recommendations)
 
     def _invalidate_recommendations(self, *_):
+        if self._personal_history is not None:
+            self.scroll_recommend.hide()
+            self.lbl_recommend.clear()
         self._recommendation_context = None
         self._effects_context = None
         self._last_recommendations = []
@@ -735,13 +781,17 @@ class MainWindow(QMainWindow):
         self._busy = busy
         controls = (self.blue_picks + self.red_picks + self.blue_bans + self.red_bans
                     + [self.cb_rank, self.btn_predict, self.btn_rec, self.btn_clear,
-                       self.btn_import, self.btn_lockfile, self.chk_meta, self.chk_effects]
+                       self.btn_import, self.btn_lockfile, self.chk_meta, self.chk_effects,
+                       self.btn_history, self.cb_history_limit]
                     + self.grp_team.buttons() + self.grp_role.buttons())
         for control in controls:
             control.setEnabled(not busy)
         self.btn_explain.setEnabled(not busy and self._recommendation_context is not None)
+        self.chk_personal.setEnabled(not busy and self._personal_history is not None and bool(self._personal_history.games))
+        if busy and self._history_loading:
+            self.btn_history.setEnabled(True)
 
-    def _start_task(self, operation, on_success):
+    def _start_task(self, operation, on_success, on_error=None):
         """Serialize model/client operations and keep GUI responsive."""
         if self._busy:
             return
@@ -756,7 +806,7 @@ class MainWindow(QMainWindow):
                 self._show_task_error(str(exc))
 
         task.succeeded.connect(receive)
-        task.failed.connect(self._show_task_error)
+        task.failed.connect(on_error or self._show_task_error)
         task.finished.connect(self._task_finished)
         task.start()
 
@@ -769,6 +819,9 @@ class MainWindow(QMainWindow):
     def _task_finished(self):
         task = self._task
         self._task = None
+        if self._history_loading:
+            self._history_loading = False
+            self.btn_history.setText("Előzmények frissítése")
         self._set_busy(False)
         if task is not None:
             task.deleteLater()
@@ -778,8 +831,56 @@ class MainWindow(QMainWindow):
             return
         context = dict(self._recommendation_context, selected_id=self._selected_recommendation_id)
         self.lbl_dash_title.setText("Kijelölt hős + első 5: részletes elemzés…")
-        self._start_task(lambda: self.controller.explain_recommendations(**context),
+        history = self._personal_history if self.chk_personal.isChecked() else None
+        def explain():
+            if history is not None:
+                from services.personal_history import LcuHistoryClient
+                LcuHistoryClient(self._lockfile_path).verify_account(history)
+            return self.controller.explain_recommendations(**context, **({"history": history} if history is not None else {}))
+        self._start_task(explain,
                          self._display_explanations)
+
+    def _on_personal_toggled(self, *_):
+        if self._last_recommendations:
+            if self.chk_personal.isChecked() and self._personal_history is not None and not any(
+                    "personal" in row for row in self._last_recommendations):
+                self._invalidate_recommendations()
+                self._reset_dash()
+                self.lbl_dash_title.setText("Saját hőseid jelöléséhez kérj új ajánlást.")
+                return
+            self._render_recommendation_rows()
+
+    def _on_refresh_history(self):
+        if self._history_loading and self._task is not None:
+            self._task.requestInterruption()
+            self.btn_history.setText("Leállítás…")
+            return
+        if self._busy:
+            return
+        self._personal_history = None
+        self._invalidate_recommendations()
+        self._reset_dash()
+        self._history_loading = True
+        count = self.cb_history_limit.currentData()
+        self.lbl_history.setText(f"Betöltés: {count} meccs…")
+        self.btn_history.setText("Beolvasás leállítása")
+        path = self._lockfile_path
+        def read():
+            from services.personal_history import LcuHistoryClient
+            return LcuHistoryClient(path).read_history(count,
+                cancelled=lambda: QThread.currentThread().isInterruptionRequested())
+        self._start_task(read, self._history_loaded, self._history_error)
+
+    def _history_loaded(self, history):
+        self._personal_history = history if history.games else None
+        label = f"{history.name} · {len(history.games)} rangsorolt meccs"
+        self.lbl_history.setText(self.lbl_history.fontMetrics().elidedText(label, Qt.TextElideMode.ElideRight, 235))
+        self.lbl_history.setToolTip(label + "\n" + "\n".join(history.warnings))
+
+    def _history_error(self, message):
+        self._personal_history = None
+        self.lbl_history.setText("Előzmények nem betöltve")
+        self.lbl_history.setToolTip(message)
 
     def _display_explanations(self, records):
         from view.explanation_dialog import ExplanationDialog

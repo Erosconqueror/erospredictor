@@ -74,19 +74,26 @@ class Controller:
             'red_win_prob': r_wr
         }
 
-    def recommend_champs(self, div: str, blue: list, red: list, bans: list, team: str, r_idx: int, top_k: int = 5, filter_off_meta: bool = True) -> list:
+    def recommend_champs(self, div: str, blue: list, red: list, bans: list, team: str, r_idx: int, top_k: int = 5, filter_off_meta: bool = True, history=None) -> list:
         """Returns a list of recommended champions based on the current draft state, including win rates and display colors for UI."""
         recs = self.core_model.recommend_champs(div, blue, red, bans, team, r_idx, top_k, filter_off_meta)
         for rec in recs:
             rec['display_color'] = self.get_winrate_color(rec['wr'])
+        if history is not None:
+            from services.personal_history import annotate_recommendations
+            recs = annotate_recommendations(recs, history, self.db.get_champion_mapping(), blue, red, team, r_idx)
         return recs
 
     def explain_recommendations(self, div: str, blue: list, red: list, team: str,
                                 r_idx: int, recommendations: list, max_items: int = 5,
-                                selected_id=None) -> list:
+                                selected_id=None, history=None) -> list:
         """Run optional diagnostics only after the user requests a second stage."""
-        return self.core_model.explain_recommendations(
+        records = self.core_model.explain_recommendations(
             div, blue, red, team, r_idx, recommendations, max_items=max_items, selected_id=selected_id)
+        if history is not None:
+            from services.personal_history import annotate_recommendations
+            records = annotate_recommendations(records, history, self.db.get_champion_mapping(), blue, red, team, r_idx)
+        return records
 
     def explain_champion_effects(self, div: str, blue: list, red: list, team: str,
                                  r_idx: int, champion_id=None) -> dict:

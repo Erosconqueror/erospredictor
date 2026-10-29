@@ -219,6 +219,49 @@ A [League Client API](https://developer.riotgames.com/docs/lol#league-client-api
 Riot által nem támogatott helyi interfész, ezért kliensfrissítés után élő ellenőrzést
 igényelhet. Közvetítés, képernyőkép és profi draft felismerése egy következő fejlesztés.
 
+## Saját meccselőzmények és személyes jelölések
+
+Indításkor a program háttérben megpróbálja beolvasni a LoL-kliensben bejelentkezett
+saját fiók legutóbbi 100 meccsét. Az **Előzmények frissítése** gombbal ez bármikor
+megismételhető; mellette 100, 500 vagy 1000 vizsgált meccs választható. A kliens által
+elérhető előzménylista rövidebb is lehet. A nagyobb lekérés a **Beolvasás leállítása**
+gombbal megszakítható, a már feldolgozott oldalak mentése megmarad. Bezárt kliensnél
+a normál kézi ajánlás használható, az előzménybetöltés állapota külön látható.
+
+A **Saját hőseim** kapcsoló az ajánlási listában keretet és saját statisztikát jelenít meg:
+
+- **Kék keret:** legalább 3 saját meccs a hőssel.
+- **Arany keret:** legalább 20 saját meccs és legalább 55% megfigyelt győzelmi arány.
+
+Ha az adott pozíción legalább 3 meccs rendelkezésre áll, az ottani arányt mutatja;
+egyébként jelzett módon az összes pozíció közös adatait. A modell ajánlási sorrendje
+és predikciós százaléka változatlan. A személyes jelölésekhez nem fut további modell.
+A kapcsoló kikapcsolása eltávolítja a kereteket; újonnan bekapcsolt jelölésekhez
+szükség esetén új ajánlást kér. A lane-ellenfél korábbi fehér fókuszkerete továbbra
+is az egyszerű hőshatásokhoz tartozik.
+
+A **Miért? – Kijelölt hős + első 5** ablakban a saját hőssel az adott lane-ellenfél
+ellen játszott meccsek és a látható társakkal közös meccsek győzelmi aránya is
+megjelenik. A párokhoz a ténylegesen közölt szerepköröket használja; bizonytalan
+lane-t nem talál ki a résztvevők sorrendjéből. **20 páros meccs alatt kis mintát
+jelez**; a nagyobb saját szinergiaminta az ajánlási sorban is látható. Ezek teljes
+mérkőzések eredményei, nem lane-győzelmek vagy bizonyított szinergiahatások.
+
+Az adatok a saját Ranked Solo/Duo és Ranked Flex Summoner's Rift meccsekből
+származnak; az 5 percnél rövidebb meccsek kimaradnak. A későbbi feladás valós
+mérkőzéseredményként beleszámít, így a feladott vereségek sem torzítják felfelé az arányt.
+Fiókonként legfeljebb 1000 feldolgozott rangsorolt meccset őriz meg a
+`%LOCALAPPDATA%\Erospredictor\history\` mappában, a már letöltött részleteket
+frissítéskor újra felhasználva. A gyorsítótár saját hősöket, szerepköröket,
+kimeneteleket és a társak/ellenfelek hősazonosítóit tartalmazza; a helyi hitelesítési
+tokent és más játékosok fiókazonosítóit nem menti. Fiókváltáskor külön adathalmazt
+használ, személyes ajánlási jelölés előtt ellenőrzi az aktív fiókot.
+
+A beolvasás a helyi [League Client API](https://developer.riotgames.com/docs/lol#league-client-api)
+GET végpontjait használja, fejlesztői Riot API-kulcs nélkül. Az illesztés alapja a
+[kliensből kinyert API-séma](https://github.com/KebsCS/lcu-and-riotclient-api);
+új kliensverziónál élő ellenőrzésre lehet szükség.
+
 ## Opcionális magyarázat az első öt ajánláshoz
 
 Először kérj normál **AJÁNLÁS**-t. A **Miért? – Kijelölt hős + első 5**

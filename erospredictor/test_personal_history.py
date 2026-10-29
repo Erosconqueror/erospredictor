@@ -1,0 +1,236 @@
+"""Own-account history, conservative visual markers and local-only transport."""
+
+from copy import deepcopy
+import json
+from pathlib import Path
+import tempfile
+from types import SimpleNamespace
+import unittest
+from unittest.mock import MagicMock, patch
+from urllib.parse import urlsplit, parse_qs
+
+from services import personal_history as ph
+from services.draft_import import DraftImportError
+from services.explanation_format import personal_history_html
+
+
+ACCOUNT = {"puuid": "own-account", "summonerId": 42, "gameName": "Tester", "tagLine": "EUW"}
+MAPPING = {"266": 0, "103": 1, "86": 2}
+
+
+def game(game_id=1, win=True, own_team=100, summary=False, queue=420):
+    players, identities = [], []
+    for team in (100, 200):
+        for role, position in enumerate(("TOP", "JUNGLE", "MIDDLE", "BOTTOM", "UTILITY")):
+            pid = len(players) + 1
+            own = team == own_team and role == 0
+            champion = 266 if own else 103 if team == own_team and role == 1 else 86 if team != own_team and role == 0 else 1000 + pid
+            players.append({"participantId": pid, "championId": champion, "teamId": team,
+                            "teamPosition": position, "stats": {"win": win if team == own_team else not win}})
+            identities.append({"participantId": pid, "player": dict(ACCOUNT) if own else
+                               {"puuid": "other-person-identity", "summonerName": "Not stored"}})
+    if summary:
+        own_ids = {item["participantId"] for item in identities if item["player"].get("puuid") == ACCOUNT["puuid"]}
+        players = [item for item in players if item["participantId"] in own_ids]
+        identities = [item for item in identities if item["participantId"] in own_ids]
+    return {"gameId": game_id, "platformId": "EUW1", "gameCreation": 1700000000000 + game_id,
+            "queueId": queue, "mapId": 11, "gameDuration": 1800,
+            "participants": players, "participantIdentities": identities}
+
+
+def profile(count=20, wins=12):
+    rows = tuple(ph.parse_game(game(i, i <= wins), ACCOUNT) for i in range(1, count + 1))
+    return ph.PersonalHistory(ACCOUNT["puuid"], "Tester#EUW", rows)
+
+
+class PersonalEvidenceTests(unittest.TestCase):
+    def test_own_identity_and_red_side_are_not_inferred_from_array_order(self):
+        raw = game(own_team=200, win=False)
+        raw["participants"].reverse()
+        row = ph.parse_game(raw, ACCOUNT)
+        self.assertEqual(row["champion"], 266)
+        self.assertEqual(row["enemy"], 86)
+        self.assertFalse(row["win"])
+        self.assertEqual(row["role"], 0)
+        self.assertTrue(any(item["champion"] == 103 for item in row["allies"]))
+
+    def test_ambiguous_bot_roles_and_missing_details_do_not_invent_matchups(self):
+        self.assertIsNone(ph.participant_role({"timeline": {"lane": "BOTTOM", "role": "DUO"}}))
+        self.assertEqual(ph.participant_role({"timeline": {"lane": "BOTTOM", "role": "DUO_SUPPORT"}}), 4)
+        row = ph.parse_game(game(summary=True), ACCOUNT)
+        self.assertIsNone(row["enemy"])
+        self.assertEqual(row["allies"], [])
+        self.assertFalse(row["complete"])
+
+    def test_other_accounts_remakes_and_non_ranked_matches_are_excluded(self):
+        self.assertIsNone(ph.parse_game(game(), dict(ACCOUNT, puuid="another-account")))
+        for change in ({"queueId": 450}, {"mapId": 12}, {"gameDuration": 200}):
+            self.assertIsNone(ph.parse_game(dict(game(), **change), ACCOUNT))
+        raw = game()
+        raw["participants"][0]["stats"]["gameEndedInEarlySurrender"] = True
+        raw["gameDuration"] = 900
+        self.assertIsNotNone(ph.parse_game(raw, ACCOUNT))
+        raw["gameDuration"] = 180
+        self.assertIsNone(ph.parse_game(raw, ACCOUNT))
+
+    def test_one_lucky_win_is_not_a_good_marker_and_regular_play_has_its_own_marker(self):
+        self.assertIsNone(profile(1, 2).evidence(0, 0, 2, [-1, 1, -1, -1, -1], MAPPING)["marker"])
+        self.assertEqual(profile(3, 4).evidence(0, 0, 2, [-1, 1, -1, -1, -1], MAPPING)["marker"], "played")
+        self.assertEqual(profile(20, 14).evidence(0, 0, 2, [-1, 1, -1, -1, -1], MAPPING)["marker"], "good")
+        self.assertEqual(profile(20, 4).evidence(0, 0, 2, [-1, 1, -1, -1, -1], MAPPING)["marker"], "played")
+
+    def test_role_specific_matchup_and_synergy_include_sample_threshold(self):
+        small = profile(3, 2).evidence(0, 0, 2, [-1, 1, -1, -1, -1], MAPPING)
+        self.assertFalse(small["matchup"]["enough"])
+        self.assertFalse(small["synergies"][0]["enough"])
+        large = profile(20, 14).evidence(0, 0, 2, [-1, 1, -1, -1, -1], MAPPING)
+        self.assertTrue(large["matchup"]["enough"])
+        self.assertEqual(large["matchup"]["games"], 20)
+        self.assertTrue(large["synergies"][0]["enough"])
+        other_role = profile().evidence(0, 2, 2, [-1, 1, -1, -1, -1], MAPPING)
+        self.assertEqual(other_role["scope"], "all")
+        self.assertEqual(other_role["role_games"], 0)
+        self.assertIsNone(other_role["matchup"])
+        self.assertEqual(other_role["synergies"], [])
+
+    def test_annotations_keep_model_probability_order_and_original_records(self):
+        recs = [{"id": 1, "wr": 60.0}, {"id": 0, "wr": 54.0}]
+        before = deepcopy(recs)
+        annotated = ph.annotate_recommendations(recs, profile(), MAPPING, [-1, 1, -1, -1, -1], [2, -1, -1, -1, -1], "blue", 0)
+        self.assertEqual([(item["id"], item["wr"]) for item in annotated], [(1, 60.0), (0, 54.0)])
+        self.assertEqual(recs, before)
+        self.assertIsNone(annotated[0]["personal"])
+        self.assertIsNotNone(annotated[1]["personal"])
+
+    def test_format_escapes_champion_names_and_explains_small_samples(self):
+        evidence = profile(3, 2).evidence(0, 0, 2, [-1, 1, -1, -1, -1], MAPPING)
+        html = personal_history_html(evidence, {1: "<ally>", 2: "<enemy>"}, detailed=True)
+        self.assertIn("&lt;ally&gt;", html)
+        self.assertIn("kis minta", html)
+        self.assertIn("nem módosítják", html)
+
+
+class HistoryTransportTests(unittest.TestCase):
+    def setUp(self):
+        folder = tempfile.TemporaryDirectory()
+        self.addCleanup(folder.cleanup)
+        self.root = Path(folder.name)
+        self.lockfile = self.root / "lockfile"
+        self.lockfile.write_text("LeagueClient:123:34567:private-auth-token:https")
+        setting = patch.object(ph, "settings_path", return_value=self.root / "preferences/settings.json")
+        setting.start()
+        self.addCleanup(setting.stop)
+        self.pages = {0: [game(summary=True)]}
+        self.details, self.calls = {}, []
+        self.current = lambda: dict(ACCOUNT)
+        self.transport = MagicMock()
+        self.transport.get.side_effect = self.respond
+        self.client = ph.LcuHistoryClient(self.lockfile, transport=self.transport)
+
+    def respond(self, url, **kwargs):
+        self.calls.append((url, kwargs))
+        path, query = urlsplit(url).path, parse_qs(urlsplit(url).query)
+        if path == ph.CURRENT:
+            payload = self.current()
+        elif path.endswith("/matches"):
+            payload = {"platformId": "EUW1", "games": {"games": self.pages.get(int(query["begIndex"][0]), [])}}
+        else:
+            game_id = int(path.rsplit("/", 1)[1])
+            payload = self.details.get(game_id, game(game_id))
+        return SimpleNamespace(status_code=200, json=lambda: deepcopy(payload))
+
+    def test_local_authentication_cache_dedup_and_reuse_without_other_player_identity_storage(self):
+        first = self.client.read_history()
+        self.assertEqual(first.name, "Tester#EUW")
+        self.assertEqual(len(first.games), 1)
+        self.client.read_history()
+        detail_calls = [url for url, _ in self.calls if "/v1/games/" in url]
+        self.assertEqual(len(detail_calls), 1)
+        for url, options in self.calls:
+            self.assertTrue(url.startswith("https://127.0.0.1:34567/"))
+            self.assertFalse(options["allow_redirects"])
+            self.assertEqual(options["timeout"], (1, 2))
+        cache = self.client._cache_path(ACCOUNT["puuid"]).read_text()
+        self.assertNotIn("private-auth-token", cache)
+        self.assertNotIn("other-person-identity", cache)
+        self.assertNotIn("Not stored", cache)
+
+    def test_account_switch_before_cache_commit_stops_import(self):
+        calls = 0
+        def current():
+            nonlocal calls
+            calls += 1
+            return dict(ACCOUNT, puuid=ACCOUNT["puuid"] if calls == 1 else "other-account")
+        self.current = current
+        with self.assertRaisesRegex(DraftImportError, "Fiókváltás"):
+            self.client.read_history()
+        self.assertFalse(self.client._cache_path(ACCOUNT["puuid"]).exists())
+
+    def test_verify_account_rejects_a_different_login(self):
+        self.current = lambda: dict(ACCOUNT, puuid="other-account")
+        with self.assertRaisesRegex(DraftImportError, "Másik fiók"):
+            self.client.verify_account(profile())
+
+    def test_repeated_pages_and_non_ranked_pages_are_handled_without_losing_later_ranked_games(self):
+        self.pages = {0: [game(i, queue=450) for i in range(1, 21)],
+                      20: [game(i, queue=450) for i in range(21, 41)], 40: [game(41)]}
+        self.assertEqual(len(self.client.read_history().games), 1)
+        self.pages = {0: [game(i) for i in range(1, 21)], 20: [game(i) for i in range(1, 21)]}
+        self.calls.clear()
+        self.client.read_history(1000)
+        self.assertEqual(len([url for url, _ in self.calls if "/matches?" in url]), 2)
+
+    def test_cancellation_keeps_completed_pages_for_next_refresh(self):
+        self.pages = {0: [game(i) for i in range(1, 21)], 20: [game(21)]}
+        count = 0
+        def current():
+            nonlocal count
+            count += 1
+            return dict(ACCOUNT)
+        self.current = current
+        with self.assertRaisesRegex(DraftImportError, "leállítva"):
+            self.client.read_history(cancelled=lambda: count >= 2)
+        self.assertEqual(len(self.client._cached(ACCOUNT)), 20)
+
+    def test_corrupt_or_foreign_cache_is_ignored_and_endpoints_are_restricted(self):
+        path = self.client._cache_path(ACCOUNT["puuid"])
+        path.parent.mkdir(parents=True)
+        path.write_text("broken json")
+        self.assertEqual(self.client._cached(ACCOUNT), {})
+        path.write_text(json.dumps({"version": 1, "puuid": "another-account", "games": []}))
+        self.assertEqual(self.client._cached(ACCOUNT), {})
+        for endpoint in ("https://example.org", "/lol-match-history/v1/games/../../escape",
+                         "/lol-match-history/v1/products/lol/someone-else/matches?begIndex=0&endIndex=19"):
+            self.assertFalse(self.client._allowed_endpoint(endpoint))
+
+    def test_no_history_or_missing_details_returns_safe_empty_or_partial_results(self):
+        self.pages = {0: []}
+        self.assertEqual(self.client.read_history().games, ())
+        self.pages = {0: [game(summary=True)]}
+        self.details[1] = {}
+        result = self.client.read_history()
+        self.assertIsNone(result.games[0]["enemy"])
+        self.assertTrue(result.warnings)
+
+
+class ControllerHistoryTests(unittest.TestCase):
+    def test_history_annotations_do_not_run_more_models_or_modify_probabilities(self):
+        from controller.controller import Controller
+        ctrl = Controller.__new__(Controller)
+        ctrl.db = SimpleNamespace(get_champion_mapping=lambda: MAPPING)
+        ctrl.core_model = MagicMock()
+        ctrl.core_model.recommend_champs.return_value = [{"id": 0, "wr": 57.123}]
+        ctrl.core_model.explain_recommendations.return_value = [{"id": 0, "wr": 57.123, "is_selected": True}]
+        arguments = ("GOLD", [-1, 1, -1, -1, -1], [2, -1, -1, -1, -1])
+        recs = ctrl.recommend_champs(*arguments, [], "blue", 0, history=profile())
+        self.assertEqual(recs[0]["wr"], 57.123)
+        self.assertIsNotNone(recs[0]["personal"])
+        ctrl.core_model.recommend_champs.assert_called_once()
+        details = ctrl.explain_recommendations(*arguments, "blue", 0, recs, selected_id=0, history=profile())
+        self.assertTrue(details[0]["is_selected"])
+        self.assertEqual(details[0]["wr"], 57.123)
+        self.assertIsNotNone(details[0]["personal"])
+
+
+if __name__ == "__main__":
+    unittest.main()

@@ -269,8 +269,13 @@ class LcuDraftClient:
         self.mapping = mapping
         self.transport = transport
 
+    missing_message = "Jelenleg nincs aktív hősválasztás a LoL-kliensben. Lépj be egy draftba, majd olvasd be újra."
+
+    def _allowed_endpoint(self, endpoint):
+        return endpoint in {"/lol-champ-select/v1/session", "/lol-gameflow/v1/session", "/lol-summoner/v1/current-summoner"}
+
     def _get(self, transport, credentials, endpoint, optional=False):
-        if endpoint not in {"/lol-champ-select/v1/session", "/lol-gameflow/v1/session", "/lol-summoner/v1/current-summoner"}:
+        if not self._allowed_endpoint(endpoint):
             raise ValueError("Unsupported local endpoint")
         try:
             with warnings.catch_warnings():
@@ -283,7 +288,7 @@ class LcuDraftClient:
             if response.status_code in (204, 404):
                 if optional:
                     return {}
-                raise DraftImportError("Jelenleg nincs aktív hősválasztás a LoL-kliensben. Lépj be egy draftba, majd olvasd be újra.")
+                raise DraftImportError(self.missing_message)
             if response.status_code in (401, 403):
                 raise DraftImportError("A kliens helyi kapcsolata lejárt. Indítsd újra a beolvasást, vagy válaszd ki az aktuális lockfile fájlt.")
             if not 200 <= response.status_code < 300:

@@ -13,6 +13,40 @@ MODEL_NAMES = {
 }
 
 
+def personal_history_html(evidence, champion_names, detailed=False):
+    if not evidence:
+        return ""
+    scope = "ezen a pozíción" if evidence["scope"] == "role" else "összes pozíció együtt"
+    mark = {"good": "Bevált saját hős", "played": "Játszott hős"}.get(evidence["marker"], "Kevés saját meccs")
+    text = (f"{mark} · {evidence['wins']}/{evidence['games']} győzelem "
+            f"({evidence['winrate']:.1f}%; {scope})")
+    if not detailed:
+        if evidence["matchup"]:
+            lane = evidence["matchup"]
+            text += f" · Ellen: {lane['wins']}/{lane['games']}" + (" (kis minta)" if not lane["enough"] else "")
+        for pair in evidence["synergies"]:
+            if pair["enough"]:
+                text += f" · Együtt {champion_names.get(pair['champion_id'], '?')}: {pair['wins']}/{pair['games']}"
+        return text
+    parts = [f"<h3>Saját meccselőzmények</h3><p>{text}. "
+             f"Az adott pozíción: {evidence['role_games']} meccs; a hőssel összesen: {evidence['total_games']}.</p>"]
+    pairs = ([dict(evidence["matchup"], kind="Ellen", role=None)] if evidence["matchup"] else [])
+    pairs += [dict(item, kind="Együtt") for item in evidence["synergies"]]
+    for item in pairs:
+        name = escape(champion_names.get(item["champion_id"], f"Hős #{item['champion_id']}"))
+        sample = "legalább 20 meccs" if item["enough"] else "kis minta; a kiemelési határ 20 meccs"
+        role = f" ({ROLES[item['role']]})" if item.get("role") is not None else ""
+        parts.append(f"<p>{item['kind']} {name}{role}: <b>{item['wins']}/{item['games']} győzelem "
+                     f"({item['winrate']:.1f}%)</b> · {sample}.</p>")
+    if not evidence["matchup"]:
+        parts.append("<p>Nincs saját minta az adott lane-ellenfél ellen.</p>")
+    if not evidence["synergies"]:
+        parts.append("<p>Nincs saját minta a látható társakkal ezen a pozíción.</p>")
+    parts.append("<p>Ezek a saját teljes meccseid kimenetelei. A lane-adat nem lane-győzelmi arány, "
+                 "a közös győzelem pedig nem bizonyít önálló szinergiahatást. A modell százalékát nem módosítják.</p>")
+    return "".join(parts)
+
+
 def explanations_html(records, champion_names):
     """Format the explicit second-stage result using escaped champion names."""
     def name(champion_id):
@@ -53,6 +87,7 @@ def explanations_html(records, champion_names):
             f"{record['baseline_win_prob']:.2f}%. A hős becsült többlete: "
             f"<b>{record['candidate_delta_pp']:+.2f} százalékpont</b>.</p>"
         )
+        parts.append(personal_history_html(record.get("personal"), champion_names, detailed=True))
         parts.append("<h3>A modellek eredménye és tényleges súlya</h3>"
                      "<table cellpadding='6'><tr><th>Modell</th>"
                      "<th>Győzelmi esély</th><th>Súly</th></tr>")
