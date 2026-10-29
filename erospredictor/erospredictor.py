@@ -7,6 +7,7 @@ from PyQt6.QtCore import QTimer
 from view.main_window import MainWindow
 from controller.controller import Controller
 from model.data_manager import DataManager
+from services import feature_flags
 
 os.environ["KMP_DUPLICATE_LIB_OK"] = "TRUE"
 
@@ -34,7 +35,8 @@ def run_predictor():
     view.set_meta_data(meta_data)
     
     view.show()
-    QTimer.singleShot(0, view._on_refresh_history)
+    if feature_flags.PERSONAL_HISTORY_ENABLED:
+        QTimer.singleShot(0, view._on_refresh_history)
     sys.exit(app.exec())
 
 if __name__ == "__main__":

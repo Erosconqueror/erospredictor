@@ -13,6 +13,18 @@ from model.golden_dataset import GoldenDataset
 from model.meta_calibrator import MetaLearningCalibrator
 from model.gnn_predictor import LeagueGNN
 from model.predictor import ChampionPredictor, RoleAwareEmbeddingPredictor
+from services.role_distribution import build_role_distribution, save_role_distribution, DEFAULT_PATH as ROLE_DISTRIBUTION_PATH
+
+
+def refresh_role_statistics(preprocessor):
+    """Legacy trainer: export the same patch-filtered matches used by preprocessing."""
+    document = build_role_distribution(preprocessor._get_matches(), patches=preprocessor.allowed_patches,
+                                       source="interactive_trainer")
+    if document["scope"]["matches"]:
+        save_role_distribution(ROLE_DISTRIBUTION_PATH, document,
+                               selected_tiers=document["scope"]["tiers"])
+        print(f"Champion role distribution saved ({document['scope']['matches']} matches).")
+    return document
 
 def load_name_map() -> dict:
     """Loads champion ID to Name mapping and inverts it."""
@@ -105,6 +117,7 @@ def run_trainer():
             stat.build_stats()
             stat.save_cache()
             prep.gen_meta_champs()
+            refresh_role_statistics(prep)
             print("Preprocessing complete.")
         
         elif choice == "2":
@@ -118,6 +131,8 @@ def run_trainer():
             
             if not x_rw:
                 continue
+
+            refresh_role_statistics(prep)
             
             unique_divs = sorted(set(d_rw))
             if "MIXED" not in unique_divs:
@@ -196,6 +211,8 @@ def run_trainer():
             if not x_rw:
                 print("No data! Please run Preprocess (1) first.")
                 continue
+
+            refresh_role_statistics(prep)
 
             unique_divs = sorted(set(d_rw))
             if "MIXED" not in unique_divs:

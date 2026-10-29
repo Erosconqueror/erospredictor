@@ -7,8 +7,12 @@ from PyQt6.QtCore import Qt, QSize, QThread
 from PyQt6.QtGui import QIcon
 from configs import TARGET_TIERS, CHAMPION_COUNT
 from html import escape
+from dataclasses import replace
+from pathlib import Path
 from view.background_task import BackgroundTask
+from view.draft_follower import DraftFollower
 from services.client_settings import preferred_lockfile, save_lockfile_path
+from services import feature_flags
 
 class MainWindow(QMainWindow):
     """Main graphical user interface for the application."""
@@ -23,6 +27,9 @@ class MainWindow(QMainWindow):
         self.roles = ["Top", "Jungle", "Mid", "ADC", "Support"]
         self._task = None
         self._busy = False
+        self._task_callback_active = False
+        self._task_finish_pending = False
+        self._manual_import_active = False
         self._recommendation_context = None
         self._effects_context = None
         self._last_recommendations = []
@@ -30,11 +37,23 @@ class MainWindow(QMainWindow):
         self._lockfile_path = None
         self._personal_history = None
         self._history_loading = False
+        self._sync_last_snapshot = None
+        self._sync_pending = None
+        self._sync_session_key = ""
+        self._sync_manual_side = None
+        self._sync_manual_roles = {}
+        self._sync_applying = False
+        self._role_document = None
+        self._role_stamp = None
         
         self._setup_window()
         self._apply_style()
         self._build_ui()
         self._connect_draft_changes()
+        self._draft_follower = DraftFollower(self._read_followed_draft, lambda: self._busy, parent=self)
+        self._draft_follower.snapshot_ready.connect(self._receive_followed_draft)
+        self._draft_follower.status_changed.connect(self._set_sync_status)
+        self._draft_follower.draft_unavailable.connect(self._draft_unavailable)
 
     def _setup_window(self):
         """Configures basic window properties."""
@@ -57,6 +76,7 @@ class MainWindow(QMainWindow):
             QPushButton { background-color: #343440; color: #E0E0E0; border: 1px solid #555; border-radius: 6px; padding: 7px; }
             QPushButton:disabled { color: #777; border-color: #3A3A45; }
             QComboBox { background-color: #2D2D36; border: 1px solid #444; border-radius: 6px; padding: 4px; color: white; }
+            QComboBox:disabled { background-color: #25252D; color: #777; border-color: #3A3A45; }
             QComboBox::drop-down { border: none; }
             QComboBox QAbstractItemView { background-color: #1A1A22; color: white; selection-background-color: #3949AB; border-radius: 4px; width: 0px; }
             QComboBox[isBan="true"] { border: 2px solid #E53935; background-color: #2A1D20; }
@@ -64,6 +84,7 @@ class MainWindow(QMainWindow):
             QGroupBox::title { subcontrol-origin: margin; left: 10px; padding: 0 5px; }
             QGroupBox#bansGroup { border: none; margin-top: 0px; padding-top: 0px; }
             QCheckBox { color: #E0E0E0; font-size: 14px; }
+            QCheckBox:disabled { color: #777; }
             QProgressBar { background: qlineargradient(x1:0, y1:0, x2:1, y2:0, stop:0 #EF5350, stop:1 #C62828); border-radius: 12px; border: 2px solid #BDBDBD; color: transparent; }
             QProgressBar::chunk { background: qlineargradient(x1:0, y1:0, x2:1, y2:0, stop:0 #1976D2, stop:1 #42A5F5); border-top-left-radius: 10px; border-bottom-left-radius: 10px; }
             QFrame#centerDashboard { background-color: rgba(30, 30, 40, 200); border: 1px solid #444; border-radius: 12px; }
@@ -78,6 +99,10 @@ class MainWindow(QMainWindow):
         """Constructs the UI components and adds them to the main layout."""
         self.main_layout.addWidget(self._create_header())
         self.main_layout.addLayout(self._create_rank_selector())
+        self.lbl_draft_sync = QLabel("Automatikus draftkövetés kikapcsolva.")
+        self.lbl_draft_sync.setTextFormat(Qt.TextFormat.PlainText)
+        self.lbl_draft_sync.setStyleSheet("font-size: 11px; color: #BDBDCB;")
+        self.main_layout.addWidget(self.lbl_draft_sync)
         self.main_layout.addWidget(self._create_bans())
         self.main_layout.addLayout(self._create_teams())
         self.main_layout.addWidget(self._create_controls())
@@ -128,6 +153,11 @@ class MainWindow(QMainWindow):
             "A számok százalékpontos modellhatások.")
         self.chk_effects.toggled.connect(self._on_effects_toggled)
         layout.addWidget(self.chk_effects)
+        self.chk_follow = QCheckBox("Automatikus draft")
+        self.chk_follow.setToolTip("1,5 másodpercenként követi a helyi kliens rögzített pickjeit és tiltásait. "
+                                   "A becsült szerepkörök a hősök adatbázisbeli eloszlásából származnak.")
+        self.chk_follow.toggled.connect(self._on_follow_toggled)
+        layout.addWidget(self.chk_follow)
         layout.addStretch()
         self.btn_import = QPushButton("LoL-kliens beolvasása")
         self.btn_import.setToolTip("A már kiválasztott hősök és tiltások beolvasása a saját kliensből.")
@@ -199,12 +229,14 @@ class MainWindow(QMainWindow):
         
         self.blue_picks = []
         self.blue_effects = []
+        self.blue_role_labels = []
         for role in self.roles:
             row = QHBoxLayout()
             lbl = QLabel(f"{role}:")
             lbl.setFixedWidth(65)
             lbl.setMinimumHeight(50) 
             lbl.setStyleSheet("font-weight: bold; color: #9E9E9E; font-size: 15px;")
+            self.blue_role_labels.append(lbl)
             combo = self._create_combo()
             self.blue_picks.append(combo)
             badge = self._create_effect_badge()
@@ -222,6 +254,7 @@ class MainWindow(QMainWindow):
         dash_layout.setContentsMargins(1, 15, 1, 5) 
         
         self.lbl_dash_title = QLabel("Válassz hősöket a draftoláshoz!")
+        self.lbl_dash_title.setWordWrap(True)
         self.lbl_dash_title.setStyleSheet("font-size: 18px; font-weight: bold; color: #FFFFFF;")
         self.lbl_dash_title.setAlignment(Qt.AlignmentFlag.AlignCenter)
         dash_layout.addWidget(self.lbl_dash_title)
@@ -273,12 +306,14 @@ class MainWindow(QMainWindow):
         red_col.addWidget(lbl_red, alignment=Qt.AlignmentFlag.AlignCenter)
         self.red_picks = []
         self.red_effects = []
+        self.red_role_labels = []
         for role in self.roles:
             row = QHBoxLayout()
             lbl = QLabel(f"{role}:")
             lbl.setFixedWidth(65)
             lbl.setMinimumHeight(50) 
             lbl.setStyleSheet("font-weight: bold; color: #9E9E9E; font-size: 15px;")
+            self.red_role_labels.append(lbl)
             combo = self._create_combo()
             self.red_picks.append(combo)
             row.addWidget(lbl)
@@ -352,13 +387,13 @@ class MainWindow(QMainWindow):
 
         row_history = QHBoxLayout()
         self.chk_personal = QCheckBox("Saját hőseim")
-        self.chk_personal.setChecked(True)
+        self.chk_personal.setChecked(feature_flags.PERSONAL_HISTORY_ENABLED)
         self.chk_personal.setEnabled(False)
         self.chk_personal.setToolTip(
             "Kék keret: legalább 3 saját meccs. Arany keret: legalább 20 meccs és 55% saját győzelmi arány. "
             "A százalék és a sorrend a modell ajánlása marad; saját matchupok és szinergiák a részletes elemzésben.")
         self.chk_personal.toggled.connect(self._on_personal_toggled)
-        self.lbl_history = QLabel("Előzmények betöltése indításkor…")
+        self.lbl_history = QLabel("Előzmények betöltése indításkor…" if feature_flags.PERSONAL_HISTORY_ENABLED else "Match history szüneteltetve")
         self.lbl_history.setTextFormat(Qt.TextFormat.PlainText)
         self.lbl_history.setStyleSheet("font-size: 11px; color: #BDBDCB;")
         self.lbl_history.setMaximumWidth(240)
@@ -368,6 +403,10 @@ class MainWindow(QMainWindow):
         self.cb_history_limit.setToolTip("Ennyi legutóbbi meccset vizsgál. A már mentett részleteket újra felhasználja.")
         self.btn_history = QPushButton("Előzmények frissítése")
         self.btn_history.clicked.connect(self._on_refresh_history)
+        self.btn_history.setEnabled(feature_flags.PERSONAL_HISTORY_ENABLED)
+        self.cb_history_limit.setEnabled(feature_flags.PERSONAL_HISTORY_ENABLED)
+        if not feature_flags.PERSONAL_HISTORY_ENABLED:
+            self.btn_history.setToolTip("A személyes meccselőzmény funkció jelenleg le van tiltva.")
         row_history.addWidget(self.chk_personal)
         row_history.addWidget(self.lbl_history, 1)
         row_history.addWidget(self.cb_history_limit)
@@ -471,6 +510,9 @@ class MainWindow(QMainWindow):
 
     def _on_clear_all(self):
         """Clears all champion selections and resets the UI."""
+        self.chk_follow.setChecked(False)
+        self._draft_unavailable()
+        self._clear_role_metadata()
         self._invalidate_recommendations()
         for combo in self.blue_picks + self.red_picks + self.blue_bans + self.red_bans:
             combo.setCurrentIndex(0)
@@ -555,7 +597,7 @@ class MainWindow(QMainWindow):
         context = dict(div=div, blue=blue, red=red, team=picking, r_idx=r_id)
         filter_meta = self.chk_meta.isChecked()
         enabled = self.chk_effects.isChecked()
-        history = self._personal_history if self.chk_personal.isChecked() else None
+        history = self._personal_history if feature_flags.PERSONAL_HISTORY_ENABLED and self.chk_personal.isChecked() else None
 
         def recommend():
             if history is not None:
@@ -606,7 +648,7 @@ class MainWindow(QMainWindow):
             if selected:
                 row_color = "#34475D"
             name_color = "#FFE082" if selected else "#FFFFFF"
-            personal = rec.get("personal") if self.chk_personal.isChecked() else None
+            personal = rec.get("personal") if feature_flags.PERSONAL_HISTORY_ENABLED and self.chk_personal.isChecked() else None
             marker = personal.get("marker") if personal else None
             frame_color = "#FFD166" if marker == "good" else "#64B5F6" if marker == "played" else None
             frame = f"border-top: 2px solid {frame_color}; border-bottom: 2px solid {frame_color};" if frame_color else ""
@@ -762,6 +804,12 @@ class MainWindow(QMainWindow):
         self.grp_team.idClicked.connect(self._invalidate_recommendations)
         self.grp_role.idClicked.connect(self._invalidate_recommendations)
         self.chk_meta.toggled.connect(self._invalidate_recommendations)
+        self.cb_rank.currentTextChanged.connect(self._sync_rank_changed)
+        for team, combos in (("blue", self.blue_picks), ("red", self.red_picks)):
+            for role, combo in enumerate(combos):
+                combo.currentTextChanged.connect(lambda _text, t=team, r=role: self._clear_role_slot(t, r))
+                combo.activated.connect(lambda _index, t=team, r=role: self._confirm_manual_role(t, r))
+                combo.lineEdit().editingFinished.connect(lambda t=team, r=role: self._confirm_manual_role(t, r))
 
     def _invalidate_recommendations(self, *_):
         if self._personal_history is not None:
@@ -787,8 +835,10 @@ class MainWindow(QMainWindow):
         for control in controls:
             control.setEnabled(not busy)
         self.btn_explain.setEnabled(not busy and self._recommendation_context is not None)
-        self.chk_personal.setEnabled(not busy and self._personal_history is not None and bool(self._personal_history.games))
-        if busy and self._history_loading:
+        self.chk_personal.setEnabled(feature_flags.PERSONAL_HISTORY_ENABLED and not busy and self._personal_history is not None and bool(self._personal_history.games))
+        self.btn_history.setEnabled(feature_flags.PERSONAL_HISTORY_ENABLED and (not busy or self._history_loading))
+        self.cb_history_limit.setEnabled(feature_flags.PERSONAL_HISTORY_ENABLED and not busy)
+        if feature_flags.PERSONAL_HISTORY_ENABLED and busy and self._history_loading:
             self.btn_history.setEnabled(True)
 
     def _start_task(self, operation, on_success, on_error=None):
@@ -796,14 +846,21 @@ class MainWindow(QMainWindow):
         if self._busy:
             return
         self._set_busy(True)
+        self._task_finish_pending = False
         task = BackgroundTask(operation, self)
         self._task = task
 
         def receive(result):
+            self._task_callback_active = True
             try:
                 on_success(result)
             except Exception as exc:
                 self._show_task_error(str(exc))
+            finally:
+                self._task_callback_active = False
+                if self._task_finish_pending:
+                    self._task_finish_pending = False
+                    self._task_finished()
 
         task.succeeded.connect(receive)
         task.failed.connect(on_error or self._show_task_error)
@@ -817,21 +874,35 @@ class MainWindow(QMainWindow):
         self.lbl_dash_title.setText(f"<span style='color: #EF5350;'>HIBA: {escape(message)}</span>")
 
     def _task_finished(self):
+        sender = self.sender()
+        if isinstance(sender, BackgroundTask) and sender is not self._task:
+            return
+        if self._task_callback_active:
+            self._task_finish_pending = True
+            return
         task = self._task
         self._task = None
         if self._history_loading:
             self._history_loading = False
             self.btn_history.setText("Előzmények frissítése")
         self._set_busy(False)
+        manual_import = self._manual_import_active
+        self._manual_import_active = False
+        pending = None if manual_import else self._sync_pending
+        self._sync_pending = None
+        if pending is not None and self.chk_follow.isChecked():
+            self._receive_followed_draft(pending, force=True)
         if task is not None:
             task.deleteLater()
+        if manual_import:
+            self._draft_follower.set_enabled(self.chk_follow.isChecked())
 
     def _on_explain(self):
         if self._busy or not self._recommendation_context:
             return
         context = dict(self._recommendation_context, selected_id=self._selected_recommendation_id)
         self.lbl_dash_title.setText("Kijelölt hős + első 5: részletes elemzés…")
-        history = self._personal_history if self.chk_personal.isChecked() else None
+        history = self._personal_history if feature_flags.PERSONAL_HISTORY_ENABLED and self.chk_personal.isChecked() else None
         def explain():
             if history is not None:
                 from services.personal_history import LcuHistoryClient
@@ -841,6 +912,9 @@ class MainWindow(QMainWindow):
                          self._display_explanations)
 
     def _on_personal_toggled(self, *_):
+        if not feature_flags.PERSONAL_HISTORY_ENABLED:
+            self.chk_personal.setChecked(False)
+            return
         if self._last_recommendations:
             if self.chk_personal.isChecked() and self._personal_history is not None and not any(
                     "personal" in row for row in self._last_recommendations):
@@ -851,6 +925,8 @@ class MainWindow(QMainWindow):
             self._render_recommendation_rows()
 
     def _on_refresh_history(self):
+        if not feature_flags.PERSONAL_HISTORY_ENABLED:
+            return
         if self._history_loading and self._task is not None:
             self._task.requestInterruption()
             self.btn_history.setText("Leállítás…")
@@ -872,6 +948,9 @@ class MainWindow(QMainWindow):
         self._start_task(read, self._history_loaded, self._history_error)
 
     def _history_loaded(self, history):
+        if not feature_flags.PERSONAL_HISTORY_ENABLED:
+            self._personal_history = None
+            return
         self._personal_history = history if history.games else None
         label = f"{history.name} · {len(history.games)} rangsorolt meccs"
         self.lbl_history.setText(self.lbl_history.fontMetrics().elidedText(label, Qt.TextElideMode.ElideRight, 235))
@@ -881,6 +960,156 @@ class MainWindow(QMainWindow):
         self._personal_history = None
         self.lbl_history.setText("Előzmények nem betöltve")
         self.lbl_history.setToolTip(message)
+
+    def _set_sync_status(self, message):
+        self.lbl_draft_sync.setText(self.lbl_draft_sync.fontMetrics().elidedText(
+            message, Qt.TextElideMode.ElideRight, max(300, self.width() - 40)))
+        self.lbl_draft_sync.setToolTip(message)
+
+    def _read_followed_draft(self):
+        from services.draft_import import LcuDraftClient
+        return LcuDraftClient(lockfile_path=self._lockfile_path).read_draft()
+
+    def _on_follow_toggled(self, enabled):
+        self._sync_pending = None
+        self._sync_last_snapshot = None
+        self._draft_follower.set_enabled(enabled and not self._manual_import_active)
+
+    def _draft_unavailable(self):
+        self._sync_pending = None
+        self._sync_last_snapshot = None
+        self._sync_session_key = ""
+        self._sync_manual_side = None
+        self._sync_manual_roles = {}
+
+    def _load_roles(self):
+        from services.role_distribution import DEFAULT_PATH, load_role_distribution
+        try:
+            stamp = DEFAULT_PATH.stat().st_mtime_ns
+        except OSError:
+            stamp = None
+        changed = self._role_document is None or stamp != self._role_stamp
+        if changed:
+            self._role_document = load_role_distribution()
+            self._role_stamp = stamp
+        return self._role_document, changed
+
+    def _sync_rank_changed(self, *_):
+        if self.chk_follow.isChecked() and self._sync_last_snapshot is not None:
+            self._receive_followed_draft(self._sync_last_snapshot, force=True)
+
+    def _receive_followed_draft(self, snapshot, force=False):
+        if not self.chk_follow.isChecked():
+            return
+        if self._busy:
+            self._sync_pending = snapshot
+            return
+        from services.draft_assignment import assign_draft
+        document, changed = self._load_roles()
+        previous = self._sync_last_snapshot
+        if not force and not changed and snapshot == previous:
+            return
+        if snapshot.session_key and snapshot.session_key != self._sync_session_key:
+            self._sync_manual_roles = {}
+            self._sync_manual_side = None
+            previous = None
+        if snapshot.own_team and self._sync_manual_side and snapshot.own_team != self._sync_manual_side:
+            self._sync_manual_roles = {}
+            self._sync_manual_side = None
+        self._sync_session_key = snapshot.session_key
+        tier = self.cb_rank.currentText()
+        try:
+            result = assign_draft(snapshot, document, own_side=self._sync_manual_side,
+                                  previous_roles=self._sync_manual_roles,
+                                  tier="MIXED" if tier == "ALL RANKS" else tier)
+            names = {index: name for name, index in self.name_map.items()}
+            if any(cid is not None and cid not in names for row in result.values.values() for cid in row):
+                raise ValueError("A beolvasott hős nincs a felület katalógusában. Frissítsd a hősadatokat.")
+        except ValueError as error:
+            self._set_sync_status(f"Draftkövetés: {error} A kézi beolvasással javítható.")
+            return
+        def signature(values):
+            return tuple(tuple((values[key] + [None] * 5)[:5]) for key in ("blue", "red", "blue_bans", "red_bans"))
+        current = {key: [cid if cid >= 0 else None for cid in self._get_ids(combos)]
+                   for key, combos in (("blue", self.blue_picks), ("red", self.red_picks),
+                                       ("blue_bans", self.blue_bans), ("red_bans", self.red_bans))}
+        self._sync_applying = True
+        try:
+            if signature(current) != signature(result.values):
+                self._apply_import(result.values)
+            own = snapshot.own_team or self._sync_manual_side
+            if own and (previous is None or previous.own_team != snapshot.own_team):
+                (self.btn_blue if own == "blue" else self.btn_red).setChecked(True)
+                self._invalidate_recommendations()
+                self._reset_dash()
+            if snapshot.own_role is not None and (previous is None or previous.own_role != snapshot.own_role):
+                self.grp_role.button(snapshot.own_role).setChecked(True)
+                self._invalidate_recommendations()
+                self._reset_dash()
+            self._show_role_metadata(result.assignments)
+        finally:
+            self._sync_applying = False
+        self._sync_last_snapshot = snapshot
+        present = {(item.team, item.internal_id) for item in result.assignments}
+        self._sync_manual_roles = {key: value for key, value in self._sync_manual_roles.items() if key in present}
+        inferred = sum(item.source == "statistics" for item in result.assignments if item.role is not None)
+        assigned = sum(item.role is not None for item in result.assignments)
+        count_bans = len(result.values["blue_bans"]) + len(result.values["red_bans"])
+        summary = f"Draftkövetés: {assigned} hős, {count_bans} tiltás; {inferred} becsült pozíció."
+        notes = [note for note in result.warnings if result.unresolved or not note.startswith("A nem közölt szerepköröket")]
+        if result.unresolved:
+            unknown = ", ".join(names.get(pick.internal_id, str(pick.riot_id)) for pick in result.unresolved)
+            summary += f" Kézi pozíció szükséges: {unknown} (LoL-kliens beolvasása)."
+        self._set_sync_status(summary)
+        self.lbl_draft_sync.setToolTip(summary + "\n" + "\n".join(notes))
+
+    def _clear_role_slot(self, team, role):
+        labels = self.blue_role_labels if team == "blue" else self.red_role_labels
+        combos = self.blue_picks if team == "blue" else self.red_picks
+        labels[role].setText(f"{self.roles[role]}:")
+        labels[role].setToolTip("")
+        combos[role].setToolTip("")
+
+    def _clear_role_metadata(self):
+        for team in ("blue", "red"):
+            for role in range(5):
+                self._clear_role_slot(team, role)
+
+    def _show_role_metadata(self, assignments):
+        self._clear_role_metadata()
+        for item in assignments:
+            if item.role is None:
+                continue
+            labels = self.blue_role_labels if item.team == "blue" else self.red_role_labels
+            combos = self.blue_picks if item.team == "blue" else self.red_picks
+            if self._get_ids([combos[item.role]]) != [item.internal_id]:
+                continue
+            if item.source == "statistics":
+                caption = f"~{100 * item.role_probability:.1f}%"
+                source = "Statisztikából becsült szerepkör"
+                color = "#E4AC43" if item.role_probability < 0.2 or item.sample_size < 20 else "#80CBC4"
+            else:
+                caption = "kliens" if item.source == "client" else "kézi"
+                source = "A kliens által közölt szerepkör" if item.source == "client" else "Kézzel megerősített szerepkör"
+                color = "#BDBDCB"
+            tooltip = source
+            if item.sample_size:
+                distribution = ", ".join(f"{self.roles[role]}: {probability:.1%}" for role, probability in enumerate(item.probabilities))
+                tooltip += f"\n{item.sample_size} megfigyelt választás; {distribution}."
+            if item.source == "statistics":
+                tooltip += "\nA szám a hős megfigyelt szerepgyakorisága, nem biztos szerepkör vagy győzelmi esély. A kiosztás ütközésmentes csapatfelállást keres."
+            labels[item.role].setText(f"{self.roles[item.role]}:<br><span style='font-size: 10px; color: {color};'>{caption}</span>")
+            labels[item.role].setToolTip(tooltip)
+            combos[item.role].setToolTip(tooltip)
+
+    def _confirm_manual_role(self, team, role):
+        if self._sync_applying or not self.chk_follow.isChecked() or self._sync_last_snapshot is None or self._busy:
+            return
+        cid = self._get_ids([self.blue_picks[role] if team == "blue" else self.red_picks[role]])[0]
+        if cid < 0 or not any(pick.internal_id == cid for pick in self._sync_last_snapshot.picks):
+            return
+        self._sync_manual_roles[(team, cid)] = role
+        self._receive_followed_draft(self._sync_last_snapshot, force=True)
 
     def _display_explanations(self, records):
         from view.explanation_dialog import ExplanationDialog
@@ -892,15 +1121,25 @@ class MainWindow(QMainWindow):
                                                str(self._lockfile_path or preferred_lockfile()),
                                                "Lockfile (lockfile);;Minden fájl (*)")
         if path:
+            following = self.chk_follow.isChecked()
+            self.chk_follow.setChecked(False)
             self._lockfile_path = path
             saved = save_lockfile_path(path)
             self.btn_lockfile.setToolTip(f"Kiválasztott LoL lockfile: {path}")
             self.btn_import.setToolTip("Beolvasás a gépen elmentett kliensből." if saved
                                        else "Beolvasás a kiválasztott kliensből. Az útvonal most nem menthető.")
+            self._draft_unavailable()
+            if following:
+                self.chk_follow.setChecked(True)
 
     def _on_import_draft(self):
         if self._busy:
             return
+        self._manual_import_active = True
+        self._sync_pending = None
+        self._draft_follower.set_enabled(False)
+        if self.chk_follow.isChecked():
+            self._set_sync_status("Az automatikus követés a kézi draftellenőrzés alatt szünetel.")
         self._reset_dash()
         self.lbl_dash_title.setText("A LoL-kliens hősválasztásának beolvasása…")
         def read_client():
@@ -910,12 +1149,66 @@ class MainWindow(QMainWindow):
 
     def _review_import(self, snapshot):
         from view.draft_import_dialog import DraftImportDialog
+        from services.draft_assignment import assign_draft
+        document, _ = self._load_roles()
+        original = snapshot
+        if snapshot.session_key and snapshot.session_key != self._sync_session_key:
+            self._sync_manual_roles = {}
+            self._sync_manual_side = None
+        if snapshot.own_team and self._sync_manual_side != snapshot.own_team:
+            self._sync_manual_side = None
+        preview = None
+        tier = self.cb_rank.currentText()
+        tier = "MIXED" if tier == "ALL RANKS" else tier
+        try:
+            preview = assign_draft(snapshot, document, own_side=self._sync_manual_side,
+                                   previous_roles=self._sync_manual_roles, tier=tier)
+        except ValueError:
+            pass  # The dialog can still resolve an unknown side manually.
+        if preview is not None:
+            metadata = {(item.team, item.internal_id): item for item in preview.assignments}
+            own = snapshot.own_team or self._sync_manual_side
+            def absolute(pick):
+                return own if pick.team == "own" else ("red" if own == "blue" else "blue") if pick.team == "enemy" else pick.team
+            picks = tuple(replace(pick, role=metadata[(absolute(pick), pick.internal_id)].role) for pick in snapshot.picks)
+            notes = tuple(note for note in preview.warnings if preview.unresolved or not note.startswith("A nem közölt szerepköröket"))
+            inferred = [item for item in preview.assignments if item.source == "statistics"]
+            if inferred:
+                notes += ("A szerepkörök egy része adatbázis-statisztikából becsült; alkalmazás előtt ellenőrizheted és javíthatod.",)
+            snapshot = replace(snapshot, picks=picks, warnings=notes)
         self.btn_lockfile.setToolTip(f"A gépen elmentett LoL lockfile helye: {preferred_lockfile()}")
         dialog = DraftImportDialog(snapshot, {v: k for k, v in self.name_map.items()}, self)
         if dialog.exec() != QDialog.DialogCode.Accepted:
             self.lbl_dash_title.setText("A kliens beolvasása megszakítva.")
             return
-        self._apply_import(dialog.draft_values())
+        values = dialog.draft_values()
+        if original.own_team and dialog.own_side.currentData() != original.own_team:
+            raise ValueError("A választott oldal ellentmond a kliens által közölt saját csapatnak.")
+        self._sync_manual_side = dialog.own_side.currentData()
+        self._sync_session_key = original.session_key
+        try:
+            preview = assign_draft(original, document, own_side=self._sync_manual_side, tier=tier)
+            expected = {(item.team, item.internal_id): item.role for item in preview.assignments}
+            previous_manual = self._sync_manual_roles
+            self._sync_manual_roles = {(team, cid): role for team in ("blue", "red")
+                for role, cid in enumerate(values[team]) if cid is not None
+                and (expected.get((team, cid)) != role or previous_manual.get((team, cid)) == role)}
+        except ValueError:
+            self._sync_manual_roles = {(team, cid): role for team in ("blue", "red")
+                for role, cid in enumerate(values[team]) if cid is not None}
+        self._apply_import(values)
+        if preview is not None:
+            chosen = {(team, cid): role for team in ("blue", "red") for role, cid in enumerate(values[team])
+                      if cid is not None}
+            metadata = []
+            for item in preview.assignments:
+                role = chosen.get((item.team, item.internal_id))
+                if role is not None:
+                    if role != item.role or (item.source != "client" and self._sync_manual_roles.get((item.team, item.internal_id)) == role):
+                        item = replace(item, role=role, source="manual",
+                                       role_probability=item.probabilities[role] if item.sample_size else None)
+                    metadata.append(item)
+            self._show_role_metadata(metadata)
 
     def _apply_import(self, values):
         """Apply only the reviewed snapshot, replacing the previous draft."""
@@ -929,10 +1222,11 @@ class MainWindow(QMainWindow):
                 combo.setCurrentIndex(combo.findText(name, Qt.MatchFlag.MatchExactly))
         self._invalidate_recommendations()
         self._reset_dash()
-        self.lbl_dash_title.setText("A hősök és tiltások beolvasva. Kérhetsz ajánlást vagy predikciót.")
+        self.lbl_dash_title.setText("A draft frissült.\nKérj ajánlást vagy predikciót.")
 
     def closeEvent(self, event):
-        if self._busy:
+        self.chk_follow.setChecked(False)
+        if self._busy or self._draft_follower.running:
             event.ignore()
             self.lbl_dash_title.setText("A folyamat befejezése után bezárható az ablak.")
         else:

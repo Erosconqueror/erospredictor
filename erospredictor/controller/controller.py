@@ -2,6 +2,7 @@ from configs import CHAMPION_COUNT
 from model.statistical import StatisticalModel
 from model.data_manager import DataManager
 from model.core_model import CoreModel
+from services import feature_flags
 
 class Controller:
     """The controller class manages the interaction between the data, models, and the view. It handles draft validation, match prediction, and champion recommendations."""
@@ -79,7 +80,7 @@ class Controller:
         recs = self.core_model.recommend_champs(div, blue, red, bans, team, r_idx, top_k, filter_off_meta)
         for rec in recs:
             rec['display_color'] = self.get_winrate_color(rec['wr'])
-        if history is not None:
+        if history is not None and feature_flags.PERSONAL_HISTORY_ENABLED:
             from services.personal_history import annotate_recommendations
             recs = annotate_recommendations(recs, history, self.db.get_champion_mapping(), blue, red, team, r_idx)
         return recs
@@ -90,7 +91,7 @@ class Controller:
         """Run optional diagnostics only after the user requests a second stage."""
         records = self.core_model.explain_recommendations(
             div, blue, red, team, r_idx, recommendations, max_items=max_items, selected_id=selected_id)
-        if history is not None:
+        if history is not None and feature_flags.PERSONAL_HISTORY_ENABLED:
             from services.personal_history import annotate_recommendations
             records = annotate_recommendations(records, history, self.db.get_champion_mapping(), blue, red, team, r_idx)
         return records

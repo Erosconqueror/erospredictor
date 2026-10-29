@@ -44,6 +44,8 @@ class DraftImportDialog(QDialog):
         self.own_side.addItem("Piros", "red")
         if snapshot.own_team:
             self.own_side.setCurrentIndex(self.own_side.findData(snapshot.own_team))
+            self.own_side.setEnabled(False)
+            self.own_side.setToolTip("A kliens által egyértelműen közölt saját csapat oldala.")
         side_row.addWidget(self.own_side)
         side_row.addStretch()
         layout.addLayout(side_row)

@@ -24,6 +24,7 @@ from services.update_progress import UpdateProgress, atomic_json, file_digest
 from services.update_retry import http_status, retry_delay, wait_for_retry
 from services.dataset_profile import rank_targets, balanced_snapshot, collection_steps
 from services.catalog_update import CatalogData, prepare_catalog, champion_dimensions
+from services.role_distribution import build_role_distribution, load_role_distribution, merge_role_distributions
 
 import configs as cfg
 
@@ -686,7 +687,7 @@ def _run(args, log=print) -> int:
             "champion_catalog_update": not args.no_catalog,
             "max_players_per_tier": args.players_per_tier,
             "minimum_usable_matches_per_tier": args.min_matches,
-            "stages": ["collect", "filter", "statistics/off-meta", "train 3 models per tier", "QA/retry", "calibrate", "publish"]}
+            "stages": ["collect", "filter", "statistics/off-meta/role frequencies", "train 3 models per tier", "QA/retry", "calibrate", "publish"]}
     log(json.dumps(plan, indent=2))
     if args.dry_run:
         log("Dry run: database, models and caches were not changed.")
@@ -750,6 +751,13 @@ def _run(args, log=print) -> int:
         staging = progress.staging
         with champion_dimensions(catalog["count"]):
             reports, outputs = train_outputs(args, patches, db, records, staging, log)
+        # Rebuild even after resumed training: the role counts use the exact same
+        # frozen records as the models, and join their recoverable publication.
+        roles = build_role_distribution(records, patches=patches, region=args.region,
+                                         tiers=args.tiers, source="training_snapshot")
+        roles = merge_role_distributions(load_role_distribution(APP_DIR / "data/champion_roles.json"), roles, args.tiers)
+        atomic_json(staging / "data/champion_roles.json", roles)
+        outputs.append(Path("data/champion_roles.json"))
         outputs.extend(catalog_outputs)
         runtime = {"ALLOWED_PATCHES": patches, "CHAMPION_COUNT": catalog["count"],
                    "DATASET_TARGETS": dict(cfg.DATASET_TARGETS)}
@@ -779,6 +787,7 @@ def _run(args, log=print) -> int:
                     "plan": plan, "collection": collection, "excluded_records": rejected,
                     "available_matches": available, "champion_count": catalog["count"],
                     "champion_catalog_version": catalog["version"],
+                    "champion_role_distribution": roles["scope"],
                     "training_patch_counts": dict(Counter(m["patch"] for m in records)),
                     "results": reports}
         (staging / "data/update_manifest.json").write_text(json.dumps(manifest, indent=2), encoding="utf-8")

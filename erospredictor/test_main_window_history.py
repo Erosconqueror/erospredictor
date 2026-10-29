@@ -10,6 +10,7 @@ from unittest.mock import MagicMock, patch
 
 from test_personal_history import profile, MAPPING
 from services.personal_history import annotate_recommendations
+from services import feature_flags
 
 
 @unittest.skipUnless(importlib.util.find_spec("PyQt6"), "PyQt6 required")
@@ -21,6 +22,9 @@ class WindowHistoryTests(unittest.TestCase):
         cls.app = QApplication.instance() or QApplication([])
 
     def setUp(self):
+        enabled = patch.object(feature_flags, "PERSONAL_HISTORY_ENABLED", True)
+        enabled.start()
+        self.addCleanup(enabled.stop)
         from view.main_window import MainWindow
         self.window = MainWindow(["Aatrox", "Ahri", "Garen"], {"Aatrox": 0, "Ahri": 1, "Garen": 2})
         self.addCleanup(self.window.close)
@@ -131,6 +135,53 @@ class WindowHistoryTests(unittest.TestCase):
             module.run_predictor()
             view.return_value.show.assert_called_once()
             timer.singleShot.assert_called_once_with(0, view.return_value._on_refresh_history)
+
+
+@unittest.skipUnless(importlib.util.find_spec("PyQt6"), "PyQt6 required")
+class DisabledWindowHistoryTests(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls):
+        os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
+        from PyQt6.QtWidgets import QApplication
+        cls.app = QApplication.instance() or QApplication([])
+
+    def setUp(self):
+        disabled = patch.object(feature_flags, "PERSONAL_HISTORY_ENABLED", False)
+        disabled.start()
+        self.addCleanup(disabled.stop)
+        from view.main_window import MainWindow
+        self.window = MainWindow(["Aatrox", "Ahri"], {"Aatrox": 0, "Ahri": 1})
+        self.addCleanup(self.window.close)
+
+    def test_history_refresh_is_disabled_before_creating_client_or_worker(self):
+        with patch("services.personal_history.LcuHistoryClient", side_effect=AssertionError("History client")) as client, \
+                patch.object(self.window, "_start_task", side_effect=AssertionError("History worker")) as task:
+            self.window._on_refresh_history()
+        client.assert_not_called()
+        task.assert_not_called()
+        self.assertFalse(self.window._history_loading)
+        self.assertIsNone(self.window._task)
+
+    def test_finishing_other_tasks_cannot_reenable_history_controls(self):
+        self.window._personal_history = profile()
+        self.window._set_busy(True)
+        self.window._set_busy(False)
+        for control in (self.window.chk_personal, self.window.btn_history, self.window.cb_history_limit):
+            self.assertFalse(control.isEnabled())
+        self.assertFalse(self.window.chk_personal.isChecked())
+        self.assertTrue(self.window.btn_rec.isEnabled())
+
+    def test_disabled_history_has_no_startup_timer(self):
+        spec = importlib.util.spec_from_file_location("_disabled_history_test_app", Path(__file__).parent / "erospredictor.py")
+        module = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(module)
+        with patch.object(module, "QApplication"), patch.object(module, "DataManager") as db, \
+                patch.object(module, "Controller"), patch.object(module, "MainWindow") as view, \
+                patch.object(module, "QTimer") as timer, patch.object(module.sys, "exit"):
+            db.return_value.get_champion_names.return_value = {0: "Aatrox"}
+            module.run_predictor()
+            view.return_value.show.assert_called_once()
+            timer.singleShot.assert_not_called()
 
 
 if __name__ == "__main__":

@@ -10,6 +10,7 @@ from unittest.mock import MagicMock, patch
 from urllib.parse import urlsplit, parse_qs
 
 from services import personal_history as ph
+from services import feature_flags
 from services.draft_import import DraftImportError
 from services.explanation_format import personal_history_html
 
@@ -44,6 +45,11 @@ def profile(count=20, wins=12):
 
 
 class PersonalEvidenceTests(unittest.TestCase):
+    def setUp(self):
+        enabled = patch.object(feature_flags, "PERSONAL_HISTORY_ENABLED", True)
+        enabled.start()
+        self.addCleanup(enabled.stop)
+
     def test_own_identity_and_red_side_are_not_inferred_from_array_order(self):
         raw = game(own_team=200, win=False)
         raw["participants"].reverse()
@@ -112,6 +118,9 @@ class PersonalEvidenceTests(unittest.TestCase):
 
 class HistoryTransportTests(unittest.TestCase):
     def setUp(self):
+        enabled = patch.object(feature_flags, "PERSONAL_HISTORY_ENABLED", True)
+        enabled.start()
+        self.addCleanup(enabled.stop)
         folder = tempfile.TemporaryDirectory()
         self.addCleanup(folder.cleanup)
         self.root = Path(folder.name)
@@ -214,6 +223,11 @@ class HistoryTransportTests(unittest.TestCase):
 
 
 class ControllerHistoryTests(unittest.TestCase):
+    def setUp(self):
+        enabled = patch.object(feature_flags, "PERSONAL_HISTORY_ENABLED", True)
+        enabled.start()
+        self.addCleanup(enabled.stop)
+
     def test_history_annotations_do_not_run_more_models_or_modify_probabilities(self):
         from controller.controller import Controller
         ctrl = Controller.__new__(Controller)
@@ -230,6 +244,52 @@ class ControllerHistoryTests(unittest.TestCase):
         self.assertTrue(details[0]["is_selected"])
         self.assertEqual(details[0]["wr"], 57.123)
         self.assertIsNotNone(details[0]["personal"])
+
+
+class DisabledHistoryTests(unittest.TestCase):
+    def setUp(self):
+        disabled = patch.object(feature_flags, "PERSONAL_HISTORY_ENABLED", False)
+        disabled.start()
+        self.addCleanup(disabled.stop)
+
+    def test_shipped_feature_flag_is_disabled(self):
+        import importlib.util
+        spec = importlib.util.spec_from_file_location("_test_shipped_feature_flags", Path(feature_flags.__file__))
+        module = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(module)
+        self.assertFalse(module.PERSONAL_HISTORY_ENABLED)
+
+    def test_history_read_and_account_verification_stop_before_discovery_or_network(self):
+        transport = MagicMock()
+        client = ph.LcuHistoryClient(transport=transport)
+        with patch.object(ph, "discover_lockfiles", side_effect=AssertionError("Client discovery")) as discover, \
+                patch.object(ph.requests, "Session", side_effect=AssertionError("Network session")) as session, \
+                patch.object(client, "_cache_path", side_effect=AssertionError("Cache accessed")) as cache:
+            with self.assertRaisesRegex(DraftImportError, "szüneteltetve"):
+                client.read_history()
+            with self.assertRaisesRegex(DraftImportError, "szüneteltetve"):
+                client.verify_account(profile())
+        discover.assert_not_called()
+        session.assert_not_called()
+        cache.assert_not_called()
+        transport.get.assert_not_called()
+
+    def test_controller_ignores_supplied_history_while_feature_is_disabled(self):
+        from controller.controller import Controller
+        ctrl = Controller.__new__(Controller)
+        ctrl.db = SimpleNamespace(get_champion_mapping=MagicMock(side_effect=AssertionError("History mapping")))
+        ctrl.core_model = MagicMock()
+        ctrl.core_model.recommend_champs.return_value = [{"id": 0, "wr": 57.123}]
+        ctrl.core_model.explain_recommendations.return_value = [{"id": 0, "wr": 57.123, "is_selected": True}]
+        arguments = ("GOLD", [-1, 1, -1, -1, -1], [2, -1, -1, -1, -1])
+        with patch.object(ph, "annotate_recommendations", side_effect=AssertionError("History annotations")) as annotate:
+            recs = ctrl.recommend_champs(*arguments, [], "blue", 0, history=profile())
+            details = ctrl.explain_recommendations(*arguments, "blue", 0, recs, selected_id=0, history=profile())
+        annotate.assert_not_called()
+        self.assertNotIn("personal", recs[0])
+        self.assertNotIn("personal", details[0])
+        self.assertEqual(recs[0]["wr"], 57.123)
+        self.assertTrue(details[0]["is_selected"])
 
 
 if __name__ == "__main__":

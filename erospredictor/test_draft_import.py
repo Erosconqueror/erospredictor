@@ -10,7 +10,7 @@ from unittest.mock import MagicMock, patch
 import requests
 
 from services.draft_import import (
-    DraftImportError, DraftPick, DraftSnapshot, LcuCredentials, LcuDraftClient,
+    DraftImportError, DraftUnavailable, DraftPick, DraftSnapshot, LcuCredentials, LcuDraftClient,
     discover_lockfiles, parse_draft_session, read_lockfile, resolve_own_side,
 )
 
@@ -105,6 +105,72 @@ class DraftParsingTests(unittest.TestCase):
         gameflow = {"gameData": {"teamOne": [{"summonerId": 42}], "teamTwo": [{"summonerId": 42}]}}
         self.assertIsNone(resolve_own_side(draft(None), gameflow))
 
+    def test_session_key_uses_stable_client_identifiers_and_ignores_zero(self):
+        value = draft()
+        self.assertEqual(parse_draft_session(value, MAPPING).session_key, "")
+        value["gameId"] = 0
+        self.assertEqual(parse_draft_session(value, MAPPING).session_key, "")
+        value["id"] = "draft-session-123"
+        self.assertEqual(parse_draft_session(value, MAPPING).session_key, "session:draft-session-123")
+        value["gameId"] = 123456
+        first = parse_draft_session(value, MAPPING)
+        second = parse_draft_session(value, MAPPING)
+        self.assertEqual(first.session_key, "game:123456")
+        self.assertEqual(first.session_key, second.session_key)
+        value["gameId"] = 123457
+        self.assertNotEqual(parse_draft_session(value, MAPPING).session_key, first.session_key)
+
+    def test_session_key_can_use_already_loaded_gameflow(self):
+        value = draft()
+        result = parse_draft_session(value, MAPPING, {"gameData": {"gameId": 1234}})
+        self.assertEqual(result.session_key, "game:1234")
+
+    def test_local_player_role_requires_its_actual_cell_id(self):
+        value = draft()
+        self.assertIsNone(parse_draft_session(value, MAPPING).own_role)
+        value["localPlayerCellId"] = 0
+        self.assertEqual(parse_draft_session(value, MAPPING).own_role, 0)
+        value["myTeam"].append({"cellId": 1, "championId": 0, "assignedPosition": "support"})
+        value["localPlayerCellId"] = 1
+        self.assertEqual(parse_draft_session(value, MAPPING).own_role, 4)
+        value["localPlayerCellId"] = 9
+        self.assertIsNone(parse_draft_session(value, MAPPING).own_role)
+
+    def test_completed_ban_actions_are_a_membership_based_fallback(self):
+        value = draft(200)
+        value["bans"] = {"myTeamBans": [], "theirTeamBans": [0, -1]}
+        value["actions"].append([
+            {"actorCellId": 0, "championId": 84, "type": "ban", "completed": True},
+            {"actorCellId": 5, "championId": 12, "type": "ban", "completed": True},
+            {"actorCellId": 5, "championId": 32, "type": "ban", "completed": False},
+            {"actorCellId": 99, "championId": 32, "type": "ban", "completed": True},
+        ])
+        result = parse_draft_session(value, MAPPING)
+        self.assertEqual(result.own_bans, (2,))
+        self.assertEqual(result.enemy_bans, (4,))
+        self.assertEqual(result.blue_bans, (4,))
+        self.assertEqual(result.red_bans, (2,))
+
+    def test_explicit_bans_stay_authoritative_over_actions(self):
+        value = draft()
+        value["actions"].append([{"actorCellId": 0, "championId": 32, "type": "ban", "completed": True}])
+        self.assertEqual(parse_draft_session(value, MAPPING).own_bans, (2,))
+
+    def test_flat_actions_also_exclude_unlocked_hovers(self):
+        value = draft()
+        value["actions"] = value["actions"][0]
+        value["actions"][0]["completed"] = False
+        self.assertEqual([pick.riot_id for pick in parse_draft_session(value, MAPPING).picks], [103])
+
+    def test_ambiguous_actor_cells_are_not_used_to_assign_bans(self):
+        value = draft()
+        value["bans"] = {}
+        value["theirTeam"][0]["cellId"] = 0
+        value["actions"] = [[{"actorCellId": 0, "championId": 32, "type": "ban", "completed": True}]]
+        result = parse_draft_session(value, MAPPING)
+        self.assertEqual(result.own_bans, ())
+        self.assertEqual(result.enemy_bans, ())
+
 
 class LocalClientTests(unittest.TestCase):
     def setUp(self):
@@ -151,6 +217,45 @@ class LocalClientTests(unittest.TestCase):
         transport.get.return_value.status_code = 404
         with self.assertRaisesRegex(DraftImportError, "nincs aktív hősválasztás"):
             LcuDraftClient(self.lockfile, MAPPING, transport).read_draft()
+
+    def test_missing_draft_is_distinct_from_transport_failure_for_autosync(self):
+        for status in (204, 404):
+            transport = MagicMock()
+            transport.get.return_value.status_code = status
+            with self.assertRaises(DraftUnavailable):
+                LcuDraftClient(self.lockfile, MAPPING, transport).read_draft()
+        transport.get.side_effect = requests.ConnectionError("private-test-token")
+        with self.assertRaises(DraftImportError) as caught:
+            LcuDraftClient(self.lockfile, MAPPING, transport).read_draft()
+        self.assertNotIsInstance(caught.exception, DraftUnavailable)
+
+    def test_repeated_polling_does_not_rewrite_the_saved_lockfile_setting(self):
+        transport = MagicMock()
+        transport.get.return_value.status_code = 200
+        transport.get.return_value.json.return_value = draft()
+        from services.client_settings import save_lockfile_path
+        with patch("services.draft_import.save_lockfile_path", wraps=save_lockfile_path) as save:
+            for _ in range(3):
+                LcuDraftClient(self.lockfile, MAPPING, transport).read_draft()
+        self.assertEqual(save.call_count, 1)
+
+    def test_no_active_session_does_not_keep_retrying_settings_writes(self):
+        transport = MagicMock()
+        transport.get.return_value.status_code = 404
+        from services.client_settings import save_lockfile_path
+        with patch("services.draft_import.save_lockfile_path", wraps=save_lockfile_path) as save:
+            for _ in range(3):
+                with self.assertRaises(DraftUnavailable):
+                    LcuDraftClient(self.lockfile, MAPPING, transport).read_draft()
+        self.assertEqual(save.call_count, 1)
+
+    def test_session_id_does_not_trigger_an_extra_gameflow_request(self):
+        transport = MagicMock()
+        transport.get.return_value.status_code = 200
+        transport.get.return_value.json.return_value = dict(draft(), gameId=123)
+        snapshot = LcuDraftClient(self.lockfile, MAPPING, transport).read_draft()
+        self.assertEqual(snapshot.session_key, "game:123")
+        self.assertEqual(transport.get.call_count, 1)
 
     def test_connection_error_does_not_leak_authentication(self):
         transport = MagicMock()

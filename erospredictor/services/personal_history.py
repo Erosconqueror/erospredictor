@@ -12,6 +12,7 @@ import json
 import re
 
 import requests
+from services import feature_flags
 from services.client_settings import settings_path
 from services.draft_import import LcuDraftClient, DraftImportError, discover_lockfiles, read_lockfile
 from services.update_progress import atomic_json
@@ -170,6 +171,8 @@ class LcuHistoryClient(LcuDraftClient):
         return account
 
     def verify_account(self, history):
+        if not feature_flags.PERSONAL_HISTORY_ENABLED:
+            raise DraftImportError("A match history funkció jelenleg szüneteltetve van.")
         with self._connection() as (transport, credentials):
             if self._account(transport, credentials)["puuid"] != history.puuid:
                 raise DraftImportError("Másik fiók van bejelentkezve. Frissítsd a saját meccselőzményeket!")
@@ -202,6 +205,8 @@ class LcuHistoryClient(LcuDraftClient):
             return {}
 
     def read_history(self, limit=100, cancelled=lambda: False):
+        if not feature_flags.PERSONAL_HISTORY_ENABLED:
+            raise DraftImportError("A match history funkció jelenleg szüneteltetve van.")
         if limit not in (100, 500, 1000):
             raise ValueError("History limit must be 100, 500 or 1000")
         with self._connection() as (transport, credentials):

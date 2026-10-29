@@ -189,11 +189,52 @@ Nyisd meg a LoL-kliens hősválasztását, majd az Erospredictorban kattints a
 a helyi kliensből érkeznek; nincs OCR, képernyőkép-feltöltés vagy folyamatos képfeldolgozás.
 Ez a gomb csak olvas, nem választ és nem tilt hőst a kliensben.
 
-A megjelenő ellenőrző ablakban rendeld pozícióhoz azokat a hősöket, amelyeknél
-a kliens nem közli a szerepkört. Az ellenfél listájának sorrendjét a program
-nem tekinti lane-sorrendnek. Ha az oldal sem biztos, válaszd ki a saját csapatod
+A megjelenő ellenőrző ablakban az elérhető szerepkör-statisztika alapján előre
+kitölti a javasolt pozíciókat; ezeket ellenőrizheted és javíthatod. Az ellenfél
+listájának sorrendjét a program nem tekinti lane-sorrendnek. Ha az oldal sem biztos, válaszd ki a saját csapatod
 Kék/Piros oldalát is. A **Draft kitöltése** gomb az ellenőrzött drafttal felváltja
 a főablak korábbi választásait és tiltásait. A még nem véglegesített hover kimarad.
+
+Az **Automatikus draft** kapcsoló alapból ki van kapcsolva. Bekapcsolva 1,5
+másodpercenként, háttérben olvassa a helyi kliens rögzített pickjeit és banjait.
+Változáskor frissíti a mezőket, hőscsere esetén is. Azonos állapotnál megtartja
+a már elkészült ajánlást/predikciót; draftváltozás után a korábbi eredményt törli.
+Az automatikus adatbetöltés nem indít ajánlási vagy magyarázó modellfuttatást.
+Kikapcsolás után egy későn beérkező válasz sem írhatja át a mezőket.
+
+A saját csapat kliens által közölt pozíciói elsőbbséget kapnak. Az ellenfélnél
+az összes kiválasztott hőst együtt vizsgálja: legfeljebb 120 lehetséges kiosztás
+közül keresi a szerepgyakoriságok szorzata alapján legjobb, ütközésmentes
+felállást. Így például Braum Support mellett Xerath kerülhet Midre. A pozíció
+alatti `~61%` a hős megfigyelt szerepgyakorisága; az egérmutatóval a teljes
+ötpozíciós eloszlás és a mintaszám is látható. Ez becslés, nem biztos szerepkör
+és nem győzelmi esély. Saját kliensadatnál `kliens`, jóváhagyott javításnál `kézi`
+jelölés jelenik meg. Kis mintát külön jelez; megfigyelés nélküli szerepet nem
+tölt ki kitalált százalékkal.
+
+Adathiánynál vagy bizonytalan oldalnál a **LoL-kliens beolvasása** gomb kézi
+ellenőrző ablaka segít. A kézzel megerősített pozíciót az aktuális draftban
+megjegyzi; új sessionnél új kiosztást készít. A kliens későbbi egyértelmű saját
+szerepköre felülírja a kézi korrekciót. Kézi ellenőrzés közben az automata követés
+szünetel. Az **Új Draft** kikapcsolja a követést és törli a mezőket.
+
+A szerepkör-statisztika a **`data/champion_roles.json`** fájlban található, stabil
+Riot-hősazonosítókkal, rangonként és MIXED összesítéssel. Minden hőshöz megfigyelt
+darabszám, öt gyakoriság és teljes mintaszám tartozik. Az adatbázisban szerepkör
+szerint rendezett csapatlistákból készül; a kiválasztott rang adatai hiányában a
+MIXED összesítést használja. A tanítás a rögzített tanítóadatokból újra elkészíti,
+és a modellekkel együtt publikálja. Külön, csak olvasó adatbázis-export is elérhető,
+így nem kell megvárni a teljes újratanítást:
+
+```powershell
+.\env\Scripts\python.exe .\erospredictor\export_role_distribution.py
+# Opcionális konkrét patchablak:
+.\env\Scripts\python.exe .\erospredictor\export_role_distribution.py --patches 16.17 16.18 16.19 16.20 16.21
+```
+
+Az export alapból a konfigurált patcheket és régiót használja. Nem módosítja az
+adatbázist, nem indít scrape-et vagy tanítást, és nem kell hozzá Riot API-kulcs.
+Az automatikus draftkövetés is csak a helyi LCU-t használja.
 
 Ha az automatikus keresés nem találja a klienst, a **LoL lockfile…** gombbal
 válaszd ki a League of Legends telepítési mappájának `lockfile` fájlját.
@@ -219,48 +260,14 @@ A [League Client API](https://developer.riotgames.com/docs/lol#league-client-api
 Riot által nem támogatott helyi interfész, ezért kliensfrissítés után élő ellenőrzést
 igényelhet. Közvetítés, képernyőkép és profi draft felismerése egy következő fejlesztés.
 
-## Saját meccselőzmények és személyes jelölések
+## Saját meccselőzmények – átmenetileg letiltva
 
-Indításkor a program háttérben megpróbálja beolvasni a LoL-kliensben bejelentkezett
-saját fiók legutóbbi 100 meccsét. Az **Előzmények frissítése** gombbal ez bármikor
-megismételhető; mellette 100, 500 vagy 1000 vizsgált meccs választható. A kliens által
-elérhető előzménylista rövidebb is lehet. A nagyobb lekérés a **Beolvasás leállítása**
-gombbal megszakítható, a már feldolgozott oldalak mentése megmarad. Bezárt kliensnél
-a normál kézi ajánlás használható, az előzménybetöltés állapota külön látható.
-
-A **Saját hőseim** kapcsoló az ajánlási listában keretet és saját statisztikát jelenít meg:
-
-- **Kék keret:** legalább 3 saját meccs a hőssel.
-- **Arany keret:** legalább 20 saját meccs és legalább 55% megfigyelt győzelmi arány.
-
-Ha az adott pozíción legalább 3 meccs rendelkezésre áll, az ottani arányt mutatja;
-egyébként jelzett módon az összes pozíció közös adatait. A modell ajánlási sorrendje
-és predikciós százaléka változatlan. A személyes jelölésekhez nem fut további modell.
-A kapcsoló kikapcsolása eltávolítja a kereteket; újonnan bekapcsolt jelölésekhez
-szükség esetén új ajánlást kér. A lane-ellenfél korábbi fehér fókuszkerete továbbra
-is az egyszerű hőshatásokhoz tartozik.
-
-A **Miért? – Kijelölt hős + első 5** ablakban a saját hőssel az adott lane-ellenfél
-ellen játszott meccsek és a látható társakkal közös meccsek győzelmi aránya is
-megjelenik. A párokhoz a ténylegesen közölt szerepköröket használja; bizonytalan
-lane-t nem talál ki a résztvevők sorrendjéből. **20 páros meccs alatt kis mintát
-jelez**; a nagyobb saját szinergiaminta az ajánlási sorban is látható. Ezek teljes
-mérkőzések eredményei, nem lane-győzelmek vagy bizonyított szinergiahatások.
-
-Az adatok a saját Ranked Solo/Duo és Ranked Flex Summoner's Rift meccsekből
-származnak; az 5 percnél rövidebb meccsek kimaradnak. A későbbi feladás valós
-mérkőzéseredményként beleszámít, így a feladott vereségek sem torzítják felfelé az arányt.
-Fiókonként legfeljebb 1000 feldolgozott rangsorolt meccset őriz meg a
-`%LOCALAPPDATA%\Erospredictor\history\` mappában, a már letöltött részleteket
-frissítéskor újra felhasználva. A gyorsítótár saját hősöket, szerepköröket,
-kimeneteleket és a társak/ellenfelek hősazonosítóit tartalmazza; a helyi hitelesítési
-tokent és más játékosok fiókazonosítóit nem menti. Fiókváltáskor külön adathalmazt
-használ, személyes ajánlási jelölés előtt ellenőrzi az aktív fiókot.
-
-A beolvasás a helyi [League Client API](https://developer.riotgames.com/docs/lol#league-client-api)
-GET végpontjait használja, fejlesztői Riot API-kulcs nélkül. Az illesztés alapja a
-[kliensből kinyert API-séma](https://github.com/KebsCS/lcu-and-riotclient-api);
-új kliensverziónál élő ellenőrzésre lehet szükség.
+A match history funkció jelenleg szüneteltetve van. Indításkor és a frissítésgomb
+megnyomására sem indít lekérést; a személyes hősjelölések és a hozzájuk tartozó
+vezérlők le vannak tiltva. A korábbi helyi gyorsítótárat nem törli, a működés és
+tesztjei megmaradtak a későbbi folytatáshoz. Az alkalmazásban a
+`services/feature_flags.py` explicit fejlesztési kapcsolója tiltja a funkciót.
+A helyi kliensből történő draftbeolvasás ettől függetlenül használható.
 
 ## Opcionális magyarázat az első öt ajánláshoz
 

@@ -1,4 +1,4 @@
-"""Read the visible draft from the local League client, without OCR or polling.
+"""Read one visible draft snapshot from the local League client, without OCR.
 
 The League Client API is an unsupported, local-only Riot interface. Keep its
 shape handling here; never guess lanes or sides from the display/cell order.
@@ -21,6 +21,10 @@ from services.client_settings import (
 
 class DraftImportError(RuntimeError):
     """An actionable error safe to display without local authentication data."""
+
+
+class DraftUnavailable(DraftImportError):
+    """The local client is reachable but has no active champion-select session."""
 
 
 @dataclass(frozen=True)
@@ -48,6 +52,8 @@ class DraftSnapshot:
     own_bans: tuple[int, ...] = ()
     enemy_bans: tuple[int, ...] = ()
     warnings: tuple[str, ...] = ()
+    session_key: str = ""
+    own_role: int | None = None
 
 
 _ROLES = {
@@ -196,6 +202,19 @@ def resolve_own_side(session, gameflow=None, current_summoner=None):
     return found.pop() if len(found) == 1 else None
 
 
+def _session_key(session, gameflow=None):
+    """Use actual client identifiers; zero or absent IDs are not unique drafts."""
+    game_id = _number(session.get("gameId"))
+    if game_id > 0:
+        return f"game:{game_id}"
+    session_id = session.get("id")
+    if isinstance(session_id, str) and 0 < len(session_id.strip()) <= 128:
+        return "session:" + session_id.strip()
+    data = gameflow.get("gameData") if isinstance(gameflow, dict) else None
+    game_id = _number(data.get("gameId")) if isinstance(data, dict) else 0
+    return f"game:{game_id}" if game_id > 0 else ""
+
+
 def parse_draft_session(session: dict, mapping: dict, gameflow=None, current_summoner=None) -> DraftSnapshot:
     """Parse a snapshot. Riot id 0 is empty; internal id 0 remains a real champion."""
     if not isinstance(session, dict) or not isinstance(session.get("myTeam"), list):
@@ -208,8 +227,12 @@ def parse_draft_session(session: dict, mapping: dict, gameflow=None, current_sum
         notes.append("A kliens nem jelzi biztosan az oldaladat: alkalmazás előtt válaszd ki a Kék vagy Piros csapatot.")
     groups = session.get("actions", []) or []
     groups = groups if isinstance(groups, list) else []
-    actions = [action for group in groups if isinstance(group, list)
-               for action in group if isinstance(action, dict)]
+    actions = []
+    for group in groups:
+        if isinstance(group, list):
+            actions.extend(action for action in group if isinstance(action, dict))
+        elif isinstance(group, dict):
+            actions.append(group)
     pick_actions = {}
     for action in actions:
         if action.get("type") == "pick":
@@ -251,14 +274,36 @@ def parse_draft_session(session: dict, mapping: dict, gameflow=None, current_sum
 
     bans = session.get("bans", {}) or {}
     bans = bans if isinstance(bans, dict) else {}
-    own_bans = tuple(value for champion in bans.get("myTeamBans", []) if (value := translate(champion)) is not None)
-    enemy_bans = tuple(value for champion in bans.get("theirTeamBans", []) if (value := translate(champion)) is not None)
+    def bans_for(source_key, members_key):
+        champions = bans.get(source_key)
+        champions = champions if isinstance(champions, (list, tuple)) else []
+        if not any(_number(champion) > 0 for champion in champions):
+            # cellId only establishes membership of myTeam/theirTeam. It is
+            # never used to infer a blue/red side or lane.
+            members = session.get(members_key, [])
+            other_members = session.get("theirTeam" if members_key == "myTeam" else "myTeam", [])
+            cells = {_number(member.get("cellId"), -1) for member in members if isinstance(member, dict)}
+            other_cells = {_number(member.get("cellId"), -1) for member in other_members if isinstance(member, dict)}
+            cells.difference_update(other_cells | {-1})
+            champions = [action.get("championId") for action in actions
+                         if action.get("type") == "ban" and action.get("completed") is True
+                         and _number(action.get("actorCellId"), -1) in cells]
+        return tuple(dict.fromkeys(value for champion in champions if (value := translate(champion)) is not None))
+
+    own_bans = bans_for("myTeamBans", "myTeam")
+    enemy_bans = bans_for("theirTeamBans", "theirTeam")
     blue_bans, red_bans = (), ()
     if own_team == "blue":
         blue_bans, red_bans = own_bans, enemy_bans
     elif own_team == "red":
         blue_bans, red_bans = enemy_bans, own_bans
-    return DraftSnapshot(tuple(picks), blue_bans, red_bans, own_team, own_bans, enemy_bans, tuple(dict.fromkeys(notes)))
+    local_cell = _number(session.get("localPlayerCellId"), -1)
+    local_members = [member for member in session["myTeam"] if isinstance(member, dict)
+                     and local_cell >= 0 and _number(member.get("cellId"), -1) == local_cell]
+    own_role = (_ROLES.get(str(local_members[0].get("assignedPosition", "")).upper())
+                if len(local_members) == 1 else None)
+    return DraftSnapshot(tuple(picks), blue_bans, red_bans, own_team, own_bans, enemy_bans,
+                         tuple(dict.fromkeys(notes)), _session_key(session, gameflow), own_role)
 
 
 class LcuDraftClient:
@@ -288,6 +333,8 @@ class LcuDraftClient:
             if response.status_code in (204, 404):
                 if optional:
                     return {}
+                if endpoint == "/lol-champ-select/v1/session":
+                    raise DraftUnavailable(self.missing_message)
                 raise DraftImportError(self.missing_message)
             if response.status_code in (401, 403):
                 raise DraftImportError("A kliens helyi kapcsolata lejárt. Indítsd újra a beolvasást, vagy válaszd ki az aktuális lockfile fájlt.")
@@ -305,7 +352,11 @@ class LcuDraftClient:
         if not candidates:
             raise DraftImportError("Nem található a LoL lockfile. Indítsd el a klienst, vagy válaszd ki a telepítési mappában lévő lockfile fájlt.")
         credentials = read_lockfile(candidates[0])
-        remembered = save_lockfile_path(candidates[0])
+        path = normalize_lockfile(candidates[0])
+        existing = saved_lockfile()
+        remembered = (existing is not None and os.path.normcase(str(existing)) == os.path.normcase(str(path)))
+        if not remembered:
+            remembered = save_lockfile_path(path)
         mapping = self.mapping
         if mapping is None:
             path = Path(__file__).resolve().parents[1] / "data/champion_id.json"
