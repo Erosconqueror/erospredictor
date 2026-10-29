@@ -1,3 +1,3 @@
-"""Explicitly paused features; no runtime config can silently enable these."""
+"""Application feature gates; external history access has a separate explicit opt-in."""
 
-PERSONAL_HISTORY_ENABLED = False
+PERSONAL_HISTORY_ENABLED = True

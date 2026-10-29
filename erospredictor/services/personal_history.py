@@ -1,7 +1,8 @@
 """Own-account LCU history and descriptive evidence; never changes model probabilities.
 
 Schema: https://github.com/KebsCS/lcu-and-riotclient-api (LCU extracted Swagger).
-Only local GETs; no opponent account lookup and no Riot developer key required.
+Local GETs by default; optional own-account Riot client service after opt-in.
+No opponent account lookup and no Riot developer key required.
 """
 
 from contextlib import contextmanager
@@ -16,6 +17,7 @@ from services import feature_flags
 from services.client_settings import settings_path
 from services.draft_import import LcuDraftClient, DraftImportError, discover_lockfiles, read_lockfile
 from services.update_progress import atomic_json
+from services.client_history_service import REGION, ENTITLEMENTS, RiotClientHistory, server_from_config
 
 
 MIN_PLAYED = 3
@@ -110,6 +112,11 @@ class PersonalHistory:
     games: tuple
     updated_at: str = ""
     warnings: tuple = ()
+    requested_games: int = 0
+    examined_games: int = 0
+    ranked_games_seen: int = 0
+    source: str = "lcu"
+    limited: bool = False
 
     def evidence(self, cid, role, enemy, allies, mapping):
         inverse = {int(index): number(riot) for riot, index in mapping.items()}
@@ -146,7 +153,7 @@ class LcuHistoryClient(LcuDraftClient):
     missing_message = "A saját meccselőzmények jelenleg nem érhetők el a LoL-kliensből. Próbáld újra a frissítésgombbal."
 
     def _allowed_endpoint(self, endpoint):
-        return endpoint == CURRENT or bool(re.fullmatch(
+        return endpoint in (CURRENT, REGION, ENTITLEMENTS) or bool(re.fullmatch(
             r"/lol-match-history/v1/(?:products/lol/current-summoner/matches\?begIndex=\d{1,4}&endIndex=\d{1,4}|games/[1-9]\d{0,19})", endpoint))
 
     @contextmanager
@@ -155,6 +162,7 @@ class LcuHistoryClient(LcuDraftClient):
         if not paths:
             raise DraftImportError("Indítsd el a LoL-kliensedet, majd frissítsd a saját előzményeket.")
         credentials = read_lockfile(paths[0])
+        self._system_config_path = paths[0].parent / "system.yaml"
         transport = self.transport or requests.Session()
         if self.transport is None:
             transport.trust_env = False
@@ -204,7 +212,34 @@ class LcuHistoryClient(LcuDraftClient):
         except (OSError, ValueError, TypeError, KeyError, AttributeError):
             return {}
 
-    def read_history(self, limit=100, cancelled=lambda: False):
+    def _local_pages(self, transport, credentials, limit, cancelled):
+        for start in range(0, limit, 20):
+            if cancelled():
+                raise DraftImportError("Az előzmények beolvasása leállítva; a mentett oldalak megmaradtak.")
+            response = self._get(transport, credentials, f"{HISTORY}?begIndex={start}&endIndex={start + 19}")
+            group = response.get("games")
+            games = group.get("games") if isinstance(group, dict) else None
+            if not isinstance(games, list):
+                raise DraftImportError(self.missing_message)
+            if not games:
+                return
+            yield [dict(game, platformId=game.get("platformId") or response.get("platformId", ""))
+                   for game in games[:20] if isinstance(game, dict)]
+            if len(games) < 20:
+                return
+
+    def _client_service(self, transport, credentials, account):
+        # Only called after explicit opt-in. The default local path reads neither
+        # the session access token nor the remote server configuration.
+        region = self._get(transport, credentials, REGION).get("region")
+        server = server_from_config(self._system_config_path, region)
+        session = self._get(transport, credentials, ENTITLEMENTS)
+        if ((session.get("subject") and session["subject"] != account["puuid"])
+                or self._account(transport, credentials)["puuid"] != account["puuid"]):
+            raise DraftImportError("Fiókváltás történt beolvasás közben. Frissítsd újra az előzményeket!")
+        return RiotClientHistory(server, session.get("accessToken"), account["puuid"])
+
+    def read_history(self, limit=100, cancelled=lambda: False, allow_client_service=False):
         if not feature_flags.PERSONAL_HISTORY_ENABLED:
             raise DraftImportError("A match history funkció jelenleg szüneteltetve van.")
         if limit not in (100, 500, 1000):
@@ -212,45 +247,49 @@ class LcuHistoryClient(LcuDraftClient):
         with self._connection() as (transport, credentials):
             account = self._account(transport, credentials)
             rows, seen, detail_failures, warnings = self._cached(account), set(), 0, []
+            ranked_seen, unreadable, limited = 0, 0, False
+            source = "riot-client-service" if allow_client_service else "lcu"
             stamp = datetime.now(timezone.utc).isoformat()
-            for start in range(0, limit, 20):
+            pages = (self._client_service(transport, credentials, account).pages(limit, cancelled)
+                     if allow_client_service else self._local_pages(transport, credentials, limit, cancelled))
+            for page_index, games in enumerate(pages):
                 if cancelled():
                     raise DraftImportError("Az előzmények beolvasása leállítva. A már mentett oldalak megmaradtak.")
-                response = self._get(transport, credentials, f"{HISTORY}?begIndex={start}&endIndex={start + 19}")
-                group = response.get("games")
-                games = group.get("games") if isinstance(group, dict) else None
-                if not isinstance(games, list):
-                    raise DraftImportError(self.missing_message)
-                if not games:
-                    break
                 fresh = 0
-                for original in games[:20]:
+                for original in games:
                     if cancelled():
                         raise DraftImportError("Az előzmények beolvasása leállítva. A már mentett oldalak megmaradtak.")
                     if not isinstance(original, dict):
                         continue
-                    game = dict(original, platformId=original.get("platformId") or response.get("platformId", ""))
-                    key = f"{game['platformId']}:{number(game.get('gameId'))}"
+                    game = dict(original)
+                    key = f"{game.get('platformId', '')}:{number(game.get('gameId'))}"
                     if number(game.get("gameId")) <= 0 or key in seen:
                         continue
                     seen.add(key)
                     fresh += 1
+                    queue = number(game.get("queueId"))
+                    ranked_seen += queue in (420, 440)
                     row = parse_game(game, account)
-                    if row is None:
+                    if (queue not in (420, 440) or number(game.get("mapId")) != 11
+                            or number(game.get("gameDuration")) < 300):
                         continue
-                    if row["match_id"] in rows and rows[row["match_id"]].get("complete"):
+                    if row is not None and row["match_id"] in rows and rows[row["match_id"]].get("complete"):
                         continue
-                    if not row["complete"] and detail_failures < 3:
+                    if (row is None or not row["complete"]) and detail_failures < 3:
                         try:
                             detail = self._get(transport, credentials, f"/lol-match-history/v1/games/{number(game['gameId'])}", optional=True)
-                            detail = dict(detail, platformId=detail.get("platformId") or game["platformId"])
+                            detail = dict(detail, platformId=detail.get("platformId") or game.get("platformId", ""))
                             parsed = parse_game(detail, account)
-                            if parsed and parsed["match_id"] == row["match_id"]:
+                            if (parsed and number(detail.get("gameId")) == number(game["gameId"])
+                                    and (not game.get("platformId") or detail["platformId"] == game["platformId"])):
                                 row = parsed
                             else:
                                 detail_failures += 1
                         except DraftImportError:
                             detail_failures += 1
+                    if row is None:
+                        unreadable += 1
+                        continue
                     rows[row["match_id"]] = row
                 if self._account(transport, credentials)["puuid"] != account["puuid"]:
                     raise DraftImportError("Fiókváltás történt beolvasás közben. Frissítsd újra az előzményeket!")
@@ -260,17 +299,27 @@ class LcuHistoryClient(LcuDraftClient):
                     atomic_json(self._cache_path(account["puuid"]), {"version": 1, "puuid": account["puuid"], "games": recent})
                 except OSError:
                     warnings.append("A helyi előzménygyorsítótár nem menthető; a betöltött adatok most használhatók.")
-                if len(games) < 20:
-                    break
                 # Some client builds repeat the first page for larger offsets.
-                if not fresh and start > 0:
+                if not fresh and page_index > 0:
+                    limited = True
+                    warnings.append(f"A kliens ugyanazt az előzményoldalt ismételte: {len(seen)}/{limit} különböző meccs volt elérhető. "
+                        "Ez nem azt jelenti, hogy nincs régebbi rangsorolt meccsed. " +
+                        ("A régebbi előzményekhez próbáld ki a külön Riot-kliensszolgáltatás opciót."
+                         if not allow_client_service else "A Riot szolgáltatása nem adott további különböző meccseket."))
+                    break
+                if len(seen) >= limit:
                     break
             if detail_failures:
                 warnings.append("Néhány meccs részlete hiányzik; ismeretlen lane-ből nem számolunk párosítási statisztikát.")
+            if unreadable:
+                warnings.append(f"{unreadable} rangsorolt meccsben nem volt olvasható a saját résztvevő; ezeket kihagytuk.")
+            if not ranked_seen and seen:
+                warnings.append(f"A kapott {len(seen)} meccs között nincs Ranked Solo/Duo (420) vagy Ranked Flex (440). "
+                                "A többi játékmódból nem számolunk rangsorolt hősstatisztikát.")
             if self._account(transport, credentials)["puuid"] != account["puuid"]:
                 raise DraftImportError("Fiókváltás történt beolvasás közben. Frissítsd újra az előzményeket!")
             name = account.get("gameName") or account.get("displayName") or "Saját fiók"
             if account.get("tagLine"):
                 name += "#" + account["tagLine"]
             return PersonalHistory(account["puuid"], str(name), tuple(sorted(rows.values(), key=lambda row: row["created"], reverse=True)),
-                                   stamp, tuple(dict.fromkeys(warnings)))
+                                   stamp, tuple(dict.fromkeys(warnings)), limit, len(seen), ranked_seen, source, limited)

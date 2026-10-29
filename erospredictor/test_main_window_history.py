@@ -52,10 +52,29 @@ class WindowHistoryTests(unittest.TestCase):
             self.window._on_refresh_history()
             self.wait()
             self.assertEqual(client.return_value.read_history.call_args.args[0], 500)
+            self.assertNotIn("allow_client_service", client.return_value.read_history.call_args.kwargs)
+        self.assertFalse(self.window.chk_history_service.isChecked())
         self.assertNotEqual(thread_ids, [get_ident()])
         self.assertIn("Tester#EUW", self.window.lbl_history.toolTip())
         self.assertIn("20", self.window.lbl_history.toolTip())
         self.assertTrue(self.window.chk_personal.isEnabled())
+
+    def test_external_client_service_requires_checkbox_and_explicit_refresh(self):
+        with patch("services.personal_history.LcuHistoryClient") as client:
+            client.return_value.read_history.return_value = profile()
+            self.window.chk_history_service.setChecked(True)
+            client.assert_not_called()
+            self.window._on_refresh_history()
+            self.wait()
+        self.assertTrue(client.return_value.read_history.call_args.kwargs["allow_client_service"])
+
+    def test_repeated_page_warning_shows_actual_received_count(self):
+        from dataclasses import replace
+        self.window._history_loaded(replace(profile(0), requested_games=1000, examined_games=20, limited=True))
+        self.assertIn("20/1000", self.window.lbl_dash_title.text())
+        self.assertIn("ismételte", self.window.lbl_dash_title.text())
+        self.assertIn("0 rangsorolt", self.window.lbl_history.toolTip())
+        self.assertIn("helyi LCU", self.window.lbl_history.toolTip())
 
     def test_missing_client_is_a_soft_status_and_releases_controls(self):
         self.window.lbl_dash_title.setText("Manual draft")
@@ -166,7 +185,8 @@ class DisabledWindowHistoryTests(unittest.TestCase):
         self.window._personal_history = profile()
         self.window._set_busy(True)
         self.window._set_busy(False)
-        for control in (self.window.chk_personal, self.window.btn_history, self.window.cb_history_limit):
+        for control in (self.window.chk_personal, self.window.btn_history, self.window.cb_history_limit,
+                        self.window.chk_history_service):
             self.assertFalse(control.isEnabled())
         self.assertFalse(self.window.chk_personal.isChecked())
         self.assertTrue(self.window.btn_rec.isEnabled())

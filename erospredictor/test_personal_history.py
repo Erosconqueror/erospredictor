@@ -189,6 +189,77 @@ class HistoryTransportTests(unittest.TestCase):
         self.client.read_history(1000)
         self.assertEqual(len([url for url, _ in self.calls if "/matches?" in url]), 2)
 
+    def test_actual_twenty_nonranked_games_are_not_reported_as_a_thousand_without_ranked_history(self):
+        page = [game(i, queue=2400) for i in range(1, 21)]
+        self.pages = {0: page, 20: page}
+        with patch.object(self.client, "_client_service", side_effect=AssertionError("External request")) as remote:
+            result = self.client.read_history(1000)
+        remote.assert_not_called()
+        self.assertEqual(result.games, ())
+        self.assertEqual((result.examined_games, result.requested_games, result.ranked_games_seen), (20, 1000, 0))
+        self.assertTrue(result.limited)
+        self.assertEqual(result.source, "lcu")
+        self.assertIn("ismételte", " ".join(result.warnings))
+        self.assertIn("nem azt jelenti", " ".join(result.warnings))
+        self.assertEqual(len([url for url, _ in self.calls if "/matches?" in url]), 2)
+        self.assertFalse(any("token" in url or "/games/" in url for url, _ in self.calls))
+
+    def test_eligible_summary_missing_own_identity_is_hydrated_before_it_is_rejected(self):
+        summary = game(summary=True)
+        summary["participantIdentities"] = []
+        self.pages = {0: [summary]}
+        result = self.client.read_history()
+        self.assertEqual(len(result.games), 1)
+        self.assertTrue(result.games[0]["complete"])
+        self.assertEqual(result.games[0]["enemy"], 86)
+
+    def test_explicit_service_uses_flat_participants_and_keeps_only_normalized_cache(self):
+        raw = game()
+        for participant, identity in zip(raw["participants"], raw.pop("participantIdentities")):
+            participant["puuid"] = identity["player"]["puuid"]
+            participant["win"] = participant.pop("stats")["win"]
+        service = MagicMock()
+        service.pages.return_value = iter([[raw]])
+        with patch.object(self.client, "_client_service", return_value=service) as create:
+            result = self.client.read_history(1000, allow_client_service=True)
+        create.assert_called_once()
+        self.assertEqual(result.source, "riot-client-service")
+        self.assertEqual((result.examined_games, result.ranked_games_seen), (1, 1))
+        self.assertTrue(result.games[0]["complete"])
+        self.assertEqual(result.games[0]["champion"], 266)
+        self.assertFalse(any("/v1/games/" in url for url, _ in self.calls))
+        self.assertNotIn("other-person-identity", self.client._cache_path(ACCOUNT["puuid"]).read_text())
+
+    def test_service_token_is_read_only_after_explicit_opt_in_and_bound_to_current_account(self):
+        self.client._system_config_path = self.root / "system.yaml"
+        with patch.object(ph, "server_from_config", return_value="https://euc1-red.pp.sgp.pvp.net") as server, \
+                patch.object(self.client, "_get", side_effect=[{"region": "EUNE"},
+                    {"accessToken": "private-session", "subject": "another-account"}]) as get, \
+                patch.object(ph, "RiotClientHistory", side_effect=AssertionError("Foreign account")) as service:
+            with self.assertRaisesRegex(DraftImportError, "Fiókváltás"):
+                self.client._client_service(self.transport, None, ACCOUNT)
+        service.assert_not_called()
+        self.assertEqual(get.call_args_list[-1].args[-1], ph.ENTITLEMENTS)
+        self.assertEqual(server.call_args.args[-1], "EUNE")
+
+    def test_opted_in_service_uses_the_clients_region_and_rechecks_login_before_forwarding(self):
+        self.client._system_config_path = self.root / "system.yaml"
+        with patch.object(ph, "server_from_config", return_value="https://euc1-red.pp.sgp.pvp.net"), \
+                patch.object(self.client, "_get", side_effect=[{"region": "EUNE"},
+                    {"accessToken": "private-session", "subject": ACCOUNT["puuid"]}]), \
+                patch.object(self.client, "_account", return_value=ACCOUNT) as current, \
+                patch.object(ph, "RiotClientHistory") as service:
+            self.client._client_service(self.transport, None, ACCOUNT)
+        current.assert_called_once()
+        service.assert_called_once_with("https://euc1-red.pp.sgp.pvp.net", "private-session", ACCOUNT["puuid"])
+        with patch.object(ph, "server_from_config", return_value="https://euc1-red.pp.sgp.pvp.net"), \
+                patch.object(self.client, "_get", side_effect=[{"region": "EUNE"}, {"accessToken": "private-session"}]), \
+                patch.object(self.client, "_account", return_value=dict(ACCOUNT, puuid="switched")), \
+                patch.object(ph, "RiotClientHistory") as service:
+            with self.assertRaisesRegex(DraftImportError, "Fiókváltás"):
+                self.client._client_service(self.transport, None, ACCOUNT)
+        service.assert_not_called()
+
     def test_cancellation_keeps_completed_pages_for_next_refresh(self):
         self.pages = {0: [game(i) for i in range(1, 21)], 20: [game(21)]}
         count = 0
@@ -252,12 +323,12 @@ class DisabledHistoryTests(unittest.TestCase):
         disabled.start()
         self.addCleanup(disabled.stop)
 
-    def test_shipped_feature_flag_is_disabled(self):
+    def test_shipped_feature_flag_is_enabled(self):
         import importlib.util
         spec = importlib.util.spec_from_file_location("_test_shipped_feature_flags", Path(feature_flags.__file__))
         module = importlib.util.module_from_spec(spec)
         spec.loader.exec_module(module)
-        self.assertFalse(module.PERSONAL_HISTORY_ENABLED)
+        self.assertTrue(module.PERSONAL_HISTORY_ENABLED)
 
     def test_history_read_and_account_verification_stop_before_discovery_or_network(self):
         transport = MagicMock()

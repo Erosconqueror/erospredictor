@@ -412,6 +412,14 @@ class MainWindow(QMainWindow):
         row_history.addWidget(self.cb_history_limit)
         row_history.addWidget(self.btn_history)
         rec_layout.addLayout(row_history)
+        self.chk_history_service = QCheckBox("Régebbi meccsek (Riot)")
+        self.chk_history_service.setChecked(False)
+        self.chk_history_service.setEnabled(feature_flags.PERSONAL_HISTORY_ENABLED)
+        self.chk_history_service.setToolTip(
+            "Külön engedélyezhető lekérés a Riot saját előzményszerveréről, a LoL-kliens bejelentkezésével. "
+            "A kliens hitelesítési tokenje HTTPS-en a kliens konfigurációjában megadott Riot-szerverhez kerül; "
+            "csak memóriában használjuk, nem mentjük el. A fejlesztői Riot API-kulcsot nem használja. "
+            "Bekapcsolás után az Előzmények frissítése indítja a lekérést.")
         
         row_action = QHBoxLayout()
         self.chk_meta = QCheckBox("Off-Meta hősök szűrése")
@@ -421,6 +429,7 @@ class MainWindow(QMainWindow):
         self.btn_rec.setStyleSheet("QPushButton { font-weight: bold; font-size: 14px; background: qlineargradient(x1:0, y1:0, x2:1, y2:0, stop:0 #1E88E5, stop:1 #1565C0); color: white; border-radius: 6px; } QPushButton:hover { background: #1976D2; }")
         self.btn_rec.clicked.connect(self._on_recommend)
         row_action.addWidget(self.chk_meta)
+        row_action.addWidget(self.chk_history_service)
         row_action.addWidget(self.btn_rec)
         rec_layout.addLayout(row_action)
 
@@ -838,6 +847,7 @@ class MainWindow(QMainWindow):
         self.chk_personal.setEnabled(feature_flags.PERSONAL_HISTORY_ENABLED and not busy and self._personal_history is not None and bool(self._personal_history.games))
         self.btn_history.setEnabled(feature_flags.PERSONAL_HISTORY_ENABLED and (not busy or self._history_loading))
         self.cb_history_limit.setEnabled(feature_flags.PERSONAL_HISTORY_ENABLED and not busy)
+        self.chk_history_service.setEnabled(feature_flags.PERSONAL_HISTORY_ENABLED and not busy)
         if feature_flags.PERSONAL_HISTORY_ENABLED and busy and self._history_loading:
             self.btn_history.setEnabled(True)
 
@@ -938,13 +948,15 @@ class MainWindow(QMainWindow):
         self._reset_dash()
         self._history_loading = True
         count = self.cb_history_limit.currentData()
+        allow_service = self.chk_history_service.isChecked()
         self.lbl_history.setText(f"Betöltés: {count} meccs…")
         self.btn_history.setText("Beolvasás leállítása")
         path = self._lockfile_path
         def read():
             from services.personal_history import LcuHistoryClient
             return LcuHistoryClient(path).read_history(count,
-                cancelled=lambda: QThread.currentThread().isInterruptionRequested())
+                cancelled=lambda: QThread.currentThread().isInterruptionRequested(),
+                **({"allow_client_service": True} if allow_service else {}))
         self._start_task(read, self._history_loaded, self._history_error)
 
     def _history_loaded(self, history):
@@ -954,7 +966,18 @@ class MainWindow(QMainWindow):
         self._personal_history = history if history.games else None
         label = f"{history.name} · {len(history.games)} rangsorolt meccs"
         self.lbl_history.setText(self.lbl_history.fontMetrics().elidedText(label, Qt.TextElideMode.ElideRight, 235))
-        self.lbl_history.setToolTip(label + "\n" + "\n".join(history.warnings))
+        source = "Riot kliensszolgáltatás" if history.source == "riot-client-service" else "helyi LCU"
+        fetched = (f"Forrás: {source}. Most {history.examined_games}/{history.requested_games} különböző meccs érkezett, "
+                   f"ebből {history.ranked_games_seen} rangsorolt. A mentett meccsek száma: {len(history.games)}.")
+        self.lbl_history.setToolTip(label + "\n" + fetched + "\n" + "\n".join(history.warnings))
+        if history.limited and history.source == "lcu":
+            self.lbl_dash_title.setText(
+                f"A helyi kliens {history.examined_games}/{history.requested_games} meccset adott vissza, majd ugyanazokat ismételte.\n"
+                "A régebbi meccsekhez próbáld ki lent a Riot kliensszolgáltatását, majd frissíts.")
+        elif history.limited:
+            self.lbl_dash_title.setText(f"A Riot szolgáltatása {history.examined_games}/{history.requested_games} különböző meccset adott vissza.")
+        elif history.requested_games and not history.ranked_games_seen and not history.games:
+            self.lbl_dash_title.setText(f"A kapott {history.examined_games} meccs között nincs rangsorolt mérkőzés.")
 
     def _history_error(self, message):
         self._personal_history = None

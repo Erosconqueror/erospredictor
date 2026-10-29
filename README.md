@@ -260,14 +260,45 @@ A [League Client API](https://developer.riotgames.com/docs/lol#league-client-api
 Riot által nem támogatott helyi interfész, ezért kliensfrissítés után élő ellenőrzést
 igényelhet. Közvetítés, képernyőkép és profi draft felismerése egy következő fejlesztés.
 
-## Saját meccselőzmények – átmenetileg letiltva
+## Saját meccselőzmények
 
-A match history funkció jelenleg szüneteltetve van. Indításkor és a frissítésgomb
-megnyomására sem indít lekérést; a személyes hősjelölések és a hozzájuk tartozó
-vezérlők le vannak tiltva. A korábbi helyi gyorsítótárat nem törli, a működés és
-tesztjei megmaradtak a későbbi folytatáshoz. Az alkalmazásban a
-`services/feature_flags.py` explicit fejlesztési kapcsolója tiltja a funkciót.
-A helyi kliensből történő draftbeolvasás ettől függetlenül használható.
+Indításkor a program megpróbálja a bejelentkezett saját fiók előzményeit a helyi
+LoL-kliensből beolvasni. Az **Előzmények frissítése** gombbal 100, 500 vagy 1000
+legutóbbi meccset kérhetsz; a gomb betöltés közben megszakítja a beolvasást.
+A statisztika csak Ranked Solo/Duo és Ranked Flex meccsekből számol, legalább
+5 perces mérkőzésekkel. A kiválasztott szám az átnézendő összes játékmódot jelenti,
+nem ennyi rangsorolt meccs garantált megtalálását.
+
+Egyes kliensverziók minden lapozásra ugyanazt az első 20 meccset adják vissza.
+Ezt felismeri és leállítja a program. Látható üzenetben jelzi például a
+**20/1000** ténylegesen elérhető meccset; az előzményfelirat súgójában a forrás,
+az átnézett meccsek, az azok között talált rangsorolt meccsek és a gyorsítótár
+mérete külön olvasható. A 20 friss meccsből kapott nulla rangsorolt találat
+nem állítás a fiók összes korábbi meccséről.
+
+A **Régebbi meccsek (Riot)** kapcsoló alapból ki van
+kapcsolva, nem mentődik el, és bekapcsolása után külön frissítés szükséges.
+Ez külső HTTPS-lekérést használ a telepített kliens saját régiójához beállított
+Riot-szerverre, a bejelentkezési tokennel és a saját fiók PUUID-jával.
+A token csak memóriában marad; más szolgáltatóhoz nem küldi, átirányítást nem követ.
+A fejlesztői Riot API-kulcsot egyik előzményútvonal sem használja. A régebbi
+adatok elérhetősége a Riot szolgáltatásától függ; az 1000 meccs itt is felső korlát.
+A külső útvonal transportja mockokkal tesztelt; az élő, tokenes lekérés még
+nem ellenőrzött. Az integráció mintája a
+[LeagueAkari saját klienses előzménykezelése](https://github.com/LeagueAkari/LeagueAkari/blob/dev/src/shared/http-api-axios-helper/sgp/match-history-query.ts).
+
+A hálózati hibákra korlátozott újrapróbálás van, 429 esetén tiszteletben tartja
+a `Retry-After` várakozást. Az oldalanként mentett, fiókonként elkülönített helyi
+gyorsítótár megmarad megszakításkor; a következő frissítés újrahasználja.
+Más játékosok nevét és fiókazonosítóját nem tárolja. Fiókváltáskor nem keveri
+össze a személyes statisztikákat.
+
+A **Saját hőseim** jelölések legalább 3 meccsnél mutatnak rendszeresen játszott
+hőst, legalább 20 meccs és 55% győzelmi arány felett erősebb keretet kap.
+A lane-párosítás és szinergia mintanagysággal együtt jelenik meg; 20 meccs alatt
+kis mintát jelez. Ezek a jelölések a modellek százalékait és sorrendjét nem módosítják.
+A `services/feature_flags.py` kapcsolójával a teljes funkció továbbra is
+szüneteltethető. A helyi draftbeolvasás ettől függetlenül működik.
 
 ## Opcionális magyarázat az első öt ajánláshoz
 
