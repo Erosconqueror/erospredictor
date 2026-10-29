@@ -17,6 +17,8 @@ from services import feature_flags
 from services.champion_pools import ALL_MINE, TAGS, load_library, member_ids, internal_tags
 from services.ui_preferences import load_ui_preferences, save_ui_preferences
 
+ROLE_SWAP_HINT = "Jobb kattintás a hősön vagy a pozíción: áthelyezés / csere."
+
 class MainWindow(QMainWindow):
     """Main graphical user interface for the application."""
 
@@ -1030,11 +1032,125 @@ class MainWindow(QMainWindow):
         self.chk_pool_only.toggled.connect(self._invalidate_recommendations)
         self.cb_pool.currentTextChanged.connect(self._invalidate_recommendations)
         self.cb_rank.currentTextChanged.connect(self._sync_rank_changed)
+        self._role_menu_widgets = []  # Keep wrappers for the combo's C++-created line edits alive.
         for team, combos in (("blue", self.blue_picks), ("red", self.red_picks)):
+            labels = self.blue_role_labels if team == "blue" else self.red_role_labels
             for role, combo in enumerate(combos):
                 combo.currentTextChanged.connect(lambda _text, t=team, r=role: self._clear_role_slot(t, r))
                 combo.activated.connect(lambda _index, t=team, r=role: self._confirm_manual_role(t, r))
                 combo.lineEdit().editingFinished.connect(lambda t=team, r=role: self._confirm_manual_role(t, r))
+                widgets = (combo, combo.lineEdit(), labels[role])
+                self._role_menu_widgets.extend(widgets)
+                for widget in widgets:
+                    widget.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
+                    widget.customContextMenuRequested.connect(
+                        lambda point, t=team, r=role, w=widget: self._show_pick_role_menu(t, r, w, point))
+                self._clear_role_slot(team, role)
+
+    def _pick_role_menu(self, team, role):
+        combos = self.blue_picks if team == "blue" else self.red_picks
+        ids = tuple(self._get_ids(combos))
+        menu = QMenu(self)
+        title = menu.addAction(f"{combos[role].currentText() or 'Üres pozíció'} · pozíciócsere")
+        title.setEnabled(False)
+        menu.addSeparator()
+        for target, role_name in enumerate(self.roles):
+            occupant = combos[target].currentText().strip()
+            action = menu.addAction(f"{role_name} ↔ {occupant}" if occupant else f"{role_name} · üres")
+            action.setData(target)
+            reason = self._role_swap_block_reason(team, role, target)
+            action.setEnabled(target != role and not reason)
+            action.setToolTip(reason)
+            action.triggered.connect(lambda _checked=False, t=target:
+                                     self._swap_pick_roles(team, role, t, expected_ids=ids))
+        return menu
+
+    def _show_pick_role_menu(self, team, role, widget, point):
+        menu = self._pick_role_menu(team, role)
+        if widget is (self.blue_picks if team == "blue" else self.red_picks)[role].lineEdit():
+            text_menu = widget.createStandardContextMenu()
+            text_menu.setTitle("Szövegszerkesztés")
+            menu.addSeparator()
+            menu.addMenu(text_menu)
+        try:
+            menu.exec(widget.mapToGlobal(point))
+        finally:
+            menu.deleteLater()
+
+    def _role_swap_block_reason(self, team, source, target):
+        if self._busy or self._manual_import_active:
+            return "A folyamatban lévő művelet alatt nem cserélhetők a pozíciók."
+        combos = self.blue_picks if team == "blue" else self.red_picks
+        if self._get_ids([combos[source]])[0] < 0:
+            return "Előbb válassz egy hőst az áthelyezéshez."
+        if combos[target].currentText().strip() and self._get_ids([combos[target]])[0] < 0:
+            return "A célpozíción előbb fejezd be vagy töröld a beírt hősnevet."
+        snapshot = self._sync_last_snapshot if self.chk_follow.isChecked() else None
+        if snapshot is not None:
+            own = snapshot.own_team or self.cb_sync_side.currentData() or self._sync_manual_side
+            fixed = {pick.role for pick in snapshot.picks if pick.role is not None
+                     and (pick.team == own or pick.team == "own")}
+            if team == own and (source in fixed or target in fixed):
+                return "A saját csapat kliens által közölt pozícióját az automatikus követés kezeli."
+        return ""
+
+    def _swap_pick_roles(self, team, source, target, expected_ids=None):
+        """Move or swap two picks, confirming both roles before the next poll."""
+        if team not in ("blue", "red") or any(type(role) is not int or not 0 <= role < 5
+                                              for role in (source, target)) or source == target:
+            return False
+        combos = self.blue_picks if team == "blue" else self.red_picks
+        ids = self._get_ids(combos)
+        reason = self._role_swap_block_reason(team, source, target)
+        if expected_ids is not None and tuple(ids) != expected_ids:
+            reason = "A draft közben megváltozott; nyisd meg újra a pozíciócsere menüt."
+        if reason:
+            self._set_sync_status(reason)
+            return False
+        source_id, target_id = ids[source], ids[target]
+        manual = dict(self._sync_manual_roles)
+        manual[(team, source_id)] = target
+        if target_id >= 0:
+            manual[(team, target_id)] = source
+        snapshot = self._sync_last_snapshot if self.chk_follow.isChecked() else None
+        if snapshot is not None:
+            from services.draft_assignment import assign_draft
+            document, _ = self._load_roles()
+            tier = self.cb_rank.currentText()
+            try:
+                result = assign_draft(snapshot, document,
+                    own_side=snapshot.own_team or self.cb_sync_side.currentData() or self._sync_manual_side,
+                    previous_roles=manual, tier="MIXED" if tier == "ALL RANKS" else tier)
+                expected = (target_id if target_id >= 0 else None, source_id)
+                if (result.values[team][source], result.values[team][target]) != expected:
+                    raise ValueError("A helyi draft eltér a kliensétől; kézi szerkesztéshez kapcsold ki az automatikus követést.")
+            except ValueError as error:
+                self._set_sync_status(f"Pozíciócsere: {error}")
+                return False
+            self._sync_manual_roles = manual
+            self._receive_followed_draft(snapshot, force=True)
+            return True
+        names = {index: name for name, index in self.name_map.items()}
+        blocked = [combos[source].blockSignals(True), combos[target].blockSignals(True)]
+        try:
+            combos[source].setCurrentIndex(combos[source].findText(names.get(target_id, "")))
+            combos[target].setCurrentIndex(combos[target].findText(names[source_id]))
+        finally:
+            combos[source].blockSignals(blocked[0])
+            combos[target].blockSignals(blocked[1])
+        self._sync_manual_roles = manual
+        for role in (source, target):
+            self._clear_role_slot(team, role)
+            if self._get_ids([combos[role]])[0] >= 0:
+                labels = self.blue_role_labels if team == "blue" else self.red_role_labels
+                labels[role].setText(f"{self.roles[role]}:<br><span style='font-size: 10px; color: #BDBDCB;'>kézi</span>")
+                labels[role].setToolTip("Kézzel megerősített szerepkör\n" + ROLE_SWAP_HINT)
+                combos[role].setToolTip(labels[role].toolTip())
+        self._invalidate_recommendations()
+        self._reset_dash()
+        self.lbl_dash_title.setText("A pozíciók megváltoztak; kérj új predikciót vagy ajánlást.")
+        self._set_sync_status("Kézi pozíciócsere elmentve az aktuális draftban.")
+        return True
 
     def _show_options(self):
         self.options_dialog.show()
@@ -1440,8 +1556,8 @@ class MainWindow(QMainWindow):
         labels = self.blue_role_labels if team == "blue" else self.red_role_labels
         combos = self.blue_picks if team == "blue" else self.red_picks
         labels[role].setText(f"{self.roles[role]}:")
-        labels[role].setToolTip("")
-        combos[role].setToolTip("")
+        labels[role].setToolTip(ROLE_SWAP_HINT)
+        combos[role].setToolTip(ROLE_SWAP_HINT)
 
     def _clear_role_metadata(self):
         for team in ("blue", "red"):
@@ -1474,8 +1590,8 @@ class MainWindow(QMainWindow):
             if item.source in ("statistics", "forced"):
                 tooltip += "\nA szám a hős megfigyelt szerepgyakorisága, nem biztos szerepkör vagy győzelmi esély. A kiosztás ütközésmentes csapatfelállást keres."
             labels[item.role].setText(f"{self.roles[item.role]}:<br><span style='font-size: 10px; color: {color};'>{caption}</span>")
-            labels[item.role].setToolTip(tooltip)
-            combos[item.role].setToolTip(tooltip)
+            labels[item.role].setToolTip(tooltip + "\n" + ROLE_SWAP_HINT)
+            combos[item.role].setToolTip(tooltip + "\n" + ROLE_SWAP_HINT)
 
     def _confirm_manual_role(self, team, role):
         if self._sync_applying or not self.chk_follow.isChecked() or self._sync_last_snapshot is None or self._busy:

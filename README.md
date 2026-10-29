@@ -225,6 +225,14 @@ alatti `~61%` a hős megfigyelt szerepgyakorisága; az egérmutatóval a teljes
 jelölés jelenik meg. Kis mintát külön jelez; megfigyelés nélküli szerepet nem
 tölt ki kitalált százalékkal.
 
+Az ellenfél hősén vagy pozíciónevén **jobb kattintással** közvetlenül javíthatod a
+kiosztást: válassz egy célpozíciót. Foglalt helyen a két hős helyet cserél, üres
+helyre áthelyezi a hőst. Mindkét érintett hős szerepköre `kézi` jelölést kap;
+az automatikus követés az aktuális draftban megtartja a javítást. Új draftban
+ismét a statisztikai kiosztást használja. Kézi vagy betöltött draftban mindkét
+csapat szerkeszthető; aktív követésnél a saját csapat közölt klienspozíciói védettek.
+A csere után kérj új ajánlást vagy predikciót.
+
 Adathiánynál vagy bizonytalan oldalnál a **LoL-kliens beolvasása** gomb kézi
 ellenőrző ablaka segít. Az oldal külön a **Beállítások / LoL-kliens** lapon is
 megadható, a követés kikapcsolása nélkül. A kézzel megerősített pozíciót az aktuális draftban
