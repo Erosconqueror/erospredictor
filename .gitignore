@@ -5,6 +5,7 @@ env/
 erospredictor/.model_update.lock
 erospredictor/.model_update/
 erospredictor/.scrape_only/
+erospredictor/.database_maintenance/
 erospredictor/models/.update-*
 erospredictor/data/.update-*
 erospredictor/.update-*/

@@ -25,6 +25,8 @@ A **Bansegéd** a kiválasztott poolhoz és pozícióhoz ad ötleteket. Csak men
 ### 5. Beállítások és opcionális elemzések
 A **Beállítások / előzmények…** ablakban találod az off-meta szűrőt, az egyszerű nyilas hőshatásokat, a többkiosztásos ajánlást, a lockfile-választást és a személyes előzményeket.
 
+A kapcsolók, az aktív saját lista, a kiválasztott rang, a kézzel választott szerepkör és az előzménymélység automatikusan megmaradnak a gépen. Ha bekapcsolva hagyod az automatikus draftot, a következő indításkor is bekapcsol. A hőslisták és a fiókonként mentett meccselőzmények szintén helyi fájlokban maradnak. A régebbi Riot-előzmények külső lekérését mindig a kézi frissítés indítja.
+
 A **Bizonytalan ellenfélpozíciók vizsgálata** külön kapcsolható. Az első öt jelöltet legfeljebb három lehetséges ellenfél-kiosztásban ellenőrzi, majd a legrosszabb vizsgált becslés szerint rendezi őket. A fő százalék továbbra is az aktuális drafté; a külön tartományra kattintva megnyithatók a felállások. Kikapcsolva nincs extra számítás.
 
 A **Miért? – Kijelölt hős + első 5** gomb külön részletes elemzést nyit meg. A nyilakhoz a listában egy hősre kattintva választhatsz fókuszt. A fehér keret a fókuszhős lane-ellenfelét emeli ki.

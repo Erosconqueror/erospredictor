@@ -3,7 +3,7 @@ from PyQt6.QtWidgets import (QMainWindow, QWidget, QVBoxLayout, QHBoxLayout,
                              QCheckBox, QGroupBox, QProgressBar, QFrame, 
                              QButtonGroup, QDialog, QTextEdit, QScrollArea, QCompleter,
                              QFileDialog)
-from PyQt6.QtCore import Qt, QSize, QThread
+from PyQt6.QtCore import Qt, QSize, QThread, QTimer
 from PyQt6.QtGui import QIcon
 from configs import TARGET_TIERS, CHAMPION_COUNT
 from html import escape
@@ -15,6 +15,7 @@ from view.draft_follower import DraftFollower
 from services.client_settings import preferred_lockfile, save_lockfile_path
 from services import feature_flags
 from services.champion_pools import ALL_MINE, TAGS, load_library, member_ids, internal_tags
+from services.ui_preferences import load_ui_preferences, save_ui_preferences
 
 class MainWindow(QMainWindow):
     """Main graphical user interface for the application."""
@@ -48,6 +49,8 @@ class MainWindow(QMainWindow):
         self._role_document = None
         self._role_stamp = None
         self._sync_latest_snapshot = None
+        self._pending_ui_preferences = {}
+        self._preferences_suspended = False
         self._pool_library = load_library()
         try:
             self._pool_mapping = {riot: int(index) for riot, index in json.loads((Path(__file__).resolve().parents[1] / "data/champion_id.json").read_text()).items()}
@@ -62,6 +65,62 @@ class MainWindow(QMainWindow):
         self._draft_follower.snapshot_ready.connect(self._receive_followed_draft)
         self._draft_follower.status_changed.connect(self._set_sync_status)
         self._draft_follower.draft_unavailable.connect(self._draft_unavailable)
+        self._setup_persistent_preferences()
+
+    def _setup_persistent_preferences(self):
+        self._preferences_timer = QTimer(self)
+        self._preferences_timer.setSingleShot(True)
+        self._preferences_timer.setInterval(250)
+        self._preferences_timer.timeout.connect(self._flush_ui_preferences)
+        values = load_ui_preferences()
+        booleans = {"auto_draft": self.chk_follow, "off_meta": self.chk_meta,
+            "simple_effects": self.chk_effects, "robust_roles": self.chk_robust,
+            "history_markers": self.chk_personal, "history_service": self.chk_history_service,
+            "pool_only": self.chk_pool_only}
+        combos = {"history_limit": (self.cb_history_limit, True), "sync_side": (self.cb_sync_side, True),
+                  "active_pool": (self.cb_pool, False), "tier": (self.cb_rank, False)}
+        for key, control in booleans.items():
+            if key in values and (key != "history_markers" or feature_flags.PERSONAL_HISTORY_ENABLED):
+                previous = control.blockSignals(True)
+                control.setChecked(values[key])
+                control.blockSignals(previous)
+            control.toggled.connect(lambda checked, name=key: self._remember_ui_preference(name, checked))
+        for key, (control, use_data) in combos.items():
+            if key in values:
+                index = control.findData(values[key]) if use_data else control.findText(values[key])
+                if index >= 0:
+                    previous = control.blockSignals(True)
+                    control.setCurrentIndex(index)
+                    control.blockSignals(previous)
+            control.currentIndexChanged.connect(lambda _index, name=key, widget=control, data=use_data:
+                self._remember_ui_preference(name, widget.currentData() if data else widget.currentText()))
+        if "preferred_role" in values:
+            self.grp_role.button(values["preferred_role"]).setChecked(True)
+        self.grp_role.idClicked.connect(lambda role: self._remember_ui_preference("preferred_role", role))
+        if self.chk_follow.isChecked():
+            QTimer.singleShot(0, self._resume_saved_follow)
+
+    def _resume_saved_follow(self):
+        if self.isVisible() and not self._preferences_suspended:
+            self._draft_follower.set_enabled(self.chk_follow.isChecked())
+
+    def _remember_ui_preference(self, key, value):
+        if self._preferences_suspended:
+            return
+        self._pending_ui_preferences[key] = value
+        self._preferences_timer.start()
+
+    def _flush_ui_preferences(self):
+        self._preferences_timer.stop()
+        if not self._pending_ui_preferences:
+            return True
+        if not save_ui_preferences(self._pending_ui_preferences):
+            self.options_dialog.preferences_notice.setText("A beállítások most nem menthetők. A következő változtatáskor újrapróbáljuk.")
+            self.options_dialog.preferences_notice.show()
+            return False
+        self._pending_ui_preferences.clear()
+        self.options_dialog.preferences_notice.hide()
+        return True
 
     def _setup_window(self):
         """Configures basic window properties."""
@@ -939,6 +998,7 @@ class MainWindow(QMainWindow):
         self.cb_pool.addItems([ALL_MINE] + sorted(self._pool_library["lists"]))
         self.cb_pool.setCurrentText(selected if selected in [ALL_MINE] + list(self._pool_library["lists"]) else ALL_MINE)
         self.cb_pool.blockSignals(False)
+        self._remember_ui_preference("active_pool", self.cb_pool.currentText())
         self._invalidate_recommendations()
         self._reset_dash()
         self.lbl_dash_title.setText("Hőslisták elmentve. Kérj új ajánlást vagy banötleteket.")
@@ -1101,7 +1161,11 @@ class MainWindow(QMainWindow):
                 return
             self._render_recommendation_rows()
 
-    def _on_refresh_history(self):
+    def _on_startup_history(self):
+        # Restoring a checkbox must never silently forward session credentials.
+        self._on_refresh_history(local_only=True)
+
+    def _on_refresh_history(self, *, local_only=False):
         if not feature_flags.PERSONAL_HISTORY_ENABLED:
             return
         if self._history_loading and self._task is not None:
@@ -1115,7 +1179,7 @@ class MainWindow(QMainWindow):
         self._reset_dash()
         self._history_loading = True
         count = self.cb_history_limit.currentData()
-        allow_service = self.chk_history_service.isChecked()
+        allow_service = self.chk_history_service.isChecked() and not local_only
         self.lbl_history.setText(f"Betöltés: {count} meccs…")
         self.btn_history.setText("Beolvasás leállítása")
         path = self._lockfile_path
@@ -1438,8 +1502,11 @@ class MainWindow(QMainWindow):
         self.lbl_dash_title.setText("A draft frissült.\nKérj ajánlást vagy predikciót.")
 
     def closeEvent(self, event):
+        self._flush_ui_preferences()
+        self._preferences_suspended = True
         self.chk_follow.setChecked(False)
         if self._busy or self._draft_follower.running:
+            self._preferences_suspended = False
             event.ignore()
             self.lbl_dash_title.setText("A folyamat befejezése után bezárható az ablak.")
         else:

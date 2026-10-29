@@ -103,6 +103,7 @@ def run_trainer():
         print("3. Train CUSTOM model (Interactive)")
         print("4. Calibrate ensemble weights")
         print("5. EXIT")
+        print("6. Database maintenance (keep latest 26 patches)")
         
         choice = input("Select: ").strip()
         
@@ -344,6 +345,10 @@ def run_trainer():
         
         elif choice == "5":
             break
+        elif choice == "6":
+            from database_maintenance import main as maintenance
+            if maintenance([]) == 0 and input("Type DELETE to back up and remove the old matches: ").strip() == "DELETE":
+                maintenance(["--apply"])
 
 if __name__ == "__main__":
     try: run_trainer()

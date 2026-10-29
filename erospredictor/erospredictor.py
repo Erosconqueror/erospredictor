@@ -36,7 +36,7 @@ def run_predictor():
     
     view.show()
     if feature_flags.PERSONAL_HISTORY_ENABLED:
-        QTimer.singleShot(0, view._on_refresh_history)
+        QTimer.singleShot(0, view._on_startup_history)
     sys.exit(app.exec())
 
 if __name__ == "__main__":

@@ -195,7 +195,8 @@ listájának sorrendjét a program nem tekinti lane-sorrendnek. Ha az oldal sem 
 Kék/Piros oldalát is. A **Draft kitöltése** gomb az ellenőrzött drafttal felváltja
 a főablak korábbi választásait és tiltásait. A még nem véglegesített hover kimarad.
 
-Az **Automatikus draft** kapcsoló alapból ki van kapcsolva. Bekapcsolva 1,5
+Az **Automatikus draft** kapcsoló első indításkor ki van kapcsolva, a későbbi
+indításokkor a mentett választást tölti vissza. Bekapcsolva 1,5
 másodpercenként, háttérben olvassa a helyi kliens rögzített pickjeit és banjait.
 Változáskor frissíti a mezőket, hőscsere esetén is. Azonos állapotnál megtartja
 a már elkészült ajánlást/predikciót; draftváltozás után a korábbi eredményt törli.
@@ -296,6 +297,20 @@ A listák a `%LOCALAPPDATA%/Erospredictor/champion_pools.json` fájlba kerülnek
 stabil Riot-hősazonosítókkal, így egy katalógus-átrendezés nem cseréli ki a hősöket.
 Csak a **Mentés** írja felül a helyi listát; a Mégse eldobja a szerkesztést.
 
+A kapcsolók és választások automatikusan a
+`%LOCALAPPDATA%/Erospredictor/settings.json` `ui_preferences` részébe mentődnek:
+automatikus draft, off-meta szűrés, egyszerű hőshatások, többkiosztásos elemzés,
+előzményjelölések, régebbi Riot-előzményopció, listaszűrés és aktív lista,
+előzménymélység, sajátoldal-beállítás, rang és kézzel választott szerepkör.
+Változtatás után rövid késleltetéssel, kilépéskor azonnal ment. A követő
+leállítása bezáráskor nem írja felül a bekapcsolt felhasználói választást.
+A lockfile helye és más beállítások ugyanebben a fájlban megmaradnak.
+
+A Játszom/Komfort/Tanulnám jelölések és saját listák helyiek; a betöltött
+személyes meccsek külön, fiókonként a `%LOCALAPPDATA%/Erospredictor/history/`
+könyvtárba kerülnek. Ezekből a játszott hősök listája újra előállítható,
+nem kell ugyanazokat a részletes meccseket újra letölteni.
+
 ## Bansegéd a saját hőspoolhoz
 
 Válassz saját listát és pozíciót, majd kattints a **Bansegéd** gombra.
@@ -345,8 +360,10 @@ az átnézett meccsek, az azok között talált rangsorolt meccsek és a gyorsí
 mérete külön olvasható. A 20 friss meccsből kapott nulla rangsorolt találat
 nem állítás a fiók összes korábbi meccséről.
 
-A **Régebbi meccsek (Riot)** kapcsoló alapból ki van
-kapcsolva, nem mentődik el, és bekapcsolása után külön frissítés szükséges.
+A **Régebbi meccsek (Riot)** kapcsoló első indításkor ki van kapcsolva,
+a választás később megmarad. A külső lekérést mindig a kézi frissítés indítja:
+induláskor a program mentett bekapcsolt állapot mellett is csak a helyi
+előzményvégpontot használja.
 Ez külső HTTPS-lekérést használ a telepített kliens saját régiójához beállított
 Riot-szerverre, a bejelentkezési tokennel és a saját fiók PUUID-jával.
 A token csak memóriában marad; más szolgáltatóhoz nem küldi, átirányítást nem követ.
@@ -430,6 +447,36 @@ normalizálás után. Ez az aktuális predikcióra, ajánlásra és magyarázatr
 nem kap kitalált hozzájárulást; a megmaradt komponensek újranormalizálódnak.
 Mindkét kalibrációs út már a minimumot betartó súlyokat menti. A golden
 adatfájl kézi eseteit a pontozás változtatása nem írja át.
+
+## Fejlesztői adatbázis-karbantartás
+
+A normál alkalmazás nem takarítja az adatbázist. A fejlesztői eszköz a
+legutóbbi **26 ténylegesen megjelent patch** adatait tartja meg, évváltáson át is;
+nem a scrape időpontjából vagy egyszerű sorszámkivonásból számol. A kiadási
+listát a Riot Data Dragon adja. Az ismeretlen vagy hibás patchjelölésű rekordok
+megmaradnak, és a jelentés külön mutatja őket.
+
+```powershell
+# Csak előnézet, alapértelmezés szerint nincs törlés:
+.\maintain_database.bat
+# Kért takarítás, a régi sorokról ellenőrzött mentéssel:
+.\maintain_database.bat --apply
+# Opcionálisan csak egy adatbázis-régió:
+.\maintain_database.bat --apply --region euw1
+```
+
+Pythonból közvetlenül is fut: `python erospredictor/database_maintenance.py`.
+Az interaktív fejlesztői tanítómenü 6. pontjában is elérhető az előnézet és a
+kifejezetten jóváhagyott törlés. Az alapértelmezett megtartás `--keep-patches 26`.
+
+Törlés előtt zárolja a kiválasztott régi sorokat, és visszaolvasható, ellenőrzött
+gzip JSON-mentést készít az `erospredictor/.database_maintenance/backups/`
+könyvtárba. Ezután kizárólag a mentett sorazonosítókat törli egy tranzakcióban.
+Hiba, mentési probléma, eltérő sorszám vagy megszakítás esetén visszavonja a
+nem véglegesített törlést. A mentés tartalmazza az eredeti oszlopokat és adatokat,
+de adatbázisjelszót és Riot-kulcsot nem tartalmaz, Gitből kizárt.
+Üres találatnál nincs törlés és nincs felesleges mentésfájl. A modelleket,
+tanítási folytatási pontokat és személyes helyi listákat nem módosítja.
 
 ## Ellenőrzések
 

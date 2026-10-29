@@ -34,6 +34,8 @@ class DraftSyncWindowTests(unittest.TestCase):
         cls.app = QApplication.instance() or QApplication([])
 
     def setUp(self):
+        from ui_test_support import isolate_preferences
+        isolate_preferences(self)
         from view.main_window import MainWindow
         self.window = MainWindow(["Aatrox", "Xerath", "Braum", "Ahri", "Katarina", "Nautilus"],
                                  {"Aatrox": 0, "Xerath": 1, "Braum": 2, "Ahri": 3, "Katarina": 4, "Nautilus": 5})

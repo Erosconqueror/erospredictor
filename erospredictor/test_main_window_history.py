@@ -22,6 +22,8 @@ class WindowHistoryTests(unittest.TestCase):
         cls.app = QApplication.instance() or QApplication([])
 
     def setUp(self):
+        from ui_test_support import isolate_preferences
+        isolate_preferences(self)
         enabled = patch.object(feature_flags, "PERSONAL_HISTORY_ENABLED", True)
         enabled.start()
         self.addCleanup(enabled.stop)
@@ -153,7 +155,7 @@ class WindowHistoryTests(unittest.TestCase):
             db.return_value.get_champion_names.return_value = {0: "Aatrox"}
             module.run_predictor()
             view.return_value.show.assert_called_once()
-            timer.singleShot.assert_called_once_with(0, view.return_value._on_refresh_history)
+            timer.singleShot.assert_called_once_with(0, view.return_value._on_startup_history)
 
 
 @unittest.skipUnless(importlib.util.find_spec("PyQt6"), "PyQt6 required")
@@ -165,6 +167,8 @@ class DisabledWindowHistoryTests(unittest.TestCase):
         cls.app = QApplication.instance() or QApplication([])
 
     def setUp(self):
+        from ui_test_support import isolate_preferences
+        isolate_preferences(self)
         disabled = patch.object(feature_flags, "PERSONAL_HISTORY_ENABLED", False)
         disabled.start()
         self.addCleanup(disabled.stop)

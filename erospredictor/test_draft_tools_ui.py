@@ -28,6 +28,8 @@ class DraftToolsWindowTests(unittest.TestCase):
         cls.app = QApplication.instance() or QApplication([])
 
     def setUp(self):
+        from ui_test_support import isolate_preferences
+        isolate_preferences(self)
         with patch("view.main_window.load_library", return_value=deepcopy(LIBRARY)):
             self.window = MainWindow(list(NAMES.values()), {name: cid for cid, name in NAMES.items()})
         self.window._pool_mapping = MAPPING

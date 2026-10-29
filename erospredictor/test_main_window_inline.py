@@ -16,6 +16,8 @@ class InlineEffectsWindowTests(unittest.TestCase):
         cls.app = QApplication.instance() or QApplication([])
 
     def setUp(self):
+        from ui_test_support import isolate_preferences
+        isolate_preferences(self)
         from view.main_window import MainWindow
         self.window = MainWindow(["Aatrox", "Ahri", "Akali", "Alistar"],
                                  {"Aatrox": 0, "Ahri": 1, "Akali": 2, "Alistar": 4})
