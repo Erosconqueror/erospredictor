@@ -76,6 +76,7 @@ class MainWindow(QMainWindow):
         self._preferences_timer.setInterval(250)
         self._preferences_timer.timeout.connect(self._flush_ui_preferences)
         values = load_ui_preferences()
+        self._ban_role = values.get("ban_role")
         booleans = {"auto_draft": self.chk_follow, "off_meta": self.chk_meta,
             "simple_effects": self.chk_effects, "robust_roles": self.chk_robust,
             "history_markers": self.chk_personal, "history_service": self.chk_history_service,
@@ -1217,37 +1218,37 @@ class MainWindow(QMainWindow):
         if not valid:
             self.lbl_dash_title.setText(error)
             return
-        tier, role = self.cb_rank.currentText(), self.grp_role.checkedId()
+        tier = self.cb_rank.currentText()
+        role = self._ban_role if self._ban_role is not None else self.grp_role.checkedId()
         div = "MIXED" if tier == "ALL RANKS" else tier
         unavailable = self._get_unavailable()
-        title = f"Bansegéd · {self.cb_pool.currentText()} · {self.roles[role]} · {tier}"
-        self._start_task(lambda: self.controller.recommend_bans(div, role, pool, unavailable),
-                         lambda records: self._display_bans(records, title))
+        title = f"Bansegéd · {self.cb_pool.currentText()} · {tier}"
+        history = self._personal_history if feature_flags.PERSONAL_HISTORY_ENABLED else None
+        path = self._lockfile_path
+        def prepare():
+            personal = history
+            note = "Nincs betöltött saját előzmény. Most csak az általános adatok számítanak; frissítés: Beállítások → Saját előzmények."
+            if personal is not None:
+                from services.personal_history import LcuHistoryClient, DraftImportError
+                try:
+                    LcuHistoryClient(path).verify_account(personal)
+                    note = f"Saját minta: {personal.name} · {len(personal.games)} betöltött rangsorolt meccs. Csak a kiválasztott pool, pozíció és ismert lane-ellenfél számít."
+                except DraftImportError:
+                    personal = None
+                    note = "A betöltött előzmény fiókja most nem ellenőrizhető a helyi kliensben. Csak általános statisztika; frissítsd a saját előzményeket."
+            return self.controller.recommend_ban_lists(div, pool, unavailable, **({"history": personal} if personal is not None else {})), note
+        self._start_task(prepare, lambda result: self._display_bans(result[0], title, role, result[1]))
 
-    def _display_bans(self, records, title):
-        if not records:
-            self.lbl_dash_title.setText("Nincs elég adat a poolodhoz és ehhez a pozícióhoz. A bansegéd párosításonként legalább 20 meccset kér.")
-            return
+    def _display_bans(self, lists, title, role, history_note):
+        from view.ban_advisor_dialog import BanAdvisorDialog
         names = {index: name for name, index in self.name_map.items()}
-        dialog = QDialog(self)
-        dialog.setWindowTitle(title)
-        dialog.resize(730, 580)
-        layout = QVBoxLayout(dialog)
-        text = QTextEdit()
-        text.setReadOnly(True)
-        html = "<p>Ötletek a saját poolod nehéz lane-párosításai és az ellenfelek adatmintánkbeli gyakorisága alapján. A százalék a saját hős teljes meccses győzelmi aránya az adott párosításban; nem ban utáni győzelmi esély.</p>"
-        for index, item in enumerate(records, 1):
-            html += f"<h3>{index}. {escape(names.get(item['id'], str(item['id'])))}</h3>"
-            html += f"<p>Mintabeli pozíciós gyakoriság: {item['sample_frequency']:.1f}%. Adat a pool {item['covered']}/{item['pool_size']} hőséhez.</p><ul>"
-            for pair in item['matchups']:
-                html += f"<li>{escape(names.get(pair['champion'], str(pair['champion'])))}: {pair['winrate']:.1f}% ({pair['matches']} meccs)</li>"
-            html += "</ul>"
-        text.setHtml(html)
-        layout.addWidget(text)
-        close = QPushButton("Bezárás")
-        close.clicked.connect(dialog.accept)
-        layout.addWidget(close)
+        dialog = BanAdvisorDialog(lists, names, self.roles, role, title, history_note, self)
+        dialog.role_changed.connect(self._remember_ban_role)
         dialog.exec()
+
+    def _remember_ban_role(self, role):
+        self._ban_role = role
+        self._remember_ui_preference("ban_role", role)
 
     def _invalidate_recommendations(self, *_):
         self.scroll_recommend.hide()

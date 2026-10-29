@@ -24,7 +24,7 @@ A felső **Draftok** menüben menthetsz (**Ctrl+S**) és betölthetsz (**Ctrl+O*
 4. A **Csak ebből ajánlj** kapcsolóval az aktív listára szűkítheted a jelölteket. Alapból minden megengedett hőst vizsgál.
 5. Kattints az **AJÁNLÁS** gombra. A saját címkék nem módosítják a modell százalékát.
 
-A **Bansegéd** a kiválasztott poolhoz és pozícióhoz ad ötleteket. Csak mentett statisztikát használ, párosításonként legalább 20 meccsből. A részletek megmutatják a pool hőseinek nehéz párosításait és a mintaszámot.
+A **Bansegéd** saját **Pozíció** választójával külön Top, Jungle, Mid, ADC és Support top 5 lista kérhető a kiválasztott poolhoz. A választás megmarad, a főablak fókuszát nem módosítja. Az általános alap párosításonként legalább **20 meccs**. Ha a betöltött saját előzményben ugyanazon lane-ellenfél ellen, azon a pozíción és a pool hőseivel legalább **10 különböző meccsed** van, **50% általános + 50% saját győzelmi arány** számít. Kevés személyes adatnál 100% általános marad. A részletekben mindkét arány, az összesített mutató, a súlyok és mintaszámok is látszanak. Jó saját eredmény csökkenti, rossz növeli az adott ban fontosságát. Új meccseket nem tölt le; a betöltött fiókot a helyi kliensben ellenőrzi, hiba esetén jelzett általános listát ad.
 
 ### 5. Beállítások és opcionális elemzések
 A **Beállítások / előzmények…** ablakban találod az off-meta szűrőt, az egyszerű nyilas hőshatásokat, a többkiosztásos ajánlást, a lockfile-választást és a személyes előzményeket.

@@ -102,11 +102,21 @@ class Controller:
         return assign_draft(DraftSnapshot(picks, own_team=team), load_role_distribution(),
                             previous_roles=previous_roles, tier=div).scenarios
 
-    def recommend_bans(self, div, role, pool, unavailable):
+    def recommend_bans(self, div, role, pool, unavailable, history=None):
         from services.ban_advisor import recommend_bans
         from services.role_distribution import load_role_distribution
         return recommend_bans(self.stat_model, load_role_distribution(), self.db.get_champion_mapping(),
-                              pool, div, role, unavailable)
+                              pool, div, role, unavailable,
+                              history=history if feature_flags.PERSONAL_HISTORY_ENABLED else None)
+
+    def recommend_ban_lists(self, div, pool, unavailable, history=None):
+        """Build all five local lists once; changing the displayed role is free."""
+        from services.ban_advisor import recommend_bans
+        from services.role_distribution import load_role_distribution
+        distributions, mapping = load_role_distribution(), self.db.get_champion_mapping()
+        personal = history if feature_flags.PERSONAL_HISTORY_ENABLED else None
+        return {role: recommend_bans(self.stat_model, distributions, mapping, pool, div, role,
+                                     unavailable, history=personal) for role in range(5)}
 
     def explain_prediction(self, div: str, blue: list, red: list, team: str, r_idx: int, history=None) -> list:
         """Explicit second-stage diagnostics for one picked prediction focus."""

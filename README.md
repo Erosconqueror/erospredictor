@@ -342,17 +342,33 @@ nem kell ugyanazokat a részletes meccseket újra letölteni.
 
 ## Bansegéd a saját hőspoolhoz
 
-Válassz saját listát és pozíciót, majd kattints a **Bansegéd** gombra.
-A mentett lane-párosítások és szerepgyakoriságok alapján legfeljebb öt ötletet
-mutat. Párosításonként legalább **20 meccs** kell; kisebb mintából nem ad
-szélsőséges ajánlást. A saját pool hősei, a már pickelt és bannolt hősök kimaradnak.
-Figyelembe veszi a pool lefedettségét, a kedvezőtlen párosítás erősségét,
-a mintanagyságot és az ellenfél gyakoriságát az adatmintában.
+Válassz saját listát, majd kattints a **Bansegéd** gombra. Az ablak saját
+**Pozíció** választójában külön Top, Jungle, Mid, ADC és Support toplista érhető
+el, legfeljebb öt ötlettel. A szerepkörváltás azonnali, a főablak fókuszát nem
+módosítja; a legutóbb választott banpozíció helyben megmarad.
 
-A részletek a pool adott hősének teljes meccses győzelmi arányát és mintaszámát
-mutatják, nem egy ban feltételezett győzelmi esélyét. A rangsorolási segédpontot
-nem jeleníti meg százalékos predikcióként. Ez a funkció csak helyi statisztikát
-olvas, nincs neurális inferencia, API-hívás vagy automatikus kliensbeli tiltás.
+Az általános alaphoz párosításonként legalább **20 meccs** kell. A pool ismert
+lane-párosításainak győzelmi arányát a `minta / (minta + 20)` megbízhatósági
+súllyal átlagolja. Ha ugyanazon lane-ellenfél ellen, a kiválasztott pozícióban
+és pool hőseivel legalább **10 különböző saját rangsorolt meccsed** van, az
+összesített mutató **50% általános + 50% személyes győzelmi arány**.
+A tíz meccs a pool hősei között összeadódhat, más szerepkörből nem.
+Kisebb személyes mintánál 100% általános adat számít. Jó saját eredmény
+hátrébb sorolhatja vagy elhagyhatja az általános countert; rossz saját eredmény
+új személyes countert hozhat a listába, ha az általános alap is rendelkezésre áll.
+
+A rangsorolás az 50%-hoz viszonyított összesített hátrányt, a megbízhatósággal
+súlyozott pool-lefedettséget és az ellenfél mintabeli pozíciós gyakoriságát is
+figyelembe veszi. A saját pool hősei, a már pickelt és bannolt hősök kimaradnak.
+A részletek külön mutatják az általános, személyes és összesített értéket,
+a súlyokat, mintaszámokat és az egyes poolhősök párosításait. Ezek leíró
+mutatók, nem ban utáni győzelmi esélyek; a modellek predikcióját nem módosítják.
+
+A banlistákhoz a helyi statisztikát és a már betöltött saját előzményeket
+használja, új meccseket nem kér le. Személyes adatok előtt a helyi kliensben
+ellenőrzi a fiókot; eltérő vagy nem ellenőrizhető fióknál jelzett általános
+listára vált. Nincs neurális inferencia, fejlesztői Riot-kulcshasználat vagy
+automatikus kliensbeli tiltás.
 
 ## Opcionális ajánlás több ellenfél-kiosztásra
 

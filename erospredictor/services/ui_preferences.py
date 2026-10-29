@@ -17,7 +17,7 @@ def validated(values):
             result[key] = value
         elif key == "sync_side" and value in (None, "blue", "red"):
             result[key] = value
-        elif key == "preferred_role" and type(value) is int and 0 <= value < 5:
+        elif key in ("preferred_role", "ban_role") and type(value) is int and 0 <= value < 5:
             result[key] = value
         elif key in ("active_pool", "tier") and isinstance(value, str) and 0 < len(value) <= 64 and "\0" not in value:
             result[key] = value

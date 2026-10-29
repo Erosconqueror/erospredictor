@@ -93,13 +93,14 @@ class DraftToolsWindowTests(unittest.TestCase):
 
     def test_ban_advice_uses_selected_pool_without_prediction_or_history_requests(self):
         self.window.cb_pool.setCurrentText("Mid")
-        self.controller.recommend_bans.return_value = []
-        self.window._on_ban_advice()
-        self.wait()
-        self.assertEqual(self.controller.recommend_bans.call_args.args[2], {1})
+        self.controller.recommend_ban_lists.return_value = {role: [] for role in range(5)}
+        with patch("view.ban_advisor_dialog.BanAdvisorDialog.exec", return_value=0):
+            self.window._on_ban_advice()
+            self.wait()
+        self.assertEqual(self.controller.recommend_ban_lists.call_args.args[1], {1})
         self.controller.predict_match.assert_not_called()
         self.controller.recommend_champs.assert_not_called()
-        self.assertIn("20 meccset", self.window.lbl_dash_title.text())
+        self.assertNotIn("history", self.controller.recommend_ban_lists.call_args.kwargs)
 
     def test_unknown_side_can_be_resolved_without_stopping_the_follower(self):
         self.window.chk_follow.blockSignals(True)
