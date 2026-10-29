@@ -275,6 +275,27 @@ A [League Client API](https://developer.riotgames.com/docs/lol#league-client-api
 Riot által nem támogatott helyi interfész, ezért kliensfrissítés után élő ellenőrzést
 igényelhet. Közvetítés, képernyőkép és profi draft felismerése egy következő fejlesztés.
 
+## Draftok mentése és betöltése
+
+A felső **Draftok** menüben a **Draft mentése…** (**Ctrl+S**) és
+**Draft betöltése…** (**Ctrl+O**) műveletek érhetők el. A mentés alapértelmezett
+helye `%LOCALAPPDATA%/Erospredictor/drafts/`; tetszőleges nevű `.json` fájlt
+választhatsz, több külön draftot is tárolhatsz vagy átvihetsz másik gépre.
+
+A fájl mindkét csapat öt pozícióját, mindkét tiltáslista öt helyét, a rangot és
+a fókusz csapatát/pozícióját tárolja. Félkész és üres draft is menthető.
+Stabil Riot-hősazonosítókat használ, így a katalógus belső sorrendjének változása
+nem cseréli ki a hősöket. Meccselőzmény, fiókazonosító, API-kulcs és korábbi
+predikció nem kerül a mentésbe.
+
+Betöltéskor a teljes fájlt ellenőrzi: formátum, verzió, pozíciók, duplikált
+pickek/tiltások, tiltott pickek, rang, fókusz és az aktuális katalógus hősei.
+Hibás vagy ismeretlen hőst tartalmazó fájlnál a jelenlegi draft és eredményei
+megmaradnak. Sikeres betöltéskor kikapcsolja az automatikus követést, eldobja
+a korábbi elemzéseket, és kitölti a mentett draftot. Ezután külön kérj
+ajánlást vagy predikciót. A mentett draft betöltése nem indít API-lekérést
+vagy automatikus modellszámítást.
+
 ## Saját hősök, listák és a főablak
 
 A főablakon a draft, a csapat/pozíció választása, a hőspool és a fő műveletek

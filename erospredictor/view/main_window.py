@@ -2,9 +2,9 @@ from PyQt6.QtWidgets import (QMainWindow, QWidget, QVBoxLayout, QHBoxLayout,
                              QPushButton, QLabel, QComboBox, QApplication, 
                              QCheckBox, QGroupBox, QProgressBar, QFrame, 
                              QButtonGroup, QDialog, QTextEdit, QScrollArea, QCompleter,
-                             QFileDialog)
+                             QFileDialog, QMenu)
 from PyQt6.QtCore import Qt, QSize, QThread, QTimer
-from PyQt6.QtGui import QIcon
+from PyQt6.QtGui import QIcon, QAction, QKeySequence
 from configs import TARGET_TIERS, CHAMPION_COUNT
 from html import escape
 from dataclasses import replace
@@ -158,6 +158,9 @@ class MainWindow(QMainWindow):
             QTabWidget::pane { border: 1px solid #444450; background-color: #20202A; }
             QTabBar::tab { background: #2D2D36; color: #BDBDCB; padding: 10px; }
             QTabBar::tab:selected { background: #3949AB; color: white; }
+            QMenu { background: #292934; color: #E0E0E0; border: 1px solid #555; }
+            QMenu::item { padding: 7px 18px; }
+            QMenu::item:selected { background: #3949AB; }
             QLineEdit, QTableWidget, QTextEdit { background-color: #292934; color: #E0E0E0; border: 1px solid #444450; padding: 5px; }
             QHeaderView::section { background-color: #363645; color: #E0E0E0; padding: 6px; }
             QScrollBar:vertical { background: #20202A; width: 9px; margin: 0; }
@@ -236,6 +239,19 @@ class MainWindow(QMainWindow):
         self.chk_follow.toggled.connect(self._on_follow_toggled)
         layout.addWidget(self.chk_follow)
         layout.addStretch()
+        self.btn_drafts = QPushButton("Draftok")
+        menu = QMenu(self.btn_drafts)
+        self.action_save_draft = QAction("Draft mentése…", self)
+        self.action_save_draft.setShortcut(QKeySequence.StandardKey.Save)
+        self.action_save_draft.triggered.connect(self._on_save_draft)
+        self.action_load_draft = QAction("Draft betöltése…", self)
+        self.action_load_draft.setShortcut(QKeySequence.StandardKey.Open)
+        self.action_load_draft.triggered.connect(self._on_load_draft)
+        for action in (self.action_save_draft, self.action_load_draft):
+            menu.addAction(action)
+            self.addAction(action)
+        self.btn_drafts.setMenu(menu)
+        layout.addWidget(self.btn_drafts)
         self.btn_import = QPushButton("LoL-kliens beolvasása")
         self.btn_import.setToolTip("A már kiválasztott hősök és tiltások beolvasása a saját kliensből.")
         self.btn_import.clicked.connect(self._on_import_draft)
@@ -623,6 +639,70 @@ class MainWindow(QMainWindow):
         self._reset_dash()
         self._clear_effect_badges()
         self.lbl_dash_title.setText("Válassz hősöket a draftoláshoz!")
+
+    def _on_save_draft(self):
+        if self._busy:
+            return
+        from services.saved_drafts import DraftFileError, drafts_directory, make_document, save_draft
+        groups = {"blue": self.blue_picks, "red": self.red_picks,
+                  "blue_bans": self.blue_bans, "red_bans": self.red_bans}
+        if any(combo.currentText().strip() and combo.currentText().strip() not in self.name_map
+               for group in groups.values() for combo in group):
+            self._set_sync_status("Mentés előtt fejezd be a beírt hősnevek kiválasztását.")
+            return
+        tier = self.cb_rank.currentText()
+        try:
+            document = make_document({key: self._get_ids(combos) for key, combos in groups.items()}, self._pool_mapping,
+                "MIXED" if tier == "ALL RANKS" else tier, "blue" if self.grp_team.checkedId() == 0 else "red",
+                self.grp_role.checkedId(), {index: name for name, index in self.name_map.items()})
+        except DraftFileError as error:
+            self._set_sync_status(str(error))
+            return
+        directory = drafts_directory()
+        try:
+            directory.mkdir(parents=True, exist_ok=True)
+        except OSError:
+            directory = Path.home()
+        path, _ = QFileDialog.getSaveFileName(self, "Draft mentése", str(directory / "draft.json"), "Erospredictor draft (*.json)")
+        if not path:
+            return
+        target = Path(path)
+        if not target.suffix:
+            target = target.with_suffix(".json")
+        try:
+            save_draft(target, document)
+        except DraftFileError as error:
+            self._set_sync_status(str(error))
+            return
+        self._set_sync_status(f"Draft elmentve: {target}")
+
+    def _on_load_draft(self):
+        if self._busy:
+            return
+        from services.saved_drafts import DraftFileError, drafts_directory, load_draft
+        directory = drafts_directory()
+        path, _ = QFileDialog.getOpenFileName(self, "Draft betöltése", str(directory), "Erospredictor draft (*.json)")
+        if not path:
+            return
+        try:
+            state = load_draft(path, self._pool_mapping, available_ids=set(self.name_map.values()))
+        except DraftFileError as error:
+            self._set_sync_status(str(error))
+            return
+        # Disable the generation-guarded follower before changing any draft slot.
+        self.chk_follow.setChecked(False)
+        self._draft_follower.set_enabled(False)
+        self._remember_ui_preference("auto_draft", False)
+        self._draft_unavailable()
+        self._clear_role_metadata()
+        self._apply_import(state.values)
+        self.cb_rank.setCurrentText("ALL RANKS" if state.tier == "MIXED" else state.tier)
+        (self.btn_blue if state.team == "blue" else self.btn_red).setChecked(True)
+        self.grp_role.button(state.role).setChecked(True)
+        self._remember_ui_preference("preferred_role", state.role)
+        self.lbl_dash_title.setText("A mentett draft betöltve.\nKérj ajánlást vagy predikciót.")
+        self._set_sync_status(f"Mentett draft: {Path(path).name}. Automatikus követés kikapcsolva.")
+        self.lbl_draft_sync.setToolTip(str(path))
 
     def _on_predict(self):
         """Handles predict button click by coordinating with the controller."""
@@ -1086,6 +1166,9 @@ class MainWindow(QMainWindow):
                     + self.grp_team.buttons() + self.grp_role.buttons())
         for control in controls:
             control.setEnabled(not busy)
+        self.btn_drafts.setEnabled(not busy)
+        self.action_save_draft.setEnabled(not busy)
+        self.action_load_draft.setEnabled(not busy)
         self._update_explain_button()
         self.chk_personal.setEnabled(feature_flags.PERSONAL_HISTORY_ENABLED and not busy and self._personal_history is not None and bool(self._personal_history.games))
         self.btn_history.setEnabled(feature_flags.PERSONAL_HISTORY_ENABLED and (not busy or self._history_loading))

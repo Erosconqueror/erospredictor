@@ -13,6 +13,8 @@ A **LoL-kliens beolvasása** gombbal egyszeri, ellenőrizhető beolvasás indul.
 
 A saját csapat közölt szerepkörei elsőbbséget kapnak. Az ellenfél szerepköreit közösen, ütközésmentesen becsüli. Egy szerepkörhöz a hős megfigyeléseinek legalább 5%-a szükséges. Ettől csak mind az öt látható ellenfélnél térhet el, **⚠ kényszer** jelöléssel. A pozíció alatti százalék szerepgyakoriság, nem győzelmi esély.
 
+A felső **Draftok** menüben menthetsz (**Ctrl+S**) és betölthetsz (**Ctrl+O**) draftokat. A JSON-fájl a pickeket, banokat, rangot és fókuszt tárolja; félkész draft is menthető. Alapmappa: `%LOCALAPPDATA%/Erospredictor/drafts/`. Sikeres betöltéskor az automatikus követés kikapcsol, és új ajánlást vagy predikciót kérhetsz. Hibás fájl esetén a jelenlegi draft megmarad.
+
 ### 4. Hősajánlás és saját listák
 1. Válaszd ki lent az **oldalt** és a **pozíciót**. A vizsgált saját pozíció maradjon üres.
 2. Töltsd ki vagy olvasd be az ismert választásokat és tiltásokat.
