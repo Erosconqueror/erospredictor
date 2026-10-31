@@ -51,7 +51,7 @@ class WeightFloorTests(unittest.TestCase):
         with patch.object(core, "_component_predictions", side_effect=lambda div, b, r: direct if b[0] == 0 else swapped):
             result = core.predict_match("GOLD", blue, red)
             details = core._prediction_components("GOLD", blue, red, "blue")
-        self.assertEqual({item["model"]: item["weight"] for item in details}, {"gnn": .08, "statistical": .92})
+        self.assertEqual({item["model"]: item["weight"] for item in details}, {"gnn": .24, "statistical": .76})
         self.assertAlmostEqual(sum(item["weighted_win_prob"] for item in details), result["blue_win_prob"])
         self.assertAlmostEqual(result["blue_win_prob"] + result["red_win_prob"], 100)
 

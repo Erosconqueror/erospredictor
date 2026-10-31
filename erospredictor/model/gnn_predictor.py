@@ -1,4 +1,6 @@
 import json
+import hashlib
+import math
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
@@ -29,7 +31,94 @@ class LeagueGNN(nn.Module):
         self.bn1 = nn.BatchNorm1d(hid_dim)
         self.bn2 = nn.BatchNorm1d(hid_dim // 2)
 
+        # Neutral defaults leave old checkpoints on the exact unweighted path.
+        self.role_prior_logits = nn.Parameter(torch.zeros(2, 5, 5), requires_grad=False)
+        self.register_buffer("role_prior_eligible", torch.zeros(CHAMPION_COUNT, 5, dtype=torch.bool))
+        self.register_buffer("role_prior_enabled", torch.tensor(False))
+        self._role_priors_active = False
+
+    def initialize_role_priors(self, prior):
+        """Initialize trainable positive message gates from training-only evidence.
+
+        Rows refer to the receiving champion's role, columns to the source's
+        role. Relative percentages are relevance, never signed message weights.
+        Missing/off-meta champion-role endpoints retain a neutral gate of one.
+        """
+        if not isinstance(prior, dict):
+            raise ValueError("A GNN szerepkörprior formátuma érvénytelen.")
+        matrices = []
+        for name in ("counter_weights", "synergy_weights"):
+            try:
+                matrix = torch.as_tensor(prior.get(name), dtype=self.role_prior_logits.dtype)
+            except (TypeError, ValueError, RuntimeError) as error:
+                raise ValueError("A GNN szerepkörprior mátrixa érvénytelen.") from error
+            if matrix.shape != (5, 5) or not torch.isfinite(matrix).all():
+                raise ValueError("A GNN szerepkörprior csak véges, 5×5-ös mátrix lehet.")
+            matrix = matrix.clone()
+            if name == "synergy_weights":
+                matrix.fill_diagonal_(1.0)  # No same-role ally edges; self loops stay neutral.
+            if (matrix <= 0).any():
+                raise ValueError("A GNN üzenetsúlyai csak pozitívak lehetnek.")
+            matrices.append(matrix.clamp(.25, 4.0))
+        eligible = prior.get("eligible")
+        if not isinstance(eligible, dict):
+            raise ValueError("A GNN priorhoz szükséges a nem off-meta hősök szerepkörlistája.")
+        mask = torch.zeros_like(self.role_prior_eligible)
+        for champion, roles in eligible.items():
+            if type(champion) not in (int, str):
+                raise ValueError("Érvénytelen hősazonosító a GNN szerepkörpriorban.")
+            try:
+                cid = int(champion)
+            except (TypeError, ValueError, OverflowError) as error:
+                raise ValueError("Érvénytelen hősazonosító a GNN szerepkörpriorban.") from error
+            if not 0 <= cid < mask.shape[0] or not isinstance(roles, (list, tuple)):
+                raise ValueError("Érvénytelen hős vagy szerepkörlista a GNN priorban.")
+            for role in roles:
+                if type(role) is not int or not 0 <= role < 5:
+                    raise ValueError("Érvénytelen szerepkör a GNN priorban.")
+                mask[cid, role] = True
+        with torch.no_grad():
+            self.role_prior_logits.copy_(torch.stack(matrices).log().to(self.role_prior_logits.device))
+            self.role_prior_eligible.copy_(mask)
+            self.role_prior_enabled.fill_(bool(mask.any()))
+        self._role_priors_active = bool(mask.any())
+        self.role_prior_logits.requires_grad_(self._role_priors_active)
+
+    @property
+    def role_prior_fingerprint(self):
+        document = {"version": 1, "logits": self.role_prior_logits.detach().cpu().tolist(),
+                    "eligible": self.role_prior_eligible.detach().cpu().tolist(),
+                    "enabled": self._role_priors_active}
+        return hashlib.sha256(json.dumps(document, sort_keys=True, separators=(",", ":")).encode()).hexdigest()
+
+    def _load_from_state_dict(self, state_dict, prefix, local_metadata, strict,
+                              missing_keys, unexpected_keys, error_msgs):
+        # Only the new keys are optional for legacy checkpoints. Other missing
+        # weights still raise the usual strict-loading error.
+        defaults = {"role_prior_logits": torch.zeros_like(self.role_prior_logits),
+                    "role_prior_eligible": torch.zeros_like(self.role_prior_eligible),
+                    "role_prior_enabled": torch.tensor(False, device=self.role_prior_enabled.device)}
+        if not any(prefix + name in state_dict for name in defaults):
+            for name, default in defaults.items():
+                state_dict[prefix + name] = default
+        super()._load_from_state_dict(state_dict, prefix, local_metadata, strict,
+                                     missing_keys, unexpected_keys, error_msgs)
+        self._role_priors_active = bool(self.role_prior_enabled.item())
+        self.role_prior_logits.requires_grad_(self._role_priors_active)
+
+    def _edge_weights(self, nodes, edge_idx):
+        source, target = edge_idx
+        roles = nodes[:, 1].remainder(5)
+        same_team = nodes[source, 2] == nodes[target, 2]
+        logits = self.role_prior_logits[same_team.long(), roles[target], roles[source]]
+        weights = logits.clamp(math.log(.25), math.log(4.0)).exp()
+        champions = nodes[:, 0]
+        known = (champions >= 0) & (champions < self.role_prior_eligible.shape[0])
+        eligible = self.role_prior_eligible[champions.clamp(0, self.role_prior_eligible.shape[0] - 1), roles] & known
+        return torch.where(eligible[source] & eligible[target], weights, torch.ones_like(weights))
+
     def forward(self, x, edge_idx, batch):
+        edge_weight = self._edge_weights(x, edge_idx) if self._role_priors_active else None
         c_ids, r_ids, t_ids = x[:, 0], x[:, 1], x[:, 2].float().unsqueeze(1)
         
         # Keep checkpoint indices intact: champion 0 is Aatrox, -1 is an unknown pick.
@@ -37,9 +126,9 @@ class LeagueGNN(nn.Module):
         champion_features = champion_features * (c_ids >= 0).unsqueeze(1)
         x = torch.cat([champion_features, self.role_emb(r_ids), t_ids], dim=1)
         
-        x = F.relu(self.bn1(self.conv1(x, edge_idx)))
+        x = F.relu(self.bn1(self.conv1(x, edge_idx, edge_weight=edge_weight)))
         x = self.dropout(x)
-        x = F.relu(self.conv2(x, edge_idx))
+        x = F.relu(self.conv2(x, edge_idx, edge_weight=edge_weight))
         x = self.dropout(x)
         
         x = global_mean_pool(x, batch)

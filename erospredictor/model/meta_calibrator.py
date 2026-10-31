@@ -3,13 +3,14 @@ import pickle
 import torch
 from typing import Dict, Any
 from configs import CHAMPION_COUNT, ROLE_WEIGHTS
-from services.ensemble_weights import bounded_weights
+from services.ensemble_weights import bounded_weights, ensemble_minimums, enhanced_statistics
 
 class MetaLearningCalibrator:
     """Evaluates individual models against the Golden Dataset and calculates optimal ensemble weights."""
 
     def __init__(self, dataset=None):
         self.dataset = dataset
+        self.enhanced_statistical = False
         self.weights = {
             "gnn": 0.25,
             "roleweighted": 0.25,
@@ -59,6 +60,7 @@ class MetaLearningCalibrator:
 
     def calibrate(self, models: Dict[str, Any], div: str) -> dict:
         """Runs predictions for all models and calculates normalized weights based on accuracy."""
+        self.enhanced_statistical = enhanced_statistics(models.get("statistical"), div)
         if not self.dataset:
             return self.weights
 
@@ -77,7 +79,7 @@ class MetaLearningCalibrator:
             total_score += score
 
         if total_score > 0:
-            self.weights = bounded_weights(scores)
+            self.weights = bounded_weights(scores, minimums=ensemble_minimums(self.enhanced_statistical))
             
         return self.weights
 
@@ -85,14 +87,17 @@ class MetaLearningCalibrator:
         """Saves calculated weights to a file."""
         os.makedirs(os.path.dirname(path), exist_ok=True)
         with open(path, 'wb') as f:
-            pickle.dump(self.weights, f)
+            pickle.dump({"weights": self.weights, "enhanced_statistical": self.enhanced_statistical,
+                         "minimums": ensemble_minimums(self.enhanced_statistical)}, f)
 
     def load(self, path: str):
         """Loads weights from a file."""
         if os.path.exists(path):
             with open(path, 'rb') as f:
                 saved = pickle.load(f)
-                self.weights = bounded_weights(saved.get("weights", saved))
+                self.enhanced_statistical = isinstance(saved, dict) and saved.get("enhanced_statistical") is True
+                self.weights = bounded_weights(saved.get("weights", saved),
+                                               minimums=ensemble_minimums(self.enhanced_statistical))
         return self.weights
     
     def get_weights(self) -> dict:

@@ -187,7 +187,8 @@ class DynamicTrainer:
         
         return {"status": "success", "epochs_trained": epochs_trained, "best_loss": float(self.best_loss)}
     
-    def train_gnn_model(self, graphs: list, name: str, fallback: bool = False) -> dict:
+    def train_gnn_model(self, graphs: list, name: str, fallback: bool = False,
+                        interaction_prior=None, interaction_prior_factory=None) -> dict:
         """Trains GNN model with dynamic hyperparameters and optional fallback generalization."""
         if len(graphs) < 4:
             return {"status": "failed", "reason": "no_data"}
@@ -204,16 +205,27 @@ class DynamicTrainer:
         val_size = max(1, int(len(graphs) * 0.2))
         val_graphs = [graphs[i] for i in order[:val_size]]
         train_graphs = [graphs[i] for i in order[val_size:]]
+        if interaction_prior_factory is not None:
+            if interaction_prior is not None or not callable(interaction_prior_factory):
+                raise ValueError("A GNN priorhoz egy előre számolt érték vagy egy tanítómintára szűrő factory adható meg.")
+            # Labels from validation graphs must not influence prior learning.
+            interaction_prior = interaction_prior_factory([int(index) for index in order[val_size:]])
         loader = GeoDataLoader(train_graphs, batch_size=bs, shuffle=True, num_workers=0,
                               pin_memory=self.device.type == "cuda", drop_last=len(train_graphs) % bs == 1)
         val_loader = GeoDataLoader(val_graphs, batch_size=bs, shuffle=False, num_workers=0)
         
         model = LeagueGNN().to(self.device)
-        opt = optim.Adam(model.parameters(), lr=lr, weight_decay=weight_decay)
+        if interaction_prior is not None:
+            model.initialize_role_priors(interaction_prior)
+        # Frozen neutral priors are excluded, preserving legacy optimizer groups.
+        opt = optim.Adam((parameter for parameter in model.parameters() if parameter.requires_grad),
+                         lr=lr, weight_decay=weight_decay)
         crit = nn.BCELoss(reduction='none')
         
         signature = {"kind": "gnn", "count": len(graphs), "epochs": ep,
                      "batch_size": bs, "lr": lr, "wd": weight_decay, "seed": self.seed}
+        if interaction_prior is not None:
+            signature["interaction_prior"] = model.role_prior_fingerprint
         start, best_state = self._resume(name, fallback, model, opt, signature)
         epochs_trained = start
         for epoch in range(start, ep):
@@ -264,7 +276,14 @@ class DynamicTrainer:
         os.makedirs(self.output_dir, exist_ok=True)
         self._atomic_torch_save(model.state_dict(), os.path.join(self.output_dir, f"{name}.pth"))
         
-        return {"status": "success", "epochs_trained": epochs_trained, "best_loss": float(self.best_loss)}
+        report = {"status": "success", "epochs_trained": epochs_trained, "best_loss": float(self.best_loss)}
+        if interaction_prior is not None:
+            report["interaction_prior"] = signature["interaction_prior"]
+        if interaction_prior_factory is not None:
+            report["interaction_policy"] = "training-only-role-priors-v1"
+        elif interaction_prior is not None:
+            report["interaction_policy"] = "provided-role-priors-v1"
+        return report
 
 class MetaLearningTrainer:
     """Trains meta-model to learn optimal ensemble weights."""
@@ -273,7 +292,7 @@ class MetaLearningTrainer:
         self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     
     def calibrate_ensemble(self, gnn_preds: list, rw_preds: list, ra_preds: list, 
-                          stat_preds: list, ground_truth: list, div: str) -> dict:
+                          stat_preds: list, ground_truth: list, div: str, enhanced_statistical=False) -> dict:
         """Trains logistic regression meta-model to learn ensemble weights."""
         try:
             from sklearn.linear_model import LogisticRegression
@@ -299,8 +318,8 @@ class MetaLearningTrainer:
             "roleaware": float(weights[2]),
             "statistical": float(weights[3])
         }
-        from services.ensemble_weights import bounded_weights
-        weights_dict = bounded_weights(weights_dict)
+        from services.ensemble_weights import bounded_weights, ensemble_minimums
+        weights_dict = bounded_weights(weights_dict, minimums=ensemble_minimums(enhanced_statistical))
         
         os.makedirs("models", exist_ok=True)
         import pickle

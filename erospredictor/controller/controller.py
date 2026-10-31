@@ -89,6 +89,9 @@ class Controller:
         if history is not None and feature_flags.PERSONAL_HISTORY_ENABLED:
             from services.personal_history import annotate_recommendations
             recs = annotate_recommendations(recs, history, self.db.get_champion_mapping(), blue, red, team, r_idx)
+        from services.blind_pick import annotate_blind_risk
+        recs = annotate_blind_risk(recs, getattr(getattr(self, "stat_model", None), "interactions", None),
+                                  div, blue, red, bans, team, r_idx)
         return recs
 
     def draft_scenarios(self, div, blue, red, team, previous_roles=None):

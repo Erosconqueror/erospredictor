@@ -1,4 +1,6 @@
 from configs import DIVISION_WEIGHTS
+import math
+from pathlib import Path
 
 class StatisticalModel:
     """Predicts match outcomes purely based on historical champion matchup winrates and bot lane synergies."""
@@ -6,12 +8,14 @@ class StatisticalModel:
     def __init__(self, db):
         self.db = db
         self.matchups = {}
+        self.interactions = None
         
         self.c_map = self.db.get_champion_mapping()
 
     def build_stats(self): 
         """Builds lookup tables for champion matchup statistics and bot lane synergies based on historical data."""
         self.matchups = {}
+        self.interactions = None
         matches = self.db.get_all_matches()
         if not matches: return
         roles = ["TOP", "JUNGLE", "MIDDLE", "BOTTOM", "UTILITY", "BOT_SYNERGY"]
@@ -61,11 +65,102 @@ class StatisticalModel:
         cached_data = self.db.load_stats_cache(path)
         if cached_data is not None:
             self.matchups = cached_data
+            from services.interaction_statistics import InteractionStatistics, load_interaction_statistics
+            document = load_interaction_statistics(Path(path).with_name("interaction_stats.json"))
+            self.interactions = InteractionStatistics(document, self.c_map)
             return True
         return False
 
     def predict(self, div: str, blue: list, red: list) -> float:
         """Predicts the probability of the blue team winning based on champion matchups and bot lane synergies for the specified division."""
+        if self.uses_interactions(div, blue, red):
+            return self._predict_interactions(div, blue, red)
+        return self._predict_legacy(div, blue, red)
+
+    def has_interactions(self, div):
+        return self.interactions is not None and self.interactions.available(div)
+
+    def uses_interactions(self, div, blue, red):
+        if not self.has_interactions(div):
+            return False
+        data = self.interactions
+        for role, champion in enumerate(blue):
+            if champion < 0 or not data.eligible(div, champion, role):
+                continue
+            for other_role, other in enumerate(red):
+                if other >= 0 and data.eligible(div, other, other_role) and data._edge("counter", div, champion, role, other, other_role):
+                    return True
+        for team in (blue, red):
+            for first in range(5):
+                for second in range(first + 1, 5):
+                    if (team[first] >= 0 and team[second] >= 0
+                            and data.eligible(div, team[first], first) and data.eligible(div, team[second], second)
+                            and data._edge("synergy", div, team[first], first, team[second], second)):
+                        return True
+        return False
+
+    def _predict_interactions(self, div, blue, red):
+        """At most 25 counter + 20 unique same-team synergy cached lookups.
+
+        New interactions exclude off-meta endpoints. Existing lane/bot evidence
+        remains available for those endpoints, adjusted against the same champion
+        baselines, while a completely unsupported draft keeps the old predictor.
+        """
+        data = self.interactions
+        bucket = data._bucket(div)
+        matrices = bucket["matrices"]
+        def base(champion, role):
+            summary = data.baseline(div, champion, role) if champion >= 0 else None
+            return summary["winrate"] / 100 if summary else .5
+        def logit(value):
+            value = max(.001, min(.999, value))
+            return math.log(value / (1 - value))
+        def sigmoid(value):
+            return 1 / (1 + math.exp(-max(-30, min(30, value))))
+        blue_base, red_base = [base(cid, role) for role, cid in enumerate(blue)], [base(cid, role) for role, cid in enumerate(red)]
+        blue_prior = bucket.get("blue_winrate", .5)
+        side = logit(blue_prior)
+        known_blue = [blue_base[role] for role, cid in enumerate(blue) if cid >= 0]
+        known_red = [red_base[role] for role, cid in enumerate(red) if cid >= 0]
+        strength = (sum(known_blue) / len(known_blue) - .5 if known_blue else 0)
+        strength -= sum(known_red) / len(known_red) - .5 if known_red else 0
+        counters, synergies = [], []
+        for role, champion in enumerate(blue):
+            if champion < 0:
+                continue
+            for other_role, other in enumerate(red):
+                if other < 0:
+                    continue
+                row = data._edge("counter", div, champion, role, other, other_role)
+                if row is not None:
+                    counters.append((row[4] / 100, matrices["counter_weights"][role][other_role]))
+                elif role == other_role and not (data.eligible(div, champion, role) and data.eligible(div, other, role)):
+                    old = self.get_lane_matchup(div, champion, other, role)
+                    if old:
+                        expected = sigmoid(logit(blue_base[role]) - logit(red_base[role]) + side)
+                        delta = (old["weighted_winrate"] / 100 - expected) * old["matches"] / (old["matches"] + 20)
+                        counters.append((delta, 1.0))
+        for team, sign, bases in ((blue, 1, blue_base), (red, -1, red_base)):
+            for first in range(5):
+                for second in range(first + 1, 5):
+                    if team[first] < 0 or team[second] < 0:
+                        continue
+                    row = data._edge("synergy", div, team[first], first, team[second], second)
+                    if row is not None:
+                        weight = (matrices["synergy_weights"][first][second] + matrices["synergy_weights"][second][first]) / 2
+                        synergies.append((sign * row[4] / 100, weight))
+                    elif first == 3 and second == 4 and not (data.eligible(div, team[first], first) and data.eligible(div, team[second], second)):
+                        old = self.get_bot_synergy(div, team[first], team[second])
+                        if old:
+                            expected = sigmoid(logit(bases[first]) + logit(bases[second]))
+                            delta = (old["weighted_winrate"] / 100 - expected) * old["matches"] / (old["matches"] + 20)
+                            synergies.append((sign * delta, 1.0))
+        def mean(rows):
+            return sum(value * weight for value, weight in rows) / sum(weight for _, weight in rows) if rows else 0
+        return max(.01, min(.99, blue_prior + strength + mean(counters) + mean(synergies)))
+
+    def _predict_legacy(self, div: str, blue: list, red: list) -> float:
+        """Original six-edge fallback for old artifacts and unsupported drafts."""
         if div == "MIXED":
             total_weighted_prob = 0.0
             total_weight_sum = 0.0

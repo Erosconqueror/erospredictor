@@ -31,6 +31,7 @@ import configs as cfg
 
 APP_DIR = Path(__file__).resolve().parent
 VERSIONS_URL = "https://ddragon.leagueoflegends.com/api/versions.json"
+INTERACTION_POLICY = "interaction-statistics-and-priors-v1"
 
 
 class PermanentUpdateError(RuntimeError):
@@ -457,7 +458,9 @@ def train_outputs(args, patches, db, records, staging, log=print):
     from model.golden_dataset import GoldenDataset
     from model.gnn_predictor import LeagueGNN
     from model.predictor import ChampionPredictor, RoleAwareEmbeddingPredictor
-    from trainer_script import quick_evaluate_model
+    from trainer_script import (quick_evaluate_model, interaction_artifacts, interaction_fingerprint,
+                                make_interaction_prior_factory, GNN_PRIOR_POLICY)
+    from services.ensemble_weights import ensemble_minimums
     progress = getattr(args, "_progress", None)
 
     view = WindowData(db, records, staging)
@@ -465,6 +468,10 @@ def train_outputs(args, patches, db, records, staging, log=print):
     stat.build_stats()
     stat.save_cache()
     Preprocessor(db=view, allowed_patches=patches).gen_meta_champs()
+    meta_data = json.loads((staging / "data/meta_champs.json").read_text(encoding="utf-8"))
+    stat.interactions, interaction_document = interaction_artifacts(records, view.get_champion_mapping(), meta_data,
+        patches=patches, tiers=args.tiers, region=args.region, output_dir=staging / "data",
+        previous_dir=APP_DIR / "data")
     names = db.get_champion_names()
     dataset = GoldenDataset(str(APP_DIR / "data/golden_dataset.json"), {name: cid for cid, name in names.items()})
     if not dataset.prediction_cases or not dataset.recommendation_cases:
@@ -472,7 +479,8 @@ def train_outputs(args, patches, db, records, staging, log=print):
     model_dir = staging / "models"
     model_dir.mkdir(parents=True, exist_ok=True)
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-    reports, outputs = {}, [Path("data/stats_cache.json"), Path("data/meta_champs.json")]
+    reports, outputs = {}, [Path("data/stats_cache.json"), Path("data/meta_champs.json"),
+                           Path("data/interaction_stats.json"), Path("data/blind_profiles.json")]
 
     for tier in list(dict.fromkeys(args.tiers)) + ["MIXED"]:
         subset = records if tier == "MIXED" else [m for m in records if m["tier"] == tier]
@@ -482,9 +490,15 @@ def train_outputs(args, patches, db, records, staging, log=print):
         if args.epochs:
             trainer.config["epochs"] = args.epochs
         models, qa = {"statistical": stat}, {}
+        evidence_id = interaction_fingerprint(interaction_document, tier)
+        model_paths = {}
         for kind in ("roleweighted", "roleaware", "gnn"):
             key = f"{tier}:{kind}"
             cached = progress.completed_unit(key) if progress else None
+            if cached and kind == "gnn" and (cached["report"].get("interaction_policy") != GNN_PRIOR_POLICY
+                    or cached["report"].get("interaction_fingerprint") != evidence_id):
+                log(f"{tier}/gnn: interaction priors changed; rebuilding the saved model.")
+                cached = None
             if cached:
                 log(f"{tier}/{kind}: completed checkpoint verified; skipping training.")
                 model = (LeagueGNN() if kind == "gnn" else ChampionPredictor() if kind == "roleweighted"
@@ -493,12 +507,18 @@ def train_outputs(args, patches, db, records, staging, log=print):
                 model.load_state_dict(torch.load(path, map_location=device, weights_only=True))
                 model.eval()
                 models[kind], qa[kind] = model, cached["report"]
+                model_paths[kind] = path
                 outputs.append(Path("models") / path.name)
                 continue
             log(f"Training {tier} / {kind} on {len(subset)} selected matches...")
             if kind == "gnn":
                 graphs, _ = prep.process_matches_gnn()
-                fit = lambda fallback=False: trainer.train_gnn_model(graphs, f"{tier}_{kind}", fallback=fallback)
+                if len(graphs) != len(subset):
+                    raise PermanentUpdateError("GNN graphs do not align with the frozen training snapshot.")
+                prior_factory = make_interaction_prior_factory(subset, view.get_champion_mapping(), tier,
+                                                               patches=patches, region=args.region)
+                fit = lambda fallback=False: trainer.train_gnn_model(graphs, f"{tier}_{kind}", fallback=fallback,
+                                                                    interaction_prior_factory=prior_factory)
                 model = LeagueGNN().to(device)
             else:
                 process = prep.process_matches if kind == "roleweighted" else prep.process_matches_ra
@@ -516,6 +536,8 @@ def train_outputs(args, patches, db, records, staging, log=print):
                 model.eval()
                 score = quick_evaluate_model(kind, model, tier, dataset, device)
                 qa[kind] = {"golden_pass_fraction": score, "fallback": fallback, **result}
+                if kind == "gnn":
+                    qa[kind].update(interaction_policy=GNN_PRIOR_POLICY, interaction_fingerprint=evidence_id)
                 log(f"{tier}/{kind}: Golden Dataset {score:.1%}, fallback={fallback}")
                 if score >= args.qa_min_pass:
                     break
@@ -524,6 +546,7 @@ def train_outputs(args, patches, db, records, staging, log=print):
             if progress:
                 progress.finish_unit(key, path, qa[kind])
             models[kind] = model
+            model_paths[kind] = path
             outputs.append(Path("models") / path.name)
             prep.clear_cache()
             del fit
@@ -535,15 +558,21 @@ def train_outputs(args, patches, db, records, staging, log=print):
         calibrator = MetaLearningCalibrator(dataset=dataset)
         calibration = model_dir / f"{tier}_meta_calibrator.pkl"
         cached_calibration = progress.completed_unit(f"{tier}:calibration") if progress else None
-        if cached_calibration:
-            weights = cached_calibration["report"]
+        calibration_inputs = {"interaction_policy": INTERACTION_POLICY, "interaction_fingerprint": evidence_id,
+            "model_sha256": {name: file_digest(path) for name, path in model_paths.items()},
+            "minimums": ensemble_minimums(stat.has_interactions(tier))}
+        cached_report = cached_calibration["report"] if cached_calibration else {}
+        if cached_calibration and isinstance(cached_report.get("weights"), dict) and all(
+                cached_report.get(key) == value for key, value in calibration_inputs.items()):
+            weights = cached_report["weights"]
         else:
             weights = calibrator.calibrate(models, tier)
             calibrator.save(str(calibration))
             if progress:
-                progress.finish_unit(f"{tier}:calibration", calibration, weights)
+                progress.finish_unit(f"{tier}:calibration", calibration, dict(calibration_inputs, weights=weights))
         outputs.append(Path("models") / calibration.name)
-        reports[tier] = {"matches": len(subset), "qa": qa, "ensemble_weights": weights}
+        reports[tier] = {"matches": len(subset), "qa": qa, "ensemble_weights": weights,
+                         "interaction_fingerprint": evidence_id, "interaction_policy": INTERACTION_POLICY}
         del models, prep, trainer, calibrator
         gc.collect()
         if device.type == "cuda":
@@ -670,14 +699,14 @@ def _run(args, log=print) -> int:
         if progress.state.get("publication"):
             outputs = [Path(path) for path in progress.state["publication"]]
             checksums = progress.state.get("publication_sha256", {})
-            if all(progress.artifact(path).is_file() and
+            if progress.state.get("publication_policy") == INTERACTION_POLICY and all(progress.artifact(path).is_file() and
                    file_digest(progress.artifact(path)) == checksums.get(path.as_posix()) for path in outputs):
                 log("Resuming the final model publication from its saved checkpoint...")
                 publish_outputs(progress.staging, APP_DIR, outputs)
                 progress.complete()
                 log("Update complete.")
                 return 0
-            log("A végső kimenet sérült; újraépítés a mentett adatokból és modellekből.")
+            log("A végső kimenet vagy tanítási szabály megváltozott; újraépítés a mentett adatokból és modellekből.")
             del progress.state["publication"]
             progress.save()
     plan = {"patches": patches, "region": args.region, "continent": args.continent,
@@ -687,7 +716,7 @@ def _run(args, log=print) -> int:
             "champion_catalog_update": not args.no_catalog,
             "max_players_per_tier": args.players_per_tier,
             "minimum_usable_matches_per_tier": args.min_matches,
-            "stages": ["collect", "filter", "statistics/off-meta/role frequencies", "train 3 models per tier", "QA/retry", "calibrate", "publish"]}
+            "stages": ["collect", "filter", "statistics/off-meta/role frequencies/interaction matrices/blind profiles", "train 3 models per tier", "QA/retry", "calibrate", "publish"]}
     log(json.dumps(plan, indent=2))
     if args.dry_run:
         log("Dry run: database, models and caches were not changed.")
@@ -784,6 +813,7 @@ def _run(args, log=print) -> int:
             scoped_stats["__scope__"] = {"mixed_tiers": args.tiers, "patches": patches}
             stats_path.write_text(json.dumps(scoped_stats, indent=2), encoding="utf-8")
         manifest = {"completed_at": datetime.now(timezone.utc).isoformat(),
+                    "interaction_policy": INTERACTION_POLICY,
                     "plan": plan, "collection": collection, "excluded_records": rejected,
                     "available_matches": available, "champion_count": catalog["count"],
                     "champion_catalog_version": catalog["version"],
@@ -793,6 +823,7 @@ def _run(args, log=print) -> int:
         (staging / "data/update_manifest.json").write_text(json.dumps(manifest, indent=2), encoding="utf-8")
         outputs.append(Path("data/update_manifest.json"))
         progress.state["publication"] = [path.as_posix() for path in outputs]
+        progress.state["publication_policy"] = INTERACTION_POLICY
         progress.state["publication_sha256"] = {path.as_posix(): file_digest(staging / path) for path in outputs}
         progress.save()
         publish_outputs(staging, APP_DIR, outputs)

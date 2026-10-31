@@ -495,10 +495,13 @@ A meglévő kritériumok átlagát veszi; egy közeli hibás helyezés nem null�
 az egész esetet. A tanítás QA-eredménye ezt a részpontot használja.
 A predikciós golden teszt elfogadási tartományai és pontozása változatlanok.
 
-Minden ténylegesen használható ensemble-komponens legalább **8%** súlyt kap
-normalizálás után. Ez az aktuális predikcióra, ajánlásra és magyarázatra is
-érvényes, régi kalibrációs fájlok mellett is. Hiányzó vagy hibás komponens
-nem kap kitalált hozzájárulást; a megmaradt komponensek újranormalizálódnak.
+Ha az új interakciós statisztika az adott draftban ténylegesen használható,
+a GNN és a statisztikai modell minimuma **16–16%**, a RoleWeighted és
+RoleAware minimuma **8–8%**. Régi vagy nem használható új statisztikánál a
+GNN minimuma **24%**, a többié **8%**. Ezek normalizálás utáni alsó korlátok,
+nem rögzített súlyok. Predikciónál, ajánlásnál és magyarázatnál, a két oldal
+összesítése után is érvényesek. Hiányzó vagy hibás komponens nem kap kitalált
+hozzájárulást; a megmaradt komponensek újranormalizálódnak.
 Mindkét kalibrációs út már a minimumot betartó súlyokat menti. A golden
 adatfájl kézi eseteit a pontozás változtatása nem írja át.
 
@@ -531,6 +534,65 @@ nem véglegesített törlést. A mentés tartalmazza az eredeti oszlopokat és a
 de adatbázisjelszót és Riot-kulcsot nem tartalmaz, Gitből kizárt.
 Üres találatnál nincs törlés és nincs felesleges mentésfájl. A modelleket,
 tanítási folytatási pontokat és személyes helyi listákat nem módosítja.
+
+## Blindpick és szerepkör-interakciók
+
+A modelltanítás előtt az adott időszak befagyasztott tanítómeccseiből készül:
+
+- `data/interaction_stats.json`: rangonként és MIXED összesítéssel a hősök
+  pozíciós alaparánya, pickgyakorisága, a counter- és szinergiapárok, valamint
+  két 5×5 szereprelevancia-mátrix. A mátrixok százalékai a sor átlagához
+  viszonyított relatív erősségek; a negatív érték kisebb relevanciát jelent.
+- `data/blind_profiles.json`: alap blindprofilok stabil Riot-azonosítókkal,
+  pickrate-súlyozott counterkitettséggel, lefedettséggel és mintazajjal
+  korrigált matchup-/szinergiaszórással.
+
+A páros hatást mindkét hős alaperejéhez viszonyítja, odds-térbeli várható
+aránnyal; a kék oldal előnyét és az adott pár tényleges oldaleloszlását is
+kezeli. Párosításonként legalább 20 megfigyelés kell; az eltérést
+`n/(n+20)` súllyal csillapítja. A szereprelevancia alapja a mintazajjal
+korrigált interakciók medián abszolút nagysága. Adathiánynál semleges
+kezdősúlyokat használ. A megközelítés forrásai a MachineLoLing szerzőjének
+[blindability](https://machineloling.com/2024/12/17/blindability/),
+[szereprelevancia](https://machineloling.com/2024/08/25/solo-in-lane-match-ups/)
+és [pickrate-súlyozás](https://machineloling.com/2026/04/28/champion-pool-designer/)
+leírásai; a fájlok minden értéke a saját adatbázisból készül.
+
+A statisztikai predikció legfeljebb 25 ellenfél- és a két csapatban összesen
+20 szinergiaélt olvas a cache-ből. Az új éleken csak a nem off-meta
+hős–pozíciók szerepelnek. Az eredeti lane-/botstatisztika megmarad az
+off-meta választásokhoz és a régi adatfájlokhoz. A GNN már korábban is az
+összes páros kapcsolatot használta; most a tanulható, pozitív szerepkörsúlyai
+az adatból számolt relevanciából indulnak. A GNN-prior külön, kizárólag a
+belső tanító részhalmaz eredményeiből készül, a validációs címkék nélkül.
+Régi GNN-checkpoint a korábbi, semleges súlyozású útvonalon tölthető be.
+
+Az ajánlási sorban színes **! Blind** jelzés mutatja a hátralévő counterek
+pickrate-alapú kitettségét. A már választott és bannolt hősök kikerülnek a
+maradék poolból. A már látható counter külön piros figyelmeztetés. Counternek
+a legalább 3 százalékpontos, alaparánnyal/mintazajjal korrigált és
+szereprelevanciával súlyozott hátrány számít. A hátralévő szerepkörök
+közelítő összesítése `1 − ∏(1 − szerepköri_counter_pickrate)`.
+
+Az ismeretlen párosításokat nem tekinti biztonságosnak: hiányos adatnál
+tartományt mutat, 50% alatti szerepköri lefedettségnél szürke figyelmeztetést.
+A felső érték azt is megengedi, hogy az összes ismeretlen párosítás counter
+legyen; nem konfidenciaintervallum. A jelzésre kattintva láthatók a hősök,
+pickrate-ek, hatások és mintaszámok. Ez nem vereségi esély vagy az ellenfél
+tényleges választásának előrejelzése, és a jelenlegi szerepkör-kiosztást követi.
+
+A 2026-10-31-i helyi mérésben 69 270 érvényes, nyolc rangból származó,
+16.17–16.21 közötti meccsnél az interakciós fájl 4,12 MiB, a blindprofil
+0,62 MiB. A teljes statisztikai lépés kb. 0,04 ms-ról 0,10 ms-ra nőtt.
+Ötven jelölt négykomponensű ajánlása, a blindjelzésekkel együtt,
+CPU-n egy szállal kb. 130 ms helyett 170 ms lett. Ez futásidőmérés, nem
+az újratanított modellek minőségének mérése.
+
+Az updater a két új fájlt a modellekkel együtt, ellenőrzött publikálásban
+adja át. Az új bizonyítékhoz nem illő GNN- és kalibrációs folytatási pontokat
+újraszámolja, a megfelelő kész egységeket megtartja. Már futó régi updater
+esetén **Ctrl+C**, majd ugyanannak az update parancsnak az újraindítása kell,
+hogy az új előfeldolgozást használja; a gyűjtés mentett pontjáról folytatódik.
 
 ## Ellenőrzések
 
