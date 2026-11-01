@@ -41,12 +41,15 @@ class UpdateProgress:
         if not isinstance(run_id, str) or len(run_id) != 32 or any(c not in "0123456789abcdef" for c in run_id):
             raise ValueError("Invalid update checkpoint; use --fresh to start a new update.")
         self.staging = self.root / ("run-" + run_id)
+        self.collection_request_changes = ()
 
     @classmethod
-    def open(cls, root, request, resolve_patches, fresh=False, resume_completed=False, upgrade=None):
+    def open(cls, root, request, resolve_patches, fresh=False, resume_completed=False, upgrade=None,
+             collection_only_changes=()):
         root = Path(root)
         path = root / "state.json"
         state = None
+        collection_changes = ()
         if path.is_file() and not fresh:
             try:
                 state = json.loads(path.read_text(encoding="utf-8"))
@@ -56,9 +59,28 @@ class UpdateProgress:
                 raise ValueError("Unsupported update checkpoint; use --fresh for a new update.")
             if state.get("request") != request:
                 if state.get("status") != "complete":
-                    if upgrade is None or not upgrade(state["request"], request):
-                        raise ValueError("An unfinished update uses different parameters. Run with the original parameters, or --fresh.")
-                    if state.get("publication"):
+                    previous_request = state.get("request")
+                    if not isinstance(previous_request, dict):
+                        raise ValueError("Invalid saved update parameters; the checkpoint was kept.")
+                    changes = {key for key in set(previous_request) | set(request)
+                               if previous_request.get(key) != request.get(key)}
+                    collection_only = (bool(changes)
+                        and changes <= set(collection_only_changes)
+                        and state.get("status") in ("running", "initializing")
+                        and isinstance(state.get("training"), dict) and not state["training"]
+                        and not state.get("snapshot_sha256") and not state.get("publication"))
+                    if collection_only:
+                        # Training/QA settings have not been consumed yet. Keep
+                        # the exact catalog, staging directory and pending cursor.
+                        state["request"] = request
+                        history = state.get("collection_request_updates", [])
+                        history = history if isinstance(history, list) else []
+                        collection_changes = tuple(sorted(changes))
+                        state["collection_request_updates"] = (history + [list(collection_changes)])[-10:]
+                    elif upgrade is None or not upgrade(state["request"], request):
+                        details = ", ".join(sorted(changes))
+                        raise ValueError(f"An unfinished update uses different parameters ({details}). Run with the original parameters, or --fresh.")
+                    elif state.get("publication"):
                         # Finish a possibly partial installation with its original,
                         # verified sources before applying a new collection profile.
                         state["request"] = request
@@ -80,6 +102,7 @@ class UpdateProgress:
             result.save()
         else:
             result = cls(root, state)
+        result.collection_request_changes = collection_changes
         if result.state.get("patches") is None:
             result.state["patches"] = resolve_patches()
             result.state["status"] = "running"

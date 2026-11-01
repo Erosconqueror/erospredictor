@@ -690,7 +690,11 @@ def _run(args, log=print) -> int:
             request[name] = file_digest(path) if path.is_file() else None
         progress = UpdateProgress.open(APP_DIR / ".model_update", request,
                     lambda: resolve_patch_window(args), fresh=args.fresh and not args.resume,
-                    resume_completed=args.resume, upgrade=compatible_profile_upgrade)
+                    resume_completed=args.resume, upgrade=compatible_profile_upgrade,
+                    collection_only_changes=("golden_dataset.json", "training_config", "epochs", "qa_min_pass", "min_matches"))
+        if getattr(progress, "collection_request_changes", ()):
+            changed = ", ".join(progress.collection_request_changes)
+            log(f"[Update] Tanítás/QA beállítás frissítve ({changed}); az adatgyűjtés ugyanonnan folytatódik.")
         args._progress = progress
         patches = progress.state["patches"]
         if progress.state["status"] == "complete":
