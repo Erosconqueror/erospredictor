@@ -876,7 +876,8 @@ class MainWindow(QMainWindow):
             if rec.get("blind") is not None:
                 from services.blind_pick import risk_badge
                 caption, tint = risk_badge(rec["blind"])
-                html += f"<br><a href='blind:{cid}' style='font-size: 11px; color: {tint}; text-decoration: none;'>{escape(caption)}</a>"
+                if caption:
+                    html += f"<br><span style='font-size: 11px; color: {tint};'>{escape(caption)}</span>"
             robust = rec.get("robust")
             if robust and robust.get("count", 0) >= 2:
                 warning = " · ⚠ kényszerített pozíció is" if robust.get("forced") else ""
@@ -1005,12 +1006,6 @@ class MainWindow(QMainWindow):
                          lambda result: self._display_optional_effects(*result))
 
     def _on_recommendation_selected(self, link):
-        if link.startswith("blind:") and not self._busy and self._recommendation_context:
-            try:
-                self._show_blind_risk(int(link.split(":", 1)[1]))
-            except ValueError:
-                pass
-            return
         if link.startswith("layouts:") and not self._busy and self._recommendation_context:
             try:
                 self._show_layouts(int(link.split(":", 1)[1]))
@@ -1162,12 +1157,6 @@ class MainWindow(QMainWindow):
         self.lbl_dash_title.setText("A pozíciók megváltoztak; kérj új predikciót vagy ajánlást.")
         self._set_sync_status("Kézi pozíciócsere elmentve az aktuális draftban.")
         return True
-
-    def _show_blind_risk(self, champion_id):
-        from view.blind_pick_dialog import BlindPickDialog
-        record = next((item for item in self._last_recommendations if item["id"] == champion_id), None)
-        if record is not None and record.get("blind") is not None:
-            BlindPickDialog(record, {index: name for name, index in self.name_map.items()}, self.roles, self).exec()
 
     def _show_options(self):
         self.options_dialog.show()

@@ -571,9 +571,12 @@ az adatból számolt relevanciából indulnak. A GNN-prior külön, kizárólag 
 belső tanító részhalmaz eredményeiből készül, a validációs címkék nélkül.
 Régi GNN-checkpoint a korábbi, semleges súlyozású útvonalon tölthető be.
 
-Az ajánlási sorban színes **! Blind** jelzés mutatja a hátralévő counterek
-pickrate-alapú kitettségét. A már választott és bannolt hősök kikerülnek a
-maradék poolból. A már látható counter külön piros figyelmeztetés. Counternek
+Az ajánlási sorban egyszerű, nem kattintható **! Blind** jelzés mutatja a
+hátralévő counterek pickrate-alapú kitettségét. A szöveg színe folyamatosan
+sárgából narancson át pirosba változik a kockázattal. Ha a becslés felső
+értéke is 10% alatti, nincs felirat; teljes ellenfélcsapatnál sincs blindjelzés.
+A már választott és bannolt hősök kikerülnek a maradék poolból. A már
+látható counterhez nem jelenik meg külön figyelmeztetés vagy ablak. Counternek
 a legalább 3 százalékpontos, alaparánnyal/mintazajjal korrigált és
 szereprelevanciával súlyozott hátrány számít. A hátralévő szerepkörök
 közelítő összesítése `1 − ∏(1 − szerepköri_counter_pickrate)`.
@@ -581,8 +584,8 @@ közelítő összesítése `1 − ∏(1 − szerepköri_counter_pickrate)`.
 Az ismeretlen párosításokat nem tekinti biztonságosnak: hiányos adatnál
 tartományt mutat, 50% alatti szerepköri lefedettségnél szürke figyelmeztetést.
 A felső érték azt is megengedi, hogy az összes ismeretlen párosítás counter
-legyen; nem konfidenciaintervallum. A jelzésre kattintva láthatók a hősök,
-pickrate-ek, hatások és mintaszámok. Ez nem vereségi esély vagy az ellenfél
+legyen; nem konfidenciaintervallum. Az alacsony kockázatú jelzés elrejtését
+is ez a felső érték dönti el. Ez nem vereségi esély vagy az ellenfél
 tényleges választásának előrejelzése, és a jelenlegi szerepkör-kiosztást követi.
 
 A 2026-10-31-i helyi mérésben 69 270 érvényes, nyolc rangból származó,

@@ -4,6 +4,7 @@ import math
 
 COUNTER_DROP_PP = 3.0
 MIN_COVERAGE = .5
+MIN_VISIBLE_RISK = 10.0
 
 
 def blind_risk(index, div, champion, role, enemy, unavailable=()):
@@ -128,16 +129,27 @@ def build_blind_profiles(index, tiers, mapping):
 
 
 def risk_badge(evidence):
-    """Caption and foreground only; low data must never look like safe green."""
-    if evidence.get("known_counters"):
-        return "! Látható counter", "#EF5350"
+    """Compact future-pick warning; known opponents never override this badge."""
     status, chance = evidence.get("status"), evidence.get("risk_percent")
     if status == "resolved":
-        return "! Ellenfél már ismert", "#90A4AE"
+        return "", None
     if status != "estimated" or chance is None or not math.isfinite(chance):
         return "! Blind: kevés adat" if status == "insufficient" else "! Blind: nincs adat", "#9E9EAE"
     upper = evidence.get("upper_percent", chance)
     upper = chance if upper is None else max(chance, upper)
-    color = "#66BB6A" if upper < 10 else "#D4C55C" if upper < 25 else "#FFA726" if upper < 50 else "#EF5350"
+    if not math.isfinite(upper):
+        return "! Blind: kevés adat", "#9E9EAE"
+    if upper < MIN_VISIBLE_RISK:
+        return "", None
+    # Foreground-only continuous yellow -> orange -> red scale.
+    anchors = ((10, (212, 197, 92)), (25, (255, 183, 77)), (45, (255, 138, 80)),
+               (65, (239, 83, 80)), (85, (215, 55, 79)), (100, (181, 31, 61)))
+    value = min(100.0, max(MIN_VISIBLE_RISK, upper))
+    for (low, start), (high, end) in zip(anchors, anchors[1:]):
+        if value <= high:
+            fraction = (value - low) / (high - low)
+            rgb = tuple(round(a + fraction * (b - a)) for a, b in zip(start, end))
+            color = "#" + "".join(f"{channel:02X}" for channel in rgb)
+            break
     caption = f"! Blind ~{chance:.0f}–{upper:.0f}%" if upper - chance >= 2 else f"! Blind ~{chance:.0f}%"
     return caption, color

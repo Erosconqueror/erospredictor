@@ -37,7 +37,7 @@ A **Miért?** gomb külön részletes elemzést nyit meg. Ajánlás után a kije
 
 A nyilakhoz az ajánlási listában egy hősre kattintva választhatsz fókuszt. A fehér keret a fókuszhős lane-ellenfelét emeli ki.
 
-Az ajánlás **! Blind** jelzése a még választható counterek pickrate-alapú kitettségét mutatja. A szín a veszély nagyságát jelzi; hiányos adatnál tartomány vagy szürke figyelmeztetés látszik. A már látható counter külön piros jelzést kap. Kattints a jelzésre a hősök, mintaszámok és lefedettség megtekintéséhez. Ez a jelenlegi pozíciókiosztásra számolt statisztikai közelítés, nem vereségi esély vagy az ellenfél döntésének előrejelzése. Az új adatfájlok a tanítás előtt készülnek; régi fájloknál „nincs adat” jelenik meg.
+Az ajánlás **! Blind** jelzése a még választható counterek pickrate-alapú kitettségét mutatja. A szín finoman, sárgából narancson át pirosba változik a veszéllyel. Ha a becslés felső értéke is 10% alatti, nem jelenik meg felirat; teljes ellenfélcsapatnál sincs blindjelzés. Nincs „Látható counter” felirat vagy külön ablak. Hiányos adatnál tartomány vagy szürke figyelmeztetés látszik. Ez a jelenlegi pozíciókiosztásra számolt statisztikai közelítés, nem vereségi esély vagy az ellenfél döntésének előrejelzése. Régi adatfájloknál „nincs adat” jelenik meg.
 
 ### 6. Predikció
 1. Válaszd ki az összes maradék választott hőst a középső legördülő menükből.
