@@ -25,6 +25,13 @@ def collection_steps(targets):
     return {tier: max(1, (goal + divisor // 2) // divisor) for tier, goal in targets.items()}
 
 
+def collection_order(tiers, priority=()):
+    preferred = list(dict.fromkeys(priority))
+    if any(tier not in tiers for tier in preferred):
+        raise ValueError("--priority-tier must name a selected tier")
+    return preferred + [tier for tier in tiers if tier not in preferred]
+
+
 def balanced_snapshot(records, targets, patches, seed=42):
     """Cap large historical tiers; include every available patch where possible."""
     groups = defaultdict(list)

@@ -22,8 +22,8 @@ class ProfileTests(unittest.TestCase):
         targets = rank_targets(args, configs.DATASET_TARGETS)
         self.assertEqual(targets, {"CHALLENGER": 2000, "GRANDMASTER": 3000, "MASTER": 5000,
             "DIAMOND": 8000, "EMERALD": 12000, "PLATINUM": 16000, "GOLD": 22000,
-            "SILVER": 20000, "BRONZE": 14000, "IRON": 5000})
-        self.assertEqual(sum(targets.values()), 107000)
+            "SILVER": 18000, "BRONZE": 7000, "IRON": 5000})
+        self.assertEqual(sum(targets.values()), 98000)
         self.assertEqual(args.last_patches, 5)
         self.assertIsNone(args.players_per_tier)
         self.assertIsNone(args.pages_per_division)

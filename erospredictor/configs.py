@@ -65,7 +65,7 @@ DB_PORT = _os.environ.get("DB_PORT", DB_PORT)
 DATASET_TARGETS = {
     "CHALLENGER": 2000, "GRANDMASTER": 3000, "MASTER": 5000,
     "DIAMOND": 8000, "EMERALD": 12000, "PLATINUM": 16000,
-    "GOLD": 22000, "SILVER": 20000, "BRONZE": 14000, "IRON": 5000,
+    "GOLD": 22000, "SILVER": 18000, "BRONZE": 7000, "IRON": 5000,
 }
 
 
@@ -91,10 +91,8 @@ def _load_runtime_config():
         version = runtime.get("CHAMPION_CATALOG_VERSION")
         if isinstance(version, str):
             globals()["CHAMPION_CATALOG_VERSION"] = version
-        targets = runtime.get("DATASET_TARGETS")
-        if (isinstance(targets, dict) and set(targets) == set(DATASET_TARGETS)
-                and all(isinstance(value, int) and not isinstance(value, bool) and value > 0 for value in targets.values())):
-            globals()["DATASET_TARGETS"] = targets
+        # Published targets describe the previous training snapshot. They must
+        # not overwrite the collection goals configured for the next update.
     except (OSError, ValueError, TypeError):
         pass
 

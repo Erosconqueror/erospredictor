@@ -93,8 +93,8 @@ legalább 20 000 meccset kap. Ez szándékosan választott mintavételi profil.
 | Emerald | 12 000 |
 | Platinum | 16 000 |
 | Gold | 22 000 |
-| Silver | 20 000 |
-| Bronze | 14 000 |
+| Silver | 18 000 |
+| Bronze | 7 000 |
 | Iron | 5 000 |
 
 A már adatbázisban lévő, megfelelő régiójú, rangú és patchű, érvényes meccsek
@@ -108,6 +108,10 @@ közel egyenletesen mintáz, majd a meglévő frissességi súlyokat alkalmazza.
 A profil a `configs.py` `DATASET_TARGETS` beállításában szerepel. Egyedi cél például
 `--tier-target GOLD=24000`; ismételhető több ranghoz. A külön megadott
 `--matches-per-tier 2000` a régebbi, egységes újmeccs-kvótás működést választja.
+Egy folyamatban lévő gyűjtésben a `--priority-tier IRON` előreveszi az Iront,
+majd a többi kiválasztott ranggal folytatja. A sorrend az adott futásban
+megmarad, a gyűjtési pozíciók és a már mentett meccsek megőrzésével.
+A régi publikált modell meccskvótái nem írják felül az új alapbeállításokat.
 A `--players-per-tier`, `--pages-per-division`, `--matches-per-player`, `--region`
 és `--continent` kapcsolók is használhatók. Kézi keresési korlát vagy `--skip-scrape`
 mellett a hiányos profil beavatkozást kér, és megtartja az adatokat.

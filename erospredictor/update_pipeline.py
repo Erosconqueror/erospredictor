@@ -22,7 +22,7 @@ import tempfile
 from urllib.request import urlopen
 from services.update_progress import UpdateProgress, atomic_json, file_digest
 from services.update_retry import http_status, retry_delay, wait_for_retry
-from services.dataset_profile import rank_targets, balanced_snapshot, collection_steps
+from services.dataset_profile import rank_targets, balanced_snapshot, collection_steps, collection_order
 from services.catalog_update import CatalogData, prepare_catalog, champion_dimensions
 from services.role_distribution import build_role_distribution, load_role_distribution, merge_role_distributions
 
@@ -167,6 +167,8 @@ def parser() -> argparse.ArgumentParser:
     cli.add_argument("--continent", choices=("americas", "asia", "europe", "sea"), default=cfg.CONTINENT)
     cli.add_argument("--matches-per-tier", type=positive_int, help="Optional flat NEW-match quota instead of the default population profile")
     cli.add_argument("--tier-target", action="append", default=[], help="Override a population target, e.g. GOLD=22000")
+    cli.add_argument("--priority-tier", action="append", type=str.upper, choices=cfg.TARGET_TIERS, default=[],
+                     help="Collect this selected tier first; repeatable, remembered within the current run")
     cli.add_argument("--players-per-tier", type=positive_int, help="Optional player cap; default searches until the tier target")
     cli.add_argument("--pages-per-division", type=positive_int, help="Optional page cap; default follows all available pages")
     cli.add_argument("--no-catalog", action="store_true", help="Keep the installed champion catalog (for restricted/offline model updates)")
@@ -229,7 +231,8 @@ def collect_matches(args, patches, riot, db, log=print, progress=None, *, target
             progress.state["adopt_existing"] = False
         context["counts_loaded"] = True
         save()
-    for tier in args.tiers:
+    priority = getattr(args, "priority_tier", []) or (progress.state.get("collection_priority", []) if progress else [])
+    for tier in collection_order(args.tiers, priority):
         state = states.setdefault(tier, _collection_state())
         if population and state["done"] and state.get("window_matches", 0) < targets[tier]:
             if preserve_cursor:
@@ -591,7 +594,7 @@ def _run_scrape_only(args, targets, log=print):
     else:
         request = {key: value for key, value in vars(args).items()
                    if not key.startswith("_") and key not in
-                   {"dry_run", "fresh", "resume", "epochs", "qa_min_pass", "min_matches"}}
+                   {"dry_run", "fresh", "resume", "epochs", "qa_min_pass", "min_matches", "priority_tier"}}
         if args.patches:
             request["patches"] = sorted({normalize_patch(value) for value in args.patches})
         if args.end_patch:
@@ -600,7 +603,8 @@ def _run_scrape_only(args, targets, log=print):
         request["database"] = {key: getattr(cfg, key, None) for key in ("DB_NAME", "DB_HOST", "DB_PORT")}
         progress = UpdateProgress.open(APP_DIR / ".scrape_only", request,
             lambda: resolve_patch_window(args), fresh=args.fresh and not args.resume,
-            resume_completed=args.resume)
+            resume_completed=args.resume, collection_only_changes=("targets", "tier_target"))
+        _save_collection_priority(args, progress, log)
         patches = progress.state["patches"]
         if progress.state["status"] == "complete":
             log("The saved scrape-only run already completed successfully.")
@@ -657,12 +661,23 @@ def _run_scrape_only(args, targets, log=print):
         db.close()
 
 
+def _save_collection_priority(args, progress, log):
+    priority = list(dict.fromkeys(getattr(args, "priority_tier", [])))
+    if priority and priority != progress.state.get("collection_priority"):
+        progress.state["collection_priority"] = priority
+        progress.save()
+    order = collection_order(args.tiers, priority or progress.state.get("collection_priority", []))
+    if priority or progress.state.get("collection_priority"):
+        log(f"[Update] Gyűjtési sorrend: {', '.join(order)}")
+
+
 def _run(args, log=print) -> int:
     if args.matches_per_player > 100:
         raise ValueError("--matches-per-player cannot exceed Riot's 100-record limit.")
     if args.patches and args.end_patch:
         raise ValueError("Use --end-patch with --last-patches, not with explicit --patches.")
     args.tiers = list(dict.fromkeys(args.tiers))
+    collection_order(args.tiers, getattr(args, "priority_tier", []))
     targets = rank_targets(args, cfg.DATASET_TARGETS)
     if args.scrape_only:
         return _run_scrape_only(args, targets, log)
@@ -677,7 +692,7 @@ def _run(args, log=print) -> int:
         patches = resolve_patch_window(args)
     else:
         request = {key: value for key, value in vars(args).items()
-                   if not key.startswith("_") and key not in {"dry_run", "fresh", "resume", "scrape_only"}}
+                   if not key.startswith("_") and key not in {"dry_run", "fresh", "resume", "scrape_only", "priority_tier"}}
         if args.patches:
             request["patches"] = sorted({normalize_patch(patch) for patch in args.patches})
         if args.end_patch:
@@ -691,10 +706,11 @@ def _run(args, log=print) -> int:
         progress = UpdateProgress.open(APP_DIR / ".model_update", request,
                     lambda: resolve_patch_window(args), fresh=args.fresh and not args.resume,
                     resume_completed=args.resume, upgrade=compatible_profile_upgrade,
-                    collection_only_changes=("golden_dataset.json", "training_config", "epochs", "qa_min_pass", "min_matches"))
+                    collection_only_changes=("golden_dataset.json", "training_config", "epochs", "qa_min_pass", "min_matches", "targets", "tier_target"))
         if getattr(progress, "collection_request_changes", ()):
             changed = ", ".join(progress.collection_request_changes)
-            log(f"[Update] Tanítás/QA beállítás frissítve ({changed}); az adatgyűjtés ugyanonnan folytatódik.")
+            log(f"[Update] Beállítás frissítve ({changed}); az adatgyűjtés ugyanonnan folytatódik.")
+        _save_collection_priority(args, progress, log)
         args._progress = progress
         patches = progress.state["patches"]
         if progress.state["status"] == "complete":
