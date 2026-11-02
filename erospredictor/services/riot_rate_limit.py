@@ -45,12 +45,23 @@ def _windows(value):
     return windows
 
 
+def _limits(value):
+    """Accept a complete positive server policy; malformed headers keep the old one."""
+    if not isinstance(value, str) or not value.strip():
+        return None
+    parts = value.split(",")
+    result = _windows(value)
+    if len(result) != len(parts) or any(count <= 0 for count in result.values()):
+        return None
+    return result
+
+
 class RiotRateLimiter:
     """Duck-types RiotWatcher's RateLimiter and can use fake time in tests.
 
     App limits are shared by every endpoint using the same key and route. The
-    supplied personal-key defaults are conservative even before server headers
-    arrive. Header counts account for calls already made elsewhere with the key.
+    personal-key defaults apply until valid server headers replace them, including
+    higher budgets and different windows. Header counts include other key users.
     """
 
     def __init__(self, clock=None, sleeper=None, logger=print, wall_clock=None,
@@ -135,10 +146,15 @@ class RiotRateLimiter:
             now = self.clock()
             app, method = self._states(region, endpoint_name, method_name)
             for state, prefix in ((app, "x-app-rate-limit"), (method, "x-method-rate-limit")):
-                for duration, limit in _windows(headers.get(prefix)).items():
-                    if limit > 0:
-                        # Retain conservative defaults when a larger header limit arrives.
-                        state["limits"][duration] = min(limit, state["limits"].get(duration, limit))
+                advertised = _limits(headers.get(prefix))
+                if advertised is not None:
+                    if state is app and self.logger and (advertised != state["limits"] or not state.get("announced")):
+                        budget = ", ".join(f"{limit} kérés/{duration:g} s" for duration, limit in advertised.items())
+                        self.logger(f"[Riot API] {region}: szerver által engedett keret: {budget}")
+                        state["announced"] = True
+                    state["limits"] = advertised
+                    state["observed"] = {duration: value for duration, value in state["observed"].items()
+                                         if duration in advertised}
                 for duration, count in _windows(headers.get(prefix + "-count")).items():
                     if duration not in state["limits"]:
                         continue

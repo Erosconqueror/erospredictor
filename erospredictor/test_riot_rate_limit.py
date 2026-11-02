@@ -161,6 +161,30 @@ class LimiterTests(unittest.TestCase):
         self.limiter.acquire("europe", "match", "fetch")
         self.assertEqual(self.time.now, 1)
 
+    def test_higher_application_headers_replace_bootstrap_caps_and_windows(self):
+        self.limiter.record_response("europe", "match", "fetch", 200, {
+            "X-App-Rate-Limit": "500:10,30000:600", "X-Method-Rate-Limit": "2000:10"})
+        for _ in range(500):
+            self.limiter.acquire("europe", "match", "fetch")
+        self.assertEqual(self.time.now, 0)
+        self.limiter.acquire("europe", "match", "fetch")
+        self.assertEqual(self.time.now, 10)
+
+    def test_larger_method_budget_cannot_override_real_application_limit(self):
+        self.limiter.record_response("europe", "match", "fetch", 200, {
+            "X-App-Rate-Limit": "20:1,100:120", "X-Method-Rate-Limit": "2000:10"})
+        for _ in range(101):
+            self.limiter.acquire("europe", "match", "fetch")
+        self.assertEqual(self.time.now, 120)
+
+    def test_lower_new_server_budget_takes_effect_immediately(self):
+        self.limiter.record_response("europe", "match", "fetch", 200, {"X-App-Rate-Limit": "500:10"})
+        for _ in range(5):
+            self.limiter.acquire("europe", "match", "fetch")
+        self.limiter.record_response("europe", "match", "fetch", 200, {"X-App-Rate-Limit": "5:10"})
+        self.limiter.acquire("europe", "account", "fetch")
+        self.assertEqual(self.time.now, 10)
+
     def test_same_key_instances_share_gate_without_plaintext_registry_keys(self):
         self.assertIs(shared_limiter("test-application-one"), shared_limiter("test-application-one"))
         self.assertIsNot(shared_limiter("test-application-one"), shared_limiter("test-application-two"))

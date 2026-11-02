@@ -182,8 +182,12 @@ a tanításhoz pedig új, rögzített pillanatképet készít. A korábbi futás
 mentett meccsei megmaradnak.
 
 A Riot-kérések közös ütemezést kapnak: alapból legfeljebb 20 kérés/másodperc és
-100 kérés/120 másodperc egy kulcs és route alatt. A szerver által közölt alkalmazás-
-és metóduskereteket, valamint számlálókat is figyeli. A magasabb metóduslimit nem
+100 kérés/120 másodperc egy kulcs és route alatt, csak az első érvényes
+szerverfejlécig. Ezután a szerver teljes alkalmazáskeretét használja, magasabb
+limitet és eltérő időablakokat is elfogadva; a régi alapkorlát nem fogja vissza.
+A tényleges alkalmazáskeretet kiírja a naplóba. Hibás vagy hiányzó fejlécnél
+megtartja az utolsó ismert keretet. A metóduskereteket és a számlálókat is
+figyeli. A magasabb metóduslimit nem
 növeli meg az alkalmazás teljes keretét. A 429-es válasznál kivárja a teljes
 `Retry-After` időt, majd ugyanazt a kérést újrapróbálja. Az egyindításos frissítő
 kapcsolatbontás, timeout és átmeneti szerverhiba (pl. 502/503/504) esetén is
