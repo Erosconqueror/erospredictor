@@ -80,6 +80,54 @@ class StatisticalModel:
     def has_interactions(self, div):
         return self.interactions is not None and self.interactions.available(div)
 
+    def has_strong_evidence(self, div, blue, red):
+        """Every known main edge needs 100 games, other applicable edges need 20.
+
+        Empty slots are not edges. Missing eligible pair evidence fails the gate;
+        off-meta edges follow the actual legacy lane/bot fallback, not new edges.
+        At least one concrete lane-opponent pairing is required.
+        """
+        from services.ensemble_weights import MAIN_EDGE_MIN_MATCHES, OTHER_EDGE_MIN_MATCHES
+        enhanced = self.uses_interactions(div, blue, red)
+        data = self.interactions
+        main_edges = 0
+        for role, champion in enumerate(blue):
+            if champion < 0:
+                continue
+            for other_role, other in enumerate(red):
+                if other < 0:
+                    continue
+                if enhanced and data.eligible(div, champion, role) and data.eligible(div, other, other_role):
+                    row = data._edge("counter", div, champion, role, other, other_role)
+                    count = row[0] if row is not None else 0
+                elif role == other_role:
+                    summary = self.get_lane_matchup(div, champion, other, role)
+                    count = summary["matches"] if summary else 0
+                else:
+                    continue
+                required = MAIN_EDGE_MIN_MATCHES if role == other_role else OTHER_EDGE_MIN_MATCHES
+                if count < required:
+                    return False
+                main_edges += role == other_role
+        if not main_edges:
+            return False
+        for team in (blue, red):
+            for first in range(5):
+                for second in range(first + 1, 5):
+                    if team[first] < 0 or team[second] < 0:
+                        continue
+                    if enhanced and data.eligible(div, team[first], first) and data.eligible(div, team[second], second):
+                        row = data._edge("synergy", div, team[first], first, team[second], second)
+                        count = row[0] if row is not None else 0
+                    elif first == 3 and second == 4:
+                        summary = self.get_bot_synergy(div, team[first], team[second])
+                        count = summary["matches"] if summary else 0
+                    else:
+                        continue
+                    if count < OTHER_EDGE_MIN_MATCHES:
+                        return False
+        return True
+
     def uses_interactions(self, div, blue, red):
         if not self.has_interactions(div):
             return False

@@ -515,8 +515,14 @@ A meglévő kritériumok átlagát veszi; egy közeli hibás helyezés nem null�
 az egész esetet. A tanítás QA-eredménye ezt a részpontot használja.
 A predikciós golden teszt elfogadási tartományai és pontozása változatlanok.
 
-A sikeresen becslést adó statisztikai modell minimuma **30%**, a régi
-lane-alapú és az új interakciós útvonalon egyaránt. Ha az új interakciós
+A statisztikai modell alapminimuma **16%**. Az adott draftban **30%-ra** emelkedik,
+ha minden ismert lane–ellenfél fő élhez legalább **100 mérkőzés**, és minden
+további alkalmazható ellenfél- vagy szinergiaélhez legalább **20 mérkőzés** van.
+Egyetlen hiányzó vagy küszöb alatti alkalmazható él is megtartja a 16%-os
+minimumot. Az üres pozíciók nem élek; legalább egy konkrét lane–ellenfél pár
+szükséges a 30%-hoz. A kiválasztott rang adatait vizsgálja; a régi lane-/bot
+útvonalon az ott használt párokat ellenőrzi. A kalibráció 16%-os alapminimumot
+ment, a 30%-os minimumot futás közben, jelöltenként ellenőrzi. Ha az új interakciós
 statisztika az adott draftban ténylegesen használható, a GNN minimuma **16%**,
 egyébként **24%**. A RoleWeighted és RoleAware minimuma **8–8%**.
 Ezek normalizálás utáni alsó korlátok,

@@ -10,13 +10,14 @@ from services.ensemble_weights import bounded_weights, ensemble_minimums, MODEL_
 class InteractionWeightTests(unittest.TestCase):
     def test_both_policies_hold_after_normalization_with_extreme_raw_weights(self):
         for enhanced in (False, True):
-            floors = ensemble_minimums(enhanced)
-            self.assertEqual(floors["statistical"], .30)
-            for dominant in MODEL_NAMES:
-                weights = bounded_weights({name: int(name == dominant) for name in MODEL_NAMES}, minimums=floors)
-                self.assertAlmostEqual(sum(weights.values()), 1)
-                for name in MODEL_NAMES:
-                    self.assertGreaterEqual(weights[name], floors[name])
+            for strong in (False, True):
+                floors = ensemble_minimums(enhanced, strong)
+                self.assertEqual(floors["statistical"], .30 if strong else .16)
+                for dominant in MODEL_NAMES:
+                    weights = bounded_weights({name: int(name == dominant) for name in MODEL_NAMES}, minimums=floors)
+                    self.assertAlmostEqual(sum(weights.values()), 1)
+                    for name in MODEL_NAMES:
+                        self.assertGreaterEqual(weights[name], floors[name])
 
     def test_absent_models_are_never_added_and_infeasible_floor_maps_fail(self):
         self.assertEqual(bounded_weights({}, ["gnn"], minimums=ensemble_minimums()), {"gnn": 1})
@@ -70,20 +71,38 @@ class InteractionWeightTests(unittest.TestCase):
         self.assertAlmostEqual(result["gnn"], .16)
         self.assertAlmostEqual(result["statistical"], .30)
 
-    def test_old_calibration_and_defaults_are_upgraded_to_thirty_percent_without_training(self):
+    def test_old_calibration_and_defaults_have_sixteen_percent_base_floor_without_training(self):
         import pickle
         import tempfile
         from pathlib import Path
         from model.meta_calibrator import MetaLearningCalibrator
         calibrator = MetaLearningCalibrator()
-        self.assertGreaterEqual(calibrator.get_weights()["statistical"], .30)
-        self.assertGreaterEqual(calibrator.calibrate({name: object() for name in MODEL_NAMES}, "GOLD")["statistical"], .30)
+        self.assertGreaterEqual(calibrator.get_weights()["statistical"], .16)
+        self.assertGreaterEqual(calibrator.calibrate({name: object() for name in MODEL_NAMES}, "GOLD")["statistical"], .16)
         with tempfile.TemporaryDirectory() as folder:
             path = Path(folder) / "old.pkl"
             with path.open("wb") as stream:
                 pickle.dump({"weights": {"statistical": .08, "gnn": .76, "roleaware": .08, "roleweighted": .08},
                              "enhanced_statistical": False}, stream)
-            self.assertGreaterEqual(calibrator.load(path)["statistical"], .30)
+            self.assertAlmostEqual(calibrator.load(path)["statistical"], .16)
+
+    def test_draft_gate_applies_before_and_after_side_balance(self):
+        import torch
+        from model.core_model import CoreModel
+        blue, red = [0, -1, -1, -1, -1], [1, -1, -1, -1, -1]
+        for enhanced in (False, True):
+            for strong in (False, True):
+                stat = SimpleNamespace(predict=lambda *args: .4, uses_interactions=lambda *args: enhanced,
+                                       has_strong_evidence=lambda *args: strong)
+                core = CoreModel(stat)
+                core.ensemble_weights = {"roleweighted": 1, "statistical": 0}
+                core.models = {"roleweighted": lambda inputs: torch.tensor(.8)}
+                with patch.object(core, "load_models"):
+                    for details in (core._component_predictions("GOLD", blue, red),
+                                    core._prediction_components("GOLD", blue, red, "blue"),
+                                    core._prediction_components("GOLD", blue, red, "red")):
+                        weight = next(row["weight"] for row in details if row["model"] == "statistical")
+                        self.assertAlmostEqual(weight, .30 if strong else .16)
 
 
 if __name__ == "__main__":

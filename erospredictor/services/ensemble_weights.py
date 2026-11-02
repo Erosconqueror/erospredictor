@@ -4,12 +4,26 @@ import math
 
 MIN_MODEL_WEIGHT = 0.08
 MODEL_NAMES = ("gnn", "roleweighted", "roleaware", "statistical")
+MAIN_EDGE_MIN_MATCHES = 100
+OTHER_EDGE_MIN_MATCHES = 20
 
 
-def ensemble_minimums(enhanced_statistical=False):
+def ensemble_minimums(enhanced_statistical=False, strong_statistical=False):
     return {"gnn": .16 if enhanced_statistical else .24,
-            "statistical": .30,
+            "statistical": .30 if strong_statistical else .16,
             "roleweighted": .08, "roleaware": .08}
+
+
+def draft_minimums(statistical, div, blue, red):
+    """Calibration keeps the base floor; only the current draft can earn 30%."""
+    strong = False
+    query = getattr(statistical, "has_strong_evidence", None)
+    if callable(query):
+        try:
+            strong = query(div, blue, red) is True
+        except (ValueError, TypeError, AttributeError, KeyError, IndexError, ArithmeticError):
+            pass
+    return ensemble_minimums(enhanced_statistics(statistical, div, blue, red), strong)
 
 
 def enhanced_statistics(statistical, div, blue=None, red=None):

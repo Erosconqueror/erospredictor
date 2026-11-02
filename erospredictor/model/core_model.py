@@ -138,9 +138,9 @@ class CoreModel:
         except Exception as exc:
             self.load_errors["statistical"] = str(exc)
 
-        from services.ensemble_weights import bounded_weights, ensemble_minimums, enhanced_statistics
-        enhanced = "statistical" in predictions and enhanced_statistics(self.stat_model, div, blue, red)
-        weights = bounded_weights(self.ensemble_weights, predictions, minimums=ensemble_minimums(enhanced))
+        from services.ensemble_weights import bounded_weights, draft_minimums
+        minimums = draft_minimums(self.stat_model if "statistical" in predictions else None, div, blue, red)
+        weights = bounded_weights(self.ensemble_weights, predictions, minimums=minimums)
         return [{"model": name, "probability": probability, "weight": weights[name]}
                 for name, probability in predictions.items()]
 
@@ -202,9 +202,9 @@ class CoreModel:
                 weights[name] = weights.get(name, 0.0) + weight
                 contributions[name] = contributions.get(name, 0.0) + weight * probability
         details = []
-        from services.ensemble_weights import bounded_weights, ensemble_minimums, enhanced_statistics
-        enhanced = "statistical" in weights and enhanced_statistics(self.stat_model, div, blue, red)
-        effective = bounded_weights(weights, minimums=ensemble_minimums(enhanced))
+        from services.ensemble_weights import bounded_weights, draft_minimums
+        minimums = draft_minimums(self.stat_model if "statistical" in weights else None, div, blue, red)
+        effective = bounded_weights(weights, minimums=minimums)
         for name, weight in weights.items():
             probability = contributions[name] / weight
             if team == "red":
