@@ -81,13 +81,14 @@ class StatisticalModel:
         return self.interactions is not None and self.interactions.available(div)
 
     def has_strong_evidence(self, div, blue, red):
-        """Every known main edge needs 100 games, other applicable edges need 20.
+        """MIXED needs 100/25 games per main/other edge, individual tiers 50/13.
 
         Empty slots are not edges. Missing eligible pair evidence fails the gate;
         off-meta edges follow the actual legacy lane/bot fallback, not new edges.
         At least one concrete lane-opponent pairing is required.
         """
-        from services.ensemble_weights import MAIN_EDGE_MIN_MATCHES, OTHER_EDGE_MIN_MATCHES
+        from services.ensemble_weights import statistical_edge_thresholds
+        main_minimum, other_minimum = statistical_edge_thresholds(div)
         enhanced = self.uses_interactions(div, blue, red)
         data = self.interactions
         main_edges = 0
@@ -105,7 +106,7 @@ class StatisticalModel:
                     count = summary["matches"] if summary else 0
                 else:
                     continue
-                required = MAIN_EDGE_MIN_MATCHES if role == other_role else OTHER_EDGE_MIN_MATCHES
+                required = main_minimum if role == other_role else other_minimum
                 if count < required:
                     return False
                 main_edges += role == other_role
@@ -124,7 +125,7 @@ class StatisticalModel:
                         count = summary["matches"] if summary else 0
                     else:
                         continue
-                    if count < OTHER_EDGE_MIN_MATCHES:
+                    if count < other_minimum:
                         return False
         return True
 

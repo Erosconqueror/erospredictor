@@ -19,7 +19,7 @@ from services.role_distribution import ROLE_NAMES, _team
 
 
 DEFAULT_PATH = Path(__file__).resolve().parents[1] / "data/interaction_stats.json"
-MIN_SAMPLES = 20
+MIN_SAMPLES = 13
 SHRINKAGE = 20.0
 
 

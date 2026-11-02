@@ -31,7 +31,7 @@ import configs as cfg
 
 APP_DIR = Path(__file__).resolve().parent
 VERSIONS_URL = "https://ddragon.leagueoflegends.com/api/versions.json"
-INTERACTION_POLICY = "interaction-statistics-and-priors-stat100-20-v3"
+INTERACTION_POLICY = "interaction-statistics-and-priors-stat-tier50-13-mixed100-25-v4"
 
 
 class PermanentUpdateError(RuntimeError):

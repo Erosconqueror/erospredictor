@@ -4,8 +4,8 @@ import math
 
 MIN_MODEL_WEIGHT = 0.08
 MODEL_NAMES = ("gnn", "roleweighted", "roleaware", "statistical")
-MAIN_EDGE_MIN_MATCHES = 100
-OTHER_EDGE_MIN_MATCHES = 20
+def statistical_edge_thresholds(div):
+    return (100, 25) if div == "MIXED" else (50, 13)
 
 
 def ensemble_minimums(enhanced_statistical=False, strong_statistical=False):

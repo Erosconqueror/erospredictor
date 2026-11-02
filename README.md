@@ -523,8 +523,12 @@ az egész esetet. A tanítás QA-eredménye ezt a részpontot használja.
 A predikciós golden teszt elfogadási tartományai és pontozása változatlanok.
 
 A statisztikai modell alapminimuma **16%**. Az adott draftban **30%-ra** emelkedik,
-ha minden ismert lane–ellenfél fő élhez legalább **100 mérkőzés**, és minden
-további alkalmazható ellenfél- vagy szinergiaélhez legalább **20 mérkőzés** van.
+ha minden ismert lane–ellenfél fő él és minden további alkalmazható ellenfél-
+vagy szinergiaél eléri a küszöböt: **MIXED esetén 100 / 25 mérkőzés**,
+az **egyes rangoknál 50 / 13 mérkőzés** (fő él / további él).
+A következő tanítás interakciós fájlja már 13 meccstől megtartja a párokat;
+a régi, 20 meccsnél ritkább párokat nem tartalmazó fájlban ezek hiányzó adatnak
+számítanak. A blindpick saját 20 meccses mintaküszöbe változatlan.
 Egyetlen hiányzó vagy küszöb alatti alkalmazható él is megtartja a 16%-os
 minimumot. Az üres pozíciók nem élek; legalább egy konkrét lane–ellenfél pár
 szükséges a 30%-hoz. A kiválasztott rang adatait vizsgálja; a régi lane-/bot

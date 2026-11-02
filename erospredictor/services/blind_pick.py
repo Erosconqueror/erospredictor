@@ -39,7 +39,7 @@ def blind_risk(index, div, champion, role, enemy, unavailable=()):
 
     def evidence(foe, foe_role):
         pair = index.counter(div, champion, role, foe, foe_role)
-        if pair is None:
+        if pair is None or pair.get("matches", 0) < 20:
             return None
         delta = pair.get("noise_corrected_delta_pp", pair["adjusted_delta_pp"])
         weighted = delta * weights[role][foe_role]
