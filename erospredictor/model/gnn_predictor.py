@@ -12,7 +12,7 @@ class LeagueGNN(nn.Module):
     """This GNN model represents each match as a graph where nodes correspond to champions in specific roles, and edges represent interactions between them.
        Each node's features are derived from champion embeddings, role embeddings, and a team indicator.
        It was chosen because it is the best representation of a LoL champion draft.
-       The dropout rate is there to prevent the model from becoming too deterministic"""
+       Dropout regularizes training; it is disabled during inference."""
     
     def __init__(self, champ_dim: int = 32, role_dim: int = 8, hid_dim: int = 64):  
         super().__init__()
@@ -27,7 +27,7 @@ class LeagueGNN(nn.Module):
         self.fc1 = nn.Linear(hid_dim, hid_dim // 2)
         self.fc2 = nn.Linear(hid_dim // 2, 1)
         
-        self.dropout = nn.Dropout(0.5)  
+        self.dropout = nn.Dropout(0.4)
         self.bn1 = nn.BatchNorm1d(hid_dim)
         self.bn2 = nn.BatchNorm1d(hid_dim // 2)
 

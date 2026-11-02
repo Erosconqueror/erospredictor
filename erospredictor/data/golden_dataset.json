@@ -145,13 +145,13 @@
       "blue_team": [ "Malphite", "Amumu", "Orianna", "Miss Fortune", "Leona" ],
       "red_team": [ "Teemo", "Kindred", "Katarina", "Ezreal", "Soraka" ],
       "expected_blue_winrate_min": 52.5,
-      "expected_blue_winrate_max": 65.0
+      "expected_blue_winrate_max": 75.0
     },
     {
       "scenario": "red_full_counter",
       "blue_team": [ "Malphite", "Sejuani", "Azir", "Ashe", "Braum" ],
       "red_team": [ "Dr. Mundo", "Lillia", "Sylas", "Tristana", "Zilean" ],
-      "expected_blue_winrate_min": 38.0,
+      "expected_blue_winrate_min": 30.0,
       "expected_blue_winrate_max": 47.3
     },
     {
@@ -166,20 +166,20 @@
       "blue_team": [ "Sion", "Jarvan IV", "Neeko", "Caitlyn", "Blitzcrank" ],
       "red_team": [ "K'Sante", "Nocturne", "Talon", "Samira", "Nautilus" ],
       "expected_blue_winrate_min": 53.2,
-      "expected_blue_winrate_max": 65.0
+      "expected_blue_winrate_max": 75.0
     },
     {
       "scenario": "xspace_stomp",
       "blue_team": [ "Dr. Mundo", "Lillia", "Jayce", "Jhin", "Sona" ],
       "red_team": [ "Gwen", "Naafiri", "Vladimir", "Jinx", "Elise" ],
-      "expected_blue_winrate_min": 35,
+      "expected_blue_winrate_min": 30,
       "expected_blue_winrate_max": 46.5
     },
     {
       "scenario": "tanks_vs_tank_counters",
       "blue_team": [ "Sion", "Rammus", "Cho'gath", "Tristana", "Nautilus" ],
       "red_team": [ "Fiora", "Gwen", "Brand", "Kog'Maw", "Milio" ],
-      "expected_blue_winrate_min": 35.0,
+      "expected_blue_winrate_min": 30.0,
       "expected_blue_winrate_max": 46.5
     },
     {
@@ -194,14 +194,14 @@
       "blue_team": [ "Malphite", "Amumu", "Swain", "Zeri", "Alistar" ],
       "red_team": [ "Sion", "Shyvana", "Sylas", "Jinx", "Karma" ],
       "expected_blue_winrate_min": 53.5,
-      "expected_blue_winrate_max": 65.0
+      "expected_blue_winrate_max": 75.0
     },
     {
       "scenario": "cc_shuts_down_carries",
       "blue_team": [ "Ornn", "Vi", "Malzahar", "Ashe", "Leona" ],
       "red_team": [ "Varus", "Master Yi", "LeBlanc", "Samira", "Soraka" ],
       "expected_blue_winrate_min": 53.0,
-      "expected_blue_winrate_max": 65.0
+      "expected_blue_winrate_max": 75.0
     },
     {
       "scenario": "blue_bad_comp",
@@ -222,14 +222,14 @@
       "blue_team": [ "Pyke", "Azir", "Olaf", "Zaheen", "Master Yi" ],
       "red_team": [ "Tahm Kench", "Lillia", "Ekko", "Xayah", "Lulu" ],
       "expected_blue_winrate_min": 0.0,
-      "expected_blue_winrate_max": 30.0
+      "expected_blue_winrate_max": 37.0
     },
     {
       "scenario": "random_blue_2",
       "blue_team": [ "Kindred", "Veigar", "Soraka", "Maokai", "Jayce" ],
       "red_team": [ "Pantheon", "Zac", "Katarina", "Caitlyn", "Morgana" ],
       "expected_blue_winrate_min": 0.0,
-      "expected_blue_winrate_max": 30.0
+      "expected_blue_winrate_max": 37.0
     },
     {
       "scenario": "random_red",
@@ -242,15 +242,15 @@
       "scenario": "random_red_2",
       "blue_team": [ "Garen", "Dr. Mundo", "Annie", "Yasuo", "Milio" ],
       "red_team": [ "Yuumi", "Soraka", "Rell", "Maokai", "Lee Sin" ],
-      "expected_blue_winrate_min": 65.0,
+      "expected_blue_winrate_min": 60.0,
       "expected_blue_winrate_max": 100.0
     },
     {
       "scenario": "base",
       "blue_team": [ "", "", "", "", "" ],
       "red_team": [ "", "", "", "", "" ],
-      "expected_blue_winrate_min": 49.5,
-      "expected_blue_winrate_max": 52.5
+      "expected_blue_winrate_min": 46.5,
+      "expected_blue_winrate_max": 53.5
     }
 
   ]

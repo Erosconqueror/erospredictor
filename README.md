@@ -20,6 +20,13 @@ A kapcsolódási adatokat a `configs.py` vagy az alábbi környezeti változók 
 `RIOT_API_KEY`, `DB_NAME`, `DB_USER`, `DB_PASS`, `DB_HOST`, `DB_PORT`.
 Az alkalmazást a modellcsere idejére zárd be.
 
+A becsléseket nem vágjuk mesterségesen 50% körüli tartományra. A tanítási
+regularizáció mérséklésekor a GNN dropoutja 0,50-ről 0,40-re, a RoleAware
+dropoutja 0,30-ról 0,25-re csökkent; ez csak újratanítás után hat a becslésekre,
+és nem garantál nagyobb eltérést vagy jobb pontosságot. A blue/red 0,58/0,42
+oldalkiegyensúlyozás változatlan. A korszakmentések a dropoutot is ellenőrzik;
+korábbi beállítású tanítás folytatása helyett új futás szükséges (`--fresh`).
+
 ```powershell
 # Alapértelmezés: az utolsó öt megjelent patch, minden rang + MIXED.
 .\update_models.bat

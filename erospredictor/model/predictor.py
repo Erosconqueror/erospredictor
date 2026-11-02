@@ -46,7 +46,7 @@ class RoleAwareEmbeddingPredictor(nn.Module):
         self.fc2 = nn.Linear(hid_dim, hid_dim // 2)
         self.fc3 = nn.Linear(hid_dim // 2, 1)
         
-        self.drop = nn.Dropout(0.3)
+        self.drop = nn.Dropout(0.25)
         self.bn1 = nn.BatchNorm1d(hid_dim)
         self.bn2 = nn.BatchNorm1d(hid_dim // 2)
 

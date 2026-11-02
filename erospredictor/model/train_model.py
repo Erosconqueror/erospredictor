@@ -129,7 +129,8 @@ class DynamicTrainer:
         crit = nn.BCELoss(reduction='none')
         
         signature = {"kind": m_type, "count": len(X), "size": in_size,
-                     "epochs": ep, "batch_size": bs, "lr": lr, "wd": weight_decay, "seed": self.seed}
+                     "epochs": ep, "batch_size": bs, "lr": lr, "wd": weight_decay, "seed": self.seed,
+                     "dropout": model.drop.p}
         start, best_state = self._resume(name, fallback, model, opt, signature)
         epochs_trained = start
         for epoch in range(start, ep):
@@ -223,7 +224,8 @@ class DynamicTrainer:
         crit = nn.BCELoss(reduction='none')
         
         signature = {"kind": "gnn", "count": len(graphs), "epochs": ep,
-                     "batch_size": bs, "lr": lr, "wd": weight_decay, "seed": self.seed}
+                     "batch_size": bs, "lr": lr, "wd": weight_decay, "seed": self.seed,
+                     "dropout": model.dropout.p}
         if interaction_prior is not None:
             signature["interaction_prior"] = model.role_prior_fingerprint
         start, best_state = self._resume(name, fallback, model, opt, signature)

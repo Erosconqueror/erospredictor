@@ -1,0 +1,613 @@
+{
+  "completed_at": "2026-11-01T21:55:51.186226+00:00",
+  "interaction_policy": "interaction-statistics-and-priors-v1",
+  "plan": {
+    "patches": [
+      "16.17",
+      "16.18",
+      "16.19",
+      "16.20",
+      "16.21"
+    ],
+    "region": "euw1",
+    "continent": "europe",
+    "tiers": [
+      "CHALLENGER",
+      "GRANDMASTER",
+      "MASTER",
+      "DIAMOND",
+      "EMERALD",
+      "PLATINUM",
+      "GOLD",
+      "SILVER",
+      "BRONZE",
+      "IRON",
+      "MIXED"
+    ],
+    "scrape": true,
+    "max_new_matches_per_tier": null,
+    "dataset_targets": {
+      "CHALLENGER": 2000,
+      "GRANDMASTER": 3000,
+      "MASTER": 5000,
+      "DIAMOND": 8000,
+      "EMERALD": 12000,
+      "PLATINUM": 16000,
+      "GOLD": 22000,
+      "SILVER": 18000,
+      "BRONZE": 7000,
+      "IRON": 5000
+    },
+    "champion_catalog_update": true,
+    "max_players_per_tier": null,
+    "minimum_usable_matches_per_tier": 200,
+    "stages": [
+      "collect",
+      "filter",
+      "statistics/off-meta/role frequencies/interaction matrices/blind profiles",
+      "train 3 models per tier",
+      "QA/retry",
+      "calibrate",
+      "publish"
+    ]
+  },
+  "collection": {
+    "IRON": {
+      "new_matches": 5000,
+      "players": 474,
+      "reused_matches": 0,
+      "target": 5000,
+      "window_matches": 5000,
+      "exhausted": false,
+      "examined": 15358,
+      "outside_window_or_invalid": 10358
+    },
+    "CHALLENGER": {
+      "new_matches": 187,
+      "players": 64,
+      "reused_matches": 1813,
+      "target": 2000,
+      "window_matches": 2322,
+      "exhausted": false,
+      "examined": 206,
+      "outside_window_or_invalid": 19
+    },
+    "GRANDMASTER": {
+      "new_matches": 3000,
+      "players": 94,
+      "reused_matches": 0,
+      "target": 3000,
+      "window_matches": 3000,
+      "exhausted": false,
+      "examined": 3033,
+      "outside_window_or_invalid": 33
+    },
+    "MASTER": {
+      "new_matches": 5000,
+      "players": 140,
+      "reused_matches": 0,
+      "target": 5000,
+      "window_matches": 5000,
+      "exhausted": false,
+      "examined": 5049,
+      "outside_window_or_invalid": 49
+    },
+    "DIAMOND": {
+      "new_matches": 8000,
+      "players": 228,
+      "reused_matches": 0,
+      "target": 8000,
+      "window_matches": 8000,
+      "exhausted": false,
+      "examined": 11230,
+      "outside_window_or_invalid": 3230
+    },
+    "EMERALD": {
+      "new_matches": 12000,
+      "players": 1118,
+      "reused_matches": 0,
+      "target": 12000,
+      "window_matches": 12000,
+      "exhausted": false,
+      "examined": 54215,
+      "outside_window_or_invalid": 42215
+    },
+    "PLATINUM": {
+      "new_matches": 16000,
+      "players": 806,
+      "reused_matches": 0,
+      "target": 16000,
+      "window_matches": 16000,
+      "exhausted": false,
+      "examined": 38302,
+      "outside_window_or_invalid": 22302
+    },
+    "GOLD": {
+      "new_matches": 22000,
+      "players": 1398,
+      "reused_matches": 0,
+      "target": 22000,
+      "window_matches": 22000,
+      "exhausted": false,
+      "examined": 63186,
+      "outside_window_or_invalid": 41186
+    },
+    "SILVER": {
+      "new_matches": 20000,
+      "players": 1412,
+      "reused_matches": 0,
+      "target": 18000,
+      "window_matches": 20000,
+      "exhausted": false,
+      "examined": 58617,
+      "outside_window_or_invalid": 38617
+    },
+    "BRONZE": {
+      "new_matches": 7000,
+      "players": 749,
+      "reused_matches": 0,
+      "target": 7000,
+      "window_matches": 7000,
+      "exhausted": false,
+      "examined": 26733,
+      "outside_window_or_invalid": 19733
+    }
+  },
+  "excluded_records": {},
+  "available_matches": {
+    "GOLD": 22000,
+    "CHALLENGER": 2322,
+    "GRANDMASTER": 3000,
+    "MASTER": 5000,
+    "DIAMOND": 8000,
+    "EMERALD": 12000,
+    "PLATINUM": 16000,
+    "SILVER": 20000,
+    "BRONZE": 7000,
+    "IRON": 5000
+  },
+  "champion_count": 173,
+  "champion_catalog_version": "16.21.1",
+  "champion_role_distribution": {
+    "patches": [
+      "16.17",
+      "16.18",
+      "16.19",
+      "16.20",
+      "16.21"
+    ],
+    "region": "euw1",
+    "tiers": [
+      "CHALLENGER",
+      "GRANDMASTER",
+      "MASTER",
+      "DIAMOND",
+      "EMERALD",
+      "PLATINUM",
+      "GOLD",
+      "SILVER",
+      "BRONZE",
+      "IRON"
+    ],
+    "source": "training_snapshot",
+    "matches": 98000,
+    "excluded_records": {},
+    "preserved_tiers": []
+  },
+  "training_patch_counts": {
+    "16.21": 28435,
+    "16.20": 23755,
+    "16.19": 17549,
+    "16.18": 13735,
+    "16.17": 14526
+  },
+  "results": {
+    "CHALLENGER": {
+      "matches": 2000,
+      "qa": {
+        "roleweighted": {
+          "golden_pass_fraction": 0.42803030303030304,
+          "fallback": false,
+          "status": "success",
+          "epochs_trained": 16,
+          "best_loss": 0.5552070250594988
+        },
+        "roleaware": {
+          "golden_pass_fraction": 0.5189393939393939,
+          "fallback": false,
+          "status": "success",
+          "epochs_trained": 16,
+          "best_loss": 0.548450939040631
+        },
+        "gnn": {
+          "golden_pass_fraction": 0.3787878787878788,
+          "fallback": false,
+          "status": "success",
+          "epochs_trained": 37,
+          "best_loss": 0.5276753848791123,
+          "interaction_prior": "185a531c82ee25c5cea47bf6ea2a47869a62918d35f3af93088f9e0b5ff4c6ea",
+          "interaction_policy": "training-only-role-priors-v1",
+          "interaction_fingerprint": "b49b6b99b8716ae2a1498882fabb37d61a6666977431f7f59466b2022ef4c79b"
+        }
+      },
+      "ensemble_weights": {
+        "statistical": 0.31435582822085895,
+        "roleweighted": 0.21128834355828222,
+        "roleaware": 0.31435582822085895,
+        "gnn": 0.16
+      },
+      "interaction_fingerprint": "b49b6b99b8716ae2a1498882fabb37d61a6666977431f7f59466b2022ef4c79b",
+      "interaction_policy": "interaction-statistics-and-priors-v1"
+    },
+    "GRANDMASTER": {
+      "matches": 3000,
+      "qa": {
+        "roleweighted": {
+          "golden_pass_fraction": 0.42045454545454547,
+          "fallback": false,
+          "status": "success",
+          "epochs_trained": 16,
+          "best_loss": 0.6170205184477769
+        },
+        "roleaware": {
+          "golden_pass_fraction": 0.42803030303030304,
+          "fallback": false,
+          "status": "success",
+          "epochs_trained": 16,
+          "best_loss": 0.5750346349924803
+        },
+        "gnn": {
+          "golden_pass_fraction": 0.4090909090909091,
+          "fallback": false,
+          "status": "success",
+          "epochs_trained": 19,
+          "best_loss": 0.5643940293788909,
+          "interaction_prior": "e75153cd1e673fbf6f8daddd333f7c265ebfaa86ea9f3d946c662a69b79789f4",
+          "interaction_policy": "training-only-role-priors-v1",
+          "interaction_fingerprint": "4e4249befcddb44d9708d20782f9ef497ed35e50ff3a3daabced6cc6f023b856"
+        }
+      },
+      "ensemble_weights": {
+        "statistical": 0.3583216783216783,
+        "roleweighted": 0.24083916083916082,
+        "roleaware": 0.24083916083916082,
+        "gnn": 0.16
+      },
+      "interaction_fingerprint": "4e4249befcddb44d9708d20782f9ef497ed35e50ff3a3daabced6cc6f023b856",
+      "interaction_policy": "interaction-statistics-and-priors-v1"
+    },
+    "MASTER": {
+      "matches": 5000,
+      "qa": {
+        "roleweighted": {
+          "golden_pass_fraction": 0.4962121212121212,
+          "fallback": false,
+          "status": "success",
+          "epochs_trained": 16,
+          "best_loss": 0.5904790972098708
+        },
+        "roleaware": {
+          "golden_pass_fraction": 0.44696969696969696,
+          "fallback": false,
+          "status": "success",
+          "epochs_trained": 16,
+          "best_loss": 0.5845672391429544
+        },
+        "gnn": {
+          "golden_pass_fraction": 0.4166666666666667,
+          "fallback": false,
+          "status": "success",
+          "epochs_trained": 22,
+          "best_loss": 0.5796718344688415,
+          "interaction_prior": "6810b04f5808aecb9924048a9760f457ac0e0a617b5df7bce9d527aa741f7ad5",
+          "interaction_policy": "training-only-role-priors-v1",
+          "interaction_fingerprint": "a2d50cf8300df66dd6a8a4d20a2478f9d3d1798d06001eaa0c6518d130c5b341"
+        }
+      },
+      "ensemble_weights": {
+        "statistical": 0.3259016393442623,
+        "roleweighted": 0.28,
+        "roleaware": 0.23409836065573772,
+        "gnn": 0.16
+      },
+      "interaction_fingerprint": "a2d50cf8300df66dd6a8a4d20a2478f9d3d1798d06001eaa0c6518d130c5b341",
+      "interaction_policy": "interaction-statistics-and-priors-v1"
+    },
+    "DIAMOND": {
+      "matches": 8000,
+      "qa": {
+        "roleweighted": {
+          "golden_pass_fraction": 0.3787878787878788,
+          "fallback": false,
+          "status": "success",
+          "epochs_trained": 16,
+          "best_loss": 0.42462360225152224
+        },
+        "roleaware": {
+          "golden_pass_fraction": 0.35984848484848486,
+          "fallback": false,
+          "status": "success",
+          "epochs_trained": 16,
+          "best_loss": 0.4249545078538358
+        },
+        "gnn": {
+          "golden_pass_fraction": 0.375,
+          "fallback": false,
+          "status": "success",
+          "epochs_trained": 18,
+          "best_loss": 0.4169472078979015,
+          "interaction_prior": "4885fee7aadff626b51e31f885551160343b1eaef2c98bde615f963e26a735d2",
+          "interaction_policy": "training-only-role-priors-v1",
+          "interaction_fingerprint": "95f9d629ed3a8562c862d14fdc04a4e67e1a2e50d3fab9357c713169fcf936ab"
+        }
+      },
+      "ensemble_weights": {
+        "statistical": 0.3482926829268293,
+        "roleweighted": 0.27999999999999997,
+        "roleaware": 0.21170731707317075,
+        "gnn": 0.16
+      },
+      "interaction_fingerprint": "95f9d629ed3a8562c862d14fdc04a4e67e1a2e50d3fab9357c713169fcf936ab",
+      "interaction_policy": "interaction-statistics-and-priors-v1"
+    },
+    "EMERALD": {
+      "matches": 12000,
+      "qa": {
+        "roleweighted": {
+          "golden_pass_fraction": 0.45454545454545453,
+          "fallback": false,
+          "status": "success",
+          "epochs_trained": 16,
+          "best_loss": 0.3817056516930461
+        },
+        "roleaware": {
+          "golden_pass_fraction": 0.3446969696969697,
+          "fallback": false,
+          "status": "success",
+          "epochs_trained": 16,
+          "best_loss": 0.3798720915708691
+        },
+        "gnn": {
+          "golden_pass_fraction": 0.4393939393939394,
+          "fallback": false,
+          "status": "success",
+          "epochs_trained": 20,
+          "best_loss": 0.375765632490317,
+          "interaction_prior": "d1aa6b2d39c02039dcd353eb92994271c422ea4d1c4b455c042b99df6d7bdf21",
+          "interaction_policy": "training-only-role-priors-v1",
+          "interaction_fingerprint": "75f50248d99af03d03aae2789d41e47fdf8854005a96d3f98b1ceedbd94b6e1a"
+        }
+      },
+      "ensemble_weights": {
+        "statistical": 0.16935483870967744,
+        "roleweighted": 0.33064516129032256,
+        "roleaware": 0.08870967741935486,
+        "gnn": 0.4112903225806452
+      },
+      "interaction_fingerprint": "75f50248d99af03d03aae2789d41e47fdf8854005a96d3f98b1ceedbd94b6e1a",
+      "interaction_policy": "interaction-statistics-and-priors-v1"
+    },
+    "PLATINUM": {
+      "matches": 16000,
+      "qa": {
+        "roleweighted": {
+          "golden_pass_fraction": 0.5454545454545454,
+          "fallback": false,
+          "status": "success",
+          "epochs_trained": 16,
+          "best_loss": 0.4089804868167266
+        },
+        "roleaware": {
+          "golden_pass_fraction": 0.44696969696969696,
+          "fallback": false,
+          "status": "success",
+          "epochs_trained": 16,
+          "best_loss": 0.40359266228973867
+        },
+        "gnn": {
+          "golden_pass_fraction": 0.35984848484848486,
+          "fallback": false,
+          "status": "success",
+          "epochs_trained": 18,
+          "best_loss": 0.40069619987159966,
+          "interaction_prior": "09024d515d37a1fb3045a7ead3f3c0431ec370654c45ebdf0a1705606e6bda17",
+          "interaction_policy": "training-only-role-priors-v1",
+          "interaction_fingerprint": "b9ce95133485dadfd7ad5e03c0faa0db596466eb35ba87752baf112885b9ecfc"
+        }
+      },
+      "ensemble_weights": {
+        "statistical": 0.3090155440414508,
+        "roleweighted": 0.3090155440414508,
+        "roleaware": 0.22196891191709847,
+        "gnn": 0.16
+      },
+      "interaction_fingerprint": "b9ce95133485dadfd7ad5e03c0faa0db596466eb35ba87752baf112885b9ecfc",
+      "interaction_policy": "interaction-statistics-and-priors-v1"
+    },
+    "GOLD": {
+      "matches": 22000,
+      "qa": {
+        "roleweighted": {
+          "golden_pass_fraction": 0.4015151515151515,
+          "fallback": false,
+          "status": "success",
+          "epochs_trained": 16,
+          "best_loss": 0.35580595380287955
+        },
+        "roleaware": {
+          "golden_pass_fraction": 0.42045454545454547,
+          "fallback": false,
+          "status": "success",
+          "epochs_trained": 17,
+          "best_loss": 0.35441825235093183
+        },
+        "gnn": {
+          "golden_pass_fraction": 0.32575757575757575,
+          "fallback": false,
+          "status": "success",
+          "epochs_trained": 22,
+          "best_loss": 0.35315167530016467,
+          "interaction_prior": "a2aa00dbb0f0f7023100c19e26fedb173154402d23af39a5c4fde7295a7738ed",
+          "interaction_policy": "training-only-role-priors-v1",
+          "interaction_fingerprint": "5b4bd4537874537429c2b8a154a89bb9c6d36c1c071437d77235a85cfe14cc6d"
+        }
+      },
+      "ensemble_weights": {
+        "statistical": 0.24083916083916082,
+        "roleweighted": 0.2995804195804196,
+        "roleaware": 0.2995804195804196,
+        "gnn": 0.16
+      },
+      "interaction_fingerprint": "5b4bd4537874537429c2b8a154a89bb9c6d36c1c071437d77235a85cfe14cc6d",
+      "interaction_policy": "interaction-statistics-and-priors-v1"
+    },
+    "SILVER": {
+      "matches": 18000,
+      "qa": {
+        "roleweighted": {
+          "golden_pass_fraction": 0.5303030303030303,
+          "fallback": false,
+          "status": "success",
+          "epochs_trained": 16,
+          "best_loss": 0.23564593456685543
+        },
+        "roleaware": {
+          "golden_pass_fraction": 0.5795454545454546,
+          "fallback": false,
+          "status": "success",
+          "epochs_trained": 16,
+          "best_loss": 0.23521526767147913
+        },
+        "gnn": {
+          "golden_pass_fraction": 0.35984848484848486,
+          "fallback": false,
+          "status": "success",
+          "epochs_trained": 21,
+          "best_loss": 0.23551029791434605,
+          "interaction_prior": "a20a0253caee38a3320ea32617a84cc2636c9374e0eda4e4cc2cf14eaa85ec19",
+          "interaction_policy": "training-only-role-priors-v1",
+          "interaction_fingerprint": "3eea94653deccced4d549b5f987e102581a854cef197c91d44641cfee114ce36"
+        }
+      },
+      "ensemble_weights": {
+        "statistical": 0.1696551724137931,
+        "roleweighted": 0.29379310344827586,
+        "roleaware": 0.37655172413793103,
+        "gnn": 0.16
+      },
+      "interaction_fingerprint": "3eea94653deccced4d549b5f987e102581a854cef197c91d44641cfee114ce36",
+      "interaction_policy": "interaction-statistics-and-priors-v1"
+    },
+    "BRONZE": {
+      "matches": 7000,
+      "qa": {
+        "roleweighted": {
+          "golden_pass_fraction": 0.4659090909090909,
+          "fallback": false,
+          "status": "success",
+          "epochs_trained": 16,
+          "best_loss": 0.18819144645173635
+        },
+        "roleaware": {
+          "golden_pass_fraction": 0.5,
+          "fallback": false,
+          "status": "success",
+          "epochs_trained": 16,
+          "best_loss": 0.1877915209771267
+        },
+        "gnn": {
+          "golden_pass_fraction": 0.3939393939393939,
+          "fallback": false,
+          "status": "success",
+          "epochs_trained": 21,
+          "best_loss": 0.18388886379344122,
+          "interaction_prior": "c5a2ead40b3a63992b3f55a995ee0400412d402ec3aaf6aade67e9b83f4c33e3",
+          "interaction_policy": "training-only-role-priors-v1",
+          "interaction_fingerprint": "2cb555c1842a659bffe6e33179cc81e15c5c0e9a2a8c57117cf92ed1c7188648"
+        }
+      },
+      "ensemble_weights": {
+        "statistical": 0.3259016393442623,
+        "roleweighted": 0.28,
+        "roleaware": 0.23409836065573772,
+        "gnn": 0.16
+      },
+      "interaction_fingerprint": "2cb555c1842a659bffe6e33179cc81e15c5c0e9a2a8c57117cf92ed1c7188648",
+      "interaction_policy": "interaction-statistics-and-priors-v1"
+    },
+    "IRON": {
+      "matches": 5000,
+      "qa": {
+        "roleweighted": {
+          "golden_pass_fraction": 0.5151515151515151,
+          "fallback": false,
+          "status": "success",
+          "epochs_trained": 16,
+          "best_loss": 0.1532535062264651
+        },
+        "roleaware": {
+          "golden_pass_fraction": 0.5416666666666666,
+          "fallback": false,
+          "status": "success",
+          "epochs_trained": 16,
+          "best_loss": 0.1506063833832741
+        },
+        "gnn": {
+          "golden_pass_fraction": 0.4318181818181818,
+          "fallback": false,
+          "status": "success",
+          "epochs_trained": 18,
+          "best_loss": 0.14998055732250212,
+          "interaction_prior": "021253c1237cfc365bd93e9db8f726cffdca7d32f6c6dc6b52b7b340da950298",
+          "interaction_policy": "training-only-role-priors-v1",
+          "interaction_fingerprint": "7a456fc5c27e64b8fae96f04550def08074232bd03020f8460d4db4f3c6de6a8"
+        }
+      },
+      "ensemble_weights": {
+        "statistical": 0.3051121076233184,
+        "roleweighted": 0.3051121076233184,
+        "roleaware": 0.22977578475336324,
+        "gnn": 0.16
+      },
+      "interaction_fingerprint": "7a456fc5c27e64b8fae96f04550def08074232bd03020f8460d4db4f3c6de6a8",
+      "interaction_policy": "interaction-statistics-and-priors-v1"
+    },
+    "MIXED": {
+      "matches": 98000,
+      "qa": {
+        "roleweighted": {
+          "golden_pass_fraction": 0.45075757575757575,
+          "fallback": false,
+          "status": "success",
+          "epochs_trained": 15,
+          "best_loss": 0.3439365013996709
+        },
+        "roleaware": {
+          "golden_pass_fraction": 0.4583333333333333,
+          "fallback": false,
+          "status": "success",
+          "epochs_trained": 15,
+          "best_loss": 0.34430515717106813
+        },
+        "gnn": {
+          "golden_pass_fraction": 0.2878787878787879,
+          "fallback": false,
+          "status": "success",
+          "epochs_trained": 15,
+          "best_loss": 0.3445733300033881,
+          "interaction_prior": "6242cebd3fbbc6ca36761b1fe603070f1e943ba50bdb1c90fa1208729ac12d02",
+          "interaction_policy": "training-only-role-priors-v1",
+          "interaction_fingerprint": "9c5df392e92f7da728a5ba7081e903921769d2e28508eab05bd80b362aa37653"
+        }
+      },
+      "ensemble_weights": {
+        "statistical": 0.1820979020979021,
+        "roleweighted": 0.2995804195804196,
+        "roleaware": 0.3583216783216783,
+        "gnn": 0.16
+      },
+      "interaction_fingerprint": "9c5df392e92f7da728a5ba7081e903921769d2e28508eab05bd80b362aa37653",
+      "interaction_policy": "interaction-statistics-and-priors-v1"
+    }
+  }
+}
