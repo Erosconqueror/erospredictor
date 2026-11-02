@@ -16,7 +16,7 @@ class OptionsDialog(QDialog):
         rec.addWidget(window.chk_meta)
         rec.addWidget(window.chk_effects)
         rec.addWidget(window.chk_robust)
-        note = QLabel("A több kiosztásos elemzés az első öt jelöltet legfeljebb három ellenfél-felállásban vizsgálja, és a legrosszabb vizsgált becslés alapján rendezi át őket. A kijelzett fő százalék az aktuális draft becslése marad.")
+        note = QLabel("A több kiosztásos elemzés kliensből átvett draftnál automatikusan elérhető. Kézi vagy mentett draftnál csak a fenti kapcsoló bekapcsolásával számolja. Az első öt jelöltet legfeljebb három ellenfél-felállásban vizsgálja, és a legrosszabb vizsgált becslés alapján rendezi át őket. A kijelzett fő százalék az aktuális draft becslése marad.")
         note.setWordWrap(True)
         rec.addWidget(note)
         rec.addStretch()

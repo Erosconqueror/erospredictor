@@ -83,6 +83,7 @@ class SavedDraftWindowTests(unittest.TestCase):
         self.mark_following_without_io()
         stale = DraftSnapshot((DraftPick("blue", 20, 5, 1, 0),), own_team="blue", session_key="old")
         self.window._sync_pending = self.window._sync_last_snapshot = stale
+        self.window._client_draft_loaded = True
         self.window._sync_manual_roles = {("blue", 5): 1}
         self.window._prediction_context = {"old": True}
         self.window._recommendation_context = {"old": True}
@@ -93,6 +94,7 @@ class SavedDraftWindowTests(unittest.TestCase):
         self.assertTrue(self.window.btn_red.isChecked())
         self.assertEqual(self.window.grp_role.checkedId(), 4)
         self.assertFalse(self.window.chk_follow.isChecked())
+        self.assertFalse(self.window._client_draft_loaded)
         self.assertFalse(self.window._draft_follower.enabled)
         self.assertIsNone(self.window._sync_pending)
         self.assertEqual(self.window._sync_manual_roles, {})

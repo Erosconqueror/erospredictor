@@ -91,6 +91,70 @@ class DraftToolsWindowTests(unittest.TestCase):
         self.controller.draft_scenarios.assert_called_once()
         self.assertEqual(self.controller.recommend_champs.call_args.kwargs["scenarios"], ())
 
+    def test_enabling_follow_without_an_imported_snapshot_does_not_compute_scenarios(self):
+        self.window.chk_follow.blockSignals(True)
+        self.window.chk_follow.setChecked(True)
+        self.window.chk_follow.blockSignals(False)
+        self.window._on_recommend()
+        self.wait()
+        self.controller.draft_scenarios.assert_not_called()
+        self.assertNotIn("scenarios", self.controller.recommend_champs.call_args.kwargs)
+
+    def test_successful_client_follow_enables_scenarios_without_changing_manual_switch(self):
+        self.window.chk_follow.blockSignals(True)
+        self.window.chk_follow.setChecked(True)
+        self.window.chk_follow.blockSignals(False)
+        snapshot = DraftSnapshot((DraftPick("blue", 266, 0, 0, 0),), own_team="blue", session_key="test:client")
+        with patch.object(self.window, "_load_roles", return_value=({}, False)):
+            self.window._receive_followed_draft(snapshot)
+        self.assertTrue(self.window._client_draft_loaded)
+        self.assertFalse(self.window.chk_robust.isChecked())
+        self.window.grp_role.button(2).setChecked(True)
+        self.controller.draft_scenarios.return_value = ()
+        self.window._on_recommend()
+        self.wait()
+        self.controller.draft_scenarios.assert_called_once()
+        self.assertIn("scenarios", self.controller.recommend_champs.call_args.kwargs)
+        # A fresh manually entered draft must not inherit the client's extra work.
+        self.window._on_clear_all()
+        self.controller.reset_mock()
+        self.window._on_recommend()
+        self.wait()
+        self.assertFalse(self.window._client_draft_loaded)
+        self.controller.draft_scenarios.assert_not_called()
+        self.assertNotIn("scenarios", self.controller.recommend_champs.call_args.kwargs)
+
+    def test_identical_client_snapshot_still_marks_an_existing_manual_draft_as_imported(self):
+        self.window.blue_picks[0].setCurrentText("Aatrox")
+        self.window.chk_follow.blockSignals(True)
+        self.window.chk_follow.setChecked(True)
+        self.window.chk_follow.blockSignals(False)
+        snapshot = DraftSnapshot((DraftPick("blue", 266, 0, 0, 0),), own_team="blue", session_key="test:same")
+        with patch.object(self.window, "_load_roles", return_value=({}, False)), \
+                patch.object(self.window, "_apply_import") as apply:
+            self.window._receive_followed_draft(snapshot)
+        apply.assert_not_called()
+        self.assertTrue(self.window._client_draft_loaded)
+
+    def test_manual_client_review_only_enables_extra_work_after_acceptance(self):
+        from PyQt6.QtWidgets import QDialog
+        snapshot = DraftSnapshot((DraftPick("blue", 266, 0, 0, 0),), own_team="blue", session_key="test:review")
+        with patch.object(self.window, "_load_roles", return_value=({}, False)), \
+                patch("view.draft_import_dialog.DraftImportDialog") as dialog:
+            dialog.return_value.exec.return_value = QDialog.DialogCode.Rejected
+            self.window._review_import(snapshot)
+            self.assertFalse(self.window._client_draft_loaded)
+            dialog.return_value.exec.return_value = QDialog.DialogCode.Accepted
+            dialog.return_value.own_side.currentData.return_value = "blue"
+            dialog.return_value.draft_values.return_value = {"blue": [0], "red": [], "blue_bans": [], "red_bans": []}
+            self.window._review_import(snapshot)
+        self.assertTrue(self.window._client_draft_loaded)
+        self.window.grp_role.button(2).setChecked(True)
+        self.controller.draft_scenarios.return_value = ()
+        self.window._on_recommend()
+        self.wait()
+        self.controller.draft_scenarios.assert_called_once()
+
     def test_ban_advice_uses_selected_pool_without_prediction_or_history_requests(self):
         self.window.cb_pool.setCurrentText("Mid")
         self.controller.recommend_ban_lists.return_value = {role: [] for role in range(5)}

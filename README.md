@@ -392,8 +392,14 @@ automatikus kliensbeli tiltás.
 
 ## Opcionális ajánlás több ellenfél-kiosztásra
 
-A **Beállítások / Ajánlás és elemzés** lapon kapcsolható be a
-**Bizonytalan ellenfélpozíciók vizsgálata (első 5)**. Alapból kikapcsolt.
+A több felállás vizsgálata csak **sikeresen kliensből átvett draftnál** fut
+automatikusan: kézi beolvasáskor az elfogadás, követéskor az adatok alkalmazása
+után. A követés puszta bekapcsolása vagy egy elutasított beolvasás nem indítja el.
+Kézi és fájlból betöltött draftnál a **Beállítások / Ajánlás és elemzés** lapon
+a **Több felállás vizsgálata kézi / mentett draftnál is (első 5)** kapcsolóval
+engedélyezhető. A kapcsoló alapból kikapcsolt, a kézi választása megmarad.
+Az **Új Draft** és a fájlból betöltés törli a korábbi kliensátvétel állapotát;
+kikapcsolt kézi kapcsoló mellett ilyenkor nincs extra számítás vagy kiosztásjelzés.
 A normál ajánlás első öt jelöltjét legfeljebb három ütközésmentes ellenfél-kiosztásban
 vizsgálja újra, az aktuális saját csapatot megtartva. A kézzel megerősített
 ellenfélpozíciókat is tiszteletben tartja. A lehetséges automatikus pozícióknál
@@ -404,8 +410,9 @@ adja. A fő százalék az aktuális draft becslése marad; alatta külön látha
 vizsgált kiosztások minimuma és maximuma. Ez nem konfidenciaintervallum.
 A kiosztáslinkre kattintva megnyithatók a konkrét felállások és relatív súlyaik.
 Két különböző használható kiosztás hiányában normál sorrendet és magyarázatot ad.
-Legfeljebb 15 extra kétoldali predikció készül; az alapfelület és a bansegéd
-bekapcsolás nélkül nem futtatja ezt az elemzést.
+Legfeljebb 15 extra kétoldali predikció készül. Kliensátvétel és kézi engedély
+hiányában az ajánlás sem kiosztásgenerálást, sem extra inferenciát nem végez;
+a bansegéd nem futtatja ezt az elemzést.
 
 ## Saját meccselőzmények
 

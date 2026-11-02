@@ -35,6 +35,7 @@ class MainWindow(QMainWindow):
         self._task_callback_active = False
         self._task_finish_pending = False
         self._manual_import_active = False
+        self._client_draft_loaded = False
         self._recommendation_context = None
         self._prediction_context = None
         self._effects_context = None
@@ -514,8 +515,8 @@ class MainWindow(QMainWindow):
         row_action = QHBoxLayout()
         self.chk_meta = QCheckBox("Off-Meta hősök szűrése")
         self.chk_meta.setChecked(True)
-        self.chk_robust = QCheckBox("Bizonytalan ellenfélpozíciók vizsgálata (első 5)")
-        self.chk_robust.setToolTip("Opcionális extra számítás: legfeljebb három ütközésmentes ellenfél-kiosztás. Az automatikus pozícióhoz legalább 5% gyakoriság kell; teljes ellenfélcsapatnál a kényszerített elhelyezést jelöljük.")
+        self.chk_robust = QCheckBox("Több felállás vizsgálata kézi / mentett draftnál is (első 5)")
+        self.chk_robust.setToolTip("Kliensből átvett draftnál automatikus; kézi vagy fájlból betöltött draftnál csak ezzel a kapcsolóval fut. Legfeljebb három ütközésmentes ellenfél-kiosztás. Az automatikus pozícióhoz legalább 5% gyakoriság kell; teljes ellenfélcsapatnál a kényszerített elhelyezést jelöljük.")
         self.cb_sync_side = QComboBox()
         for title, value in (("Automatikus", None), ("Kék", "blue"), ("Piros", "red")):
             self.cb_sync_side.addItem(title, value)
@@ -635,6 +636,7 @@ class MainWindow(QMainWindow):
         """Clears all champion selections and resets the UI."""
         self.chk_follow.setChecked(False)
         self._draft_unavailable()
+        self._client_draft_loaded = False
         self._clear_role_metadata()
         self._invalidate_recommendations()
         for combo in self.blue_picks + self.red_picks + self.blue_bans + self.red_bans:
@@ -794,7 +796,7 @@ class MainWindow(QMainWindow):
             self.lbl_dash_title.setText("A választott hőslista üres. Adj hozzá hősöket, vagy kapcsold ki a listaszűrést.")
             return
         tags = internal_tags(self._pool_library, self._pool_mapping)
-        robust = self.chk_robust.isChecked()
+        robust = self._client_draft_loaded or self.chk_robust.isChecked()
         manual_roles = dict(self._sync_manual_roles)
 
         def recommend():
@@ -1535,7 +1537,7 @@ class MainWindow(QMainWindow):
         self._sync_applying = True
         try:
             if signature(current) != signature(result.values):
-                self._apply_import(result.values)
+                self._apply_import(result.values, from_client=True)
             own = snapshot.own_team or self.cb_sync_side.currentData() or self._sync_manual_side
             if own and (previous is None or previous.own_team != snapshot.own_team):
                 (self.btn_blue if own == "blue" else self.btn_red).setChecked(True)
@@ -1549,6 +1551,7 @@ class MainWindow(QMainWindow):
         finally:
             self._sync_applying = False
         self._sync_last_snapshot = snapshot
+        self._client_draft_loaded = True
         present = {(item.team, item.internal_id) for item in result.assignments}
         self._sync_manual_roles = {key: value for key, value in self._sync_manual_roles.items() if key in present}
         inferred = sum(item.source in ("statistics", "forced") for item in result.assignments if item.role is not None)
@@ -1710,7 +1713,7 @@ class MainWindow(QMainWindow):
         except ValueError:
             self._sync_manual_roles = {(team, cid): role for team in ("blue", "red")
                 for role, cid in enumerate(values[team]) if cid is not None}
-        self._apply_import(values)
+        self._apply_import(values, from_client=True)
         if preview is not None:
             chosen = {(team, cid): role for team in ("blue", "red") for role, cid in enumerate(values[team])
                       if cid is not None}
@@ -1724,7 +1727,7 @@ class MainWindow(QMainWindow):
                     metadata.append(item)
             self._show_role_metadata(metadata)
 
-    def _apply_import(self, values):
+    def _apply_import(self, values, *, from_client=False):
         """Apply only the reviewed snapshot, replacing the previous draft."""
         names = {v: k for k, v in self.name_map.items()}
         for key, combos in (("blue", self.blue_picks), ("red", self.red_picks),
@@ -1734,6 +1737,7 @@ class MainWindow(QMainWindow):
                 champion_id = ids[index] if index < len(ids) else None
                 name = names[champion_id] if champion_id is not None else ""
                 combo.setCurrentIndex(combo.findText(name, Qt.MatchFlag.MatchExactly))
+        self._client_draft_loaded = from_client
         self._invalidate_recommendations()
         self._reset_dash()
         self.lbl_dash_title.setText("A draft frissült.\nKérj ajánlást vagy predikciót.")
