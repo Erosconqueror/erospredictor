@@ -7,6 +7,20 @@ MIN_COVERAGE = .5
 MIN_VISIBLE_RISK = 10.0
 
 
+def _aggregate_risks(parts):
+    if not parts:
+        return {"status": "resolved", "risk_percent": 0.0, "upper_percent": 0.0,
+                "coverage_percent": None}
+    chance, upper = 1.0, 1.0
+    for part in parts:
+        chance *= 1 - part["risk_percent"] / 100
+        upper *= 1 - part["upper_percent"] / 100
+    return {"status": "estimated" if all(part["coverage_percent"] >= 100 * MIN_COVERAGE
+                                         for part in parts) else "insufficient",
+            "risk_percent": 100 * (1 - chance), "upper_percent": 100 * (1 - upper),
+            "coverage_percent": sum(part["coverage_percent"] for part in parts) / len(parts)}
+
+
 def blind_risk(index, div, champion, role, enemy, unavailable=()):
     result = {"status": "unavailable", "risk_percent": None, "upper_percent": None,
               "coverage_percent": None, "known_counters": [], "role_risks": [],
@@ -22,8 +36,6 @@ def blind_risk(index, div, champion, role, enemy, unavailable=()):
     prior = index.prior(div) or {}
     weights = prior.get("counter_weights", [[1.0] * 5 for _ in range(5)])
     excluded = {cid for cid in unavailable if cid >= 0} | {cid for cid in enemy if cid >= 0} | {champion}
-    no_counter, no_possible_counter = 1.0, 1.0
-    coverages = []
 
     def evidence(foe, foe_role):
         pair = index.counter(div, champion, role, foe, foe_role)
@@ -56,17 +68,17 @@ def blind_risk(index, div, champion, role, enemy, unavailable=()):
         coverage = min(1.0, covered / total) if total else 0.0
         probability = min(1.0, counter_mass / total) if total else 0.0
         unknown = 1 - coverage
-        no_counter *= 1 - probability
-        no_possible_counter *= max(0.0, 1 - probability - unknown)
-        coverages.append(coverage)
         result["role_risks"].append({"role": foe_role, "risk_percent": 100 * probability,
+            "upper_percent": 100 * min(1.0, probability + unknown),
             "coverage_percent": 100 * coverage, "counters": sorted(counters, key=lambda item: -item["pick_rate_percent"])})
-    result.update(risk_percent=100 * (1 - no_counter), upper_percent=100 * (1 - no_possible_counter))
-    if not coverages:
-        result["status"] = "resolved"
-    else:
-        result["coverage_percent"] = 100 * sum(coverages) / len(coverages)
-        result["status"] = "estimated" if min(coverages) >= MIN_COVERAGE else "insufficient"
+    result.update(_aggregate_risks(result["role_risks"]))
+    result["lane"] = _aggregate_risks([part for part in result["role_risks"] if part["role"] == role])
+    result["others"] = _aggregate_risks([part for part in result["role_risks"] if part["role"] != role])
+    result["scope"] = "all"
+    if result["others"]["status"] == "insufficient" and result["lane"]["status"] == "estimated":
+        # Stay in the selected tier; do not invent cross-role estimates or pool ranks.
+        result.update(result["lane"])
+        result["scope"] = "lane"
     return result
 
 
@@ -93,7 +105,7 @@ def build_blind_profiles(index, tiers, mapping):
             by_champion = {}
             for champion in index.role_pick_rates(tier, role):
                 profile = blind_risk(index, tier, champion, role, [-1] * 5)
-                summary = {key: profile[key] for key in ("status", "risk_percent", "upper_percent", "coverage_percent", "baseline")}
+                summary = {key: profile.get(key) for key in ("status", "risk_percent", "upper_percent", "coverage_percent", "baseline", "lane", "others", "scope")}
                 summary["counter_count"] = sum(len(item["counters"]) for item in profile["role_risks"])
                 prior = index.prior(tier) or {}
                 for kind in ("counter", "synergy"):
@@ -153,3 +165,21 @@ def risk_badge(evidence):
             break
     caption = f"! Blind ~{chance:.0f}–{upper:.0f}%" if upper - chance >= 2 else f"! Blind ~{chance:.0f}%"
     return caption, color
+
+
+def risk_badges(evidence):
+    """Independent lane/other-role captions for the compact line below win rate."""
+    if "lane" not in evidence or "others" not in evidence:
+        caption, color = risk_badge(evidence)
+        return [(caption, color)] if caption else []
+    badges = []
+    for key, label in (("lane", "Lane"), ("others", "Más role")):
+        part = evidence[key]
+        if key == "others" and evidence.get("scope") == "lane":
+            badges.append(("csak lane (kevés adat)", "#9E9EAE"))
+            continue
+        caption, color = risk_badge(part)
+        if caption:
+            caption = caption.replace("! Blind", label, 1)
+            badges.append((caption, color))
+    return badges

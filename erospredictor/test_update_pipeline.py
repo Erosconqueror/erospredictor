@@ -200,6 +200,9 @@ class PublicationTests(unittest.TestCase):
             app = Path(temp)
             (app / "data").mkdir()
             install_test_catalog(app)
+            for journal in (".model_update", ".scrape_only"):
+                (app / journal).mkdir()
+                (app / journal / "state.json").write_bytes(b"other unfinished run; must remain untouched")
             (app / "data/stats_cache.json").write_text(json.dumps({"IRON": {"old": True}, "GOLD": {"old": True}}))
             (app / "data/meta_champs.json").write_text(json.dumps({"IRON": {"old": True}, "MIXED": {"old": True}}))
 
@@ -217,6 +220,9 @@ class PublicationTests(unittest.TestCase):
                     patch.object(pipeline, "APP_DIR", app), patch.object(pipeline, "train_outputs", side_effect=fit):
                 self.assertEqual(pipeline.run(args, log=lambda _: None), 0)
             self.assertEqual((app / "models/done.pth").read_text(), "new")
+            for journal in (".model_update", ".scrape_only"):
+                self.assertEqual((app / journal / "state.json").read_bytes(), b"other unfinished run; must remain untouched")
+            self.assertEqual(json.loads((app / ".model_training/state.json").read_text())["status"], "complete")
             manifest = json.loads((app / "data/update_manifest.json").read_text())
             self.assertEqual(manifest["plan"]["patches"], ["16.7"])
             self.assertEqual(db.query["patches"], ["16.7"])

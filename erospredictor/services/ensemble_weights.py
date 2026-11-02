@@ -8,7 +8,7 @@ MODEL_NAMES = ("gnn", "roleweighted", "roleaware", "statistical")
 
 def ensemble_minimums(enhanced_statistical=False):
     return {"gnn": .16 if enhanced_statistical else .24,
-            "statistical": .16 if enhanced_statistical else .08,
+            "statistical": .30,
             "roleweighted": .08, "roleaware": .08}
 
 

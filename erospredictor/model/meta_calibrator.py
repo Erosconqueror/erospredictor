@@ -11,12 +11,12 @@ class MetaLearningCalibrator:
     def __init__(self, dataset=None):
         self.dataset = dataset
         self.enhanced_statistical = False
-        self.weights = {
+        self.weights = bounded_weights({
             "gnn": 0.25,
             "roleweighted": 0.25,
             "roleaware": 0.25,
             "statistical": 0.25
-        }
+        }, minimums=ensemble_minimums())
         self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
     def _wrap_model_prediction(self, model_name: str, model_obj: Any) -> callable:
@@ -62,6 +62,8 @@ class MetaLearningCalibrator:
         """Runs predictions for all models and calculates normalized weights based on accuracy."""
         self.enhanced_statistical = enhanced_statistics(models.get("statistical"), div)
         if not self.dataset:
+            self.weights = bounded_weights(self.weights, [name for name, model in models.items() if model is not None],
+                                           minimums=ensemble_minimums(self.enhanced_statistical))
             return self.weights
 
         scores = {}
@@ -85,6 +87,7 @@ class MetaLearningCalibrator:
 
     def save(self, path: str):
         """Saves calculated weights to a file."""
+        self.weights = bounded_weights(self.weights, minimums=ensemble_minimums(self.enhanced_statistical))
         os.makedirs(os.path.dirname(path), exist_ok=True)
         with open(path, 'wb') as f:
             pickle.dump({"weights": self.weights, "enhanced_statistical": self.enhanced_statistical,

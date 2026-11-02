@@ -37,7 +37,11 @@ A **Miért?** gomb külön részletes elemzést nyit meg. Ajánlás után a kije
 
 A nyilakhoz az ajánlási listában egy hősre kattintva választhatsz fókuszt. A fehér keret a fókuszhős lane-ellenfelét emeli ki.
 
-Az ajánlás **! Blind** jelzése a még választható counterek pickrate-alapú kitettségét mutatja. A szín finoman, sárgából narancson át pirosba változik a veszéllyel. Ha a becslés felső értéke is 10% alatti, nem jelenik meg felirat; teljes ellenfélcsapatnál sincs blindjelzés. Nincs „Látható counter” felirat vagy külön ablak. Hiányos adatnál tartomány vagy szürke figyelmeztetés látszik. Ez a jelenlegi pozíciókiosztásra számolt statisztikai közelítés, nem vereségi esély vagy az ellenfél döntésének előrejelzése. Régi adatfájloknál „nincs adat” jelenik meg.
+Az ajánlás winrate-je alatt a **Lane** és **Más role** külön mutatja a még választható counterek pickrate-alapú kitettségét. Mindkettő saját sárga–narancs–piros színt kap a veszély alapján. Ha az adott becslés felső értéke is 10% alatti, annak nincs felirata; teljes ellenfélcsapatnál sincs blindjelzés. Ha a többi szerephez kevés az adat, de a saját lane számítható, „csak lane (kevés adat)” jelenik meg. Ha a lane sem számítható, szürke figyelmeztetés látszik. Nincs látható-counter jelzés vagy külön ablak. Ez rangon belüli statisztikai közelítés, nem vereségi esély vagy az ellenfél döntésének előrejelzése.
+
+A saját hősök kerete: Játszom – kék; Komfort – zöld; Tanulnám – lila. Több jelölésnél a komfort, majd a tanulási keret élvez elsőbbséget. A bevált saját hős arany keretet kap az előzmény alapján. A blindjelzések és címkék nem növelik a sorok magasságát.
+
+Dupla kattintásos fejlesztői indítók: **scrape_continuous.bat** csak gyűjt, rangonként a profil 1/20-ával váltva; **train_models.bat** a meglévő adatbázisból frissít minden statisztikát, hős-/pozíciólistát, blindprofilt, modellt és kalibrációt. Egyszerre egy folyamat futhat, Ctrl+C-vel leállítható és később folytatható. A statisztikai modell, amikor becslést ad, legalább 30% súlyt kap az ensemble-ben.
 
 ### 6. Predikció
 1. Válaszd ki az összes maradék választott hőst a középső legördülő menükből.

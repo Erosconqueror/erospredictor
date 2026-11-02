@@ -43,6 +43,17 @@ Az alkalmazást a modellcsere idejére zárd be.
 .\update_models.bat --last-patches 3 --fresh
 ```
 
+Parancssor nélkül, dupla kattintással is indítható a **`train_models.bat`**:
+a meglévő adatbázisból az utolsó öt patchre újraszámolja a statisztikai cache-t,
+az off-meta és pozícióeloszlási listákat, interakciós mátrixokat és blindprofilokat,
+majd tanít, QA-t futtat, kalibrál és együtt publikál. Nem gyűjt új meccseket.
+A normál rangkvóták és a minimumadat-ellenőrzés itt is érvényesek.
+Saját `.model_training/state.json` mentést használ, a gyűjtő mentése megmarad.
+A tanításhoz előbb állítsd le a gyűjtőt Ctrl+C-vel; a közös zár megakadályozza
+az egyidejű futást. A gyűjtő később ugyanonnan folytatható.
+A régi adatbázismeccsek törlésére külön a fejlesztői `maintain_database.bat` szolgál;
+a tanítás nem töröl adatbázisrekordokat.
+
 Külön, csak adatgyűjtésre szolgáló mód:
 
 ```powershell
@@ -53,7 +64,12 @@ Külön, csak adatgyűjtésre szolgáló mód:
 ```
 
 A `--scrape-only` a jóváhagyott rangprofil számait **arányként** használja,
-és nagyjából ezer meccses körökben gyűjt tovább, rögzített teljes meccslimit nélkül.
+és rangonként az alapmennyiség **1/20-át** gyűjti egy körben, majd vált:
+Challenger 100, Grandmaster 150, Master 250, Diamond 400, Emerald 600,
+Platinum 800, Gold 1100, Silver 900, Bronze 350, Iron 250 meccs.
+Nincs rögzített teljes meccslimit. Dupla kattintásos indítója a `scrape_continuous.bat`.
+Újraindításkor a régebbi körméretet is átállítja, a mentett játékos-/meccspozíciót
+megtartva; egy már futó régi folyamatot előbb Ctrl+C-vel állíts le.
 A már meglévő adatokat is figyelembe veszi, először az alulreprezentált rangokat
 tölti fel. Ha egy rang elérhető játékosai elfogynak, a többinél tovább keres;
 emiatt az elérhető adatoktól függően az arány eltérhet a céltól. Az összes
@@ -80,9 +96,9 @@ Az automatikus patchlista a Riot Data Dragon megjelent verzióiból készül, í
 a `--dry-run` hálózati kapcsolat nélkül is működik.
 
 Az alapértelmezett, közelítő játékoseloszlást követő profil az utolsó öt patchből
-összesen **107 000 használható, egyedi meccset** céloz. A táblázat rangonkénti,
-az öt patchre együtt értendő célokat tartalmaz; Gold és Silver külön-külön is
-legalább 20 000 meccset kap. Ez szándékosan választott mintavételi profil.
+összesen **98 000 használható, egyedi meccset** céloz. A táblázat rangonkénti,
+az öt patchre együtt értendő célokat tartalmaz; Gold 22 000, Silver 18 000
+meccset kap. Ez szándékosan választott mintavételi profil.
 
 | Rang | Meccscél |
 | --- | ---: |
@@ -499,10 +515,11 @@ A meglévő kritériumok átlagát veszi; egy közeli hibás helyezés nem null�
 az egész esetet. A tanítás QA-eredménye ezt a részpontot használja.
 A predikciós golden teszt elfogadási tartományai és pontozása változatlanok.
 
-Ha az új interakciós statisztika az adott draftban ténylegesen használható,
-a GNN és a statisztikai modell minimuma **16–16%**, a RoleWeighted és
-RoleAware minimuma **8–8%**. Régi vagy nem használható új statisztikánál a
-GNN minimuma **24%**, a többié **8%**. Ezek normalizálás utáni alsó korlátok,
+A sikeresen becslést adó statisztikai modell minimuma **30%**, a régi
+lane-alapú és az új interakciós útvonalon egyaránt. Ha az új interakciós
+statisztika az adott draftban ténylegesen használható, a GNN minimuma **16%**,
+egyébként **24%**. A RoleWeighted és RoleAware minimuma **8–8%**.
+Ezek normalizálás utáni alsó korlátok,
 nem rögzített súlyok. Predikciónál, ajánlásnál és magyarázatnál, a két oldal
 összesítése után is érvényesek. Hiányzó vagy hibás komponens nem kap kitalált
 hozzájárulást; a megmaradt komponensek újranormalizálódnak.
@@ -571,10 +588,18 @@ az adatból számolt relevanciából indulnak. A GNN-prior külön, kizárólag 
 belső tanító részhalmaz eredményeiből készül, a validációs címkék nélkül.
 Régi GNN-checkpoint a korábbi, semleges súlyozású útvonalon tölthető be.
 
-Az ajánlási sorban egyszerű, nem kattintható **! Blind** jelzés mutatja a
-hátralévő counterek pickrate-alapú kitettségét. A szöveg színe folyamatosan
+Az ajánlási sorban, **a winrate alatt**, külön **Lane** és **Más role** jelzés
+mutatja a hátralévő counterek pickrate-alapú kitettségét. Mindkét szöveg színe külön, folyamatosan
 sárgából narancson át pirosba változik a kockázattal. Ha a becslés felső
-értéke is 10% alatti, nincs felirat; teljes ellenfélcsapatnál sincs blindjelzés.
+értéke is 10% alatti, az adott részhez nincs felirat; teljes ellenfélcsapatnál sincs blindjelzés.
+A saját lane és a többi pozíció lefedettségét külön ellenőrzi: ha a többi
+szerephez kevés az adat, de a lane számítható, **csak lane (kevés adat)**
+jelöléssel a saját lane becslését mutatja. Rangokat nem kever össze;
+ha a lane-hez sincs elég adat, arra is szürke figyelmeztetés látszik.
+A „Játszom” kék, „Komfort” zöld, „Tanulnám” lila keretet ad; több címkénél
+a komfort, majd a tanulási jelölés kerete élvez elsőbbséget. A jó saját
+winrate arany kerete megmarad. A sorok két szövegsora és kerethelye állandó,
+a blindjelzés és a saját címkék együtt sem növelik a magasságukat.
 A már választott és bannolt hősök kikerülnek a maradék poolból. A már
 látható counterhez nem jelenik meg külön figyelmeztetés vagy ablak. Counternek
 a legalább 3 százalékpontos, alaparánnyal/mintazajjal korrigált és

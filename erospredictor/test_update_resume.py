@@ -286,7 +286,7 @@ class TrainingPipelineResumeTests(unittest.TestCase):
             self.assertEqual(DB.queries, 1)
             self.assertEqual(modes, [True, False])
             self.assertEqual(len(list((app / "models").glob("*.pth"))), 6)
-            self.assertEqual(json.loads((app / ".model_update/state.json").read_text())["status"], "complete")
+            self.assertEqual(json.loads((app / ".model_training/state.json").read_text())["status"], "complete")
 
 
 if __name__ == "__main__":

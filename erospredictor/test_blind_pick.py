@@ -2,7 +2,7 @@
 
 import unittest
 
-from services.blind_pick import blind_risk, annotate_blind_risk, risk_badge
+from services.blind_pick import blind_risk, annotate_blind_risk, risk_badge, risk_badges
 
 
 class Index:
@@ -58,6 +58,51 @@ class BlindRiskTests(unittest.TestCase):
     def test_multiple_roles_use_explicit_independence_approximation(self):
         result = blind_risk(self.index, "GOLD", 0, 2, [-1, -1, 11, 12, 13])
         self.assertAlmostEqual(result["risk_percent"], 60)  # 1 - (1-.2)*(1-.5).
+
+    def test_sparse_cross_role_data_falls_back_to_supported_same_tier_lane(self):
+        self.index.rates[2] = {1: .2, 2: .8}
+        self.index.edges.update({(2, 1): -8, (2, 2): 0})
+        result = blind_risk(self.index, "GOLD", 0, 2, [-1] * 5)
+        self.assertEqual(result["scope"], "lane")
+        self.assertEqual(result["status"], "estimated")
+        self.assertAlmostEqual(result["risk_percent"], 20)
+        self.assertEqual(result["lane"]["coverage_percent"], 100)
+        self.assertEqual(result["others"]["status"], "insufficient")
+        badges = risk_badges(result)
+        self.assertEqual(badges[0][0], "Lane ~20%")
+        self.assertIn("csak lane", badges[1][0])
+
+    def test_lane_and_other_roles_have_separate_risks_and_colors(self):
+        self.index.rates[2] = {1: .2, 2: .8}
+        self.index.edges.update({(2, 1): -8, (2, 2): 0})
+        result = blind_risk(self.index, "GOLD", 0, 2, [-1, -1, -1, 12, 13])
+        self.assertEqual(result["scope"], "all")
+        self.assertAlmostEqual(result["lane"]["risk_percent"], 20)
+        self.assertAlmostEqual(result["others"]["risk_percent"], 60)
+        self.assertAlmostEqual(result["risk_percent"], 68)
+        badges = risk_badges(result)
+        self.assertEqual([item[0] for item in badges], ["Lane ~20%", "Más role ~60%"])
+        self.assertNotEqual(badges[0][1], badges[1][1])
+
+    def test_lane_fallback_does_not_hide_its_own_missing_data_or_use_other_ranks(self):
+        self.index.rates[2] = {1: .2, 2: .8}
+        self.index.edges[(2, 1)] = -8
+        original = self.index.counter
+        tiers = []
+        def counter(tier, *args):
+            tiers.append(tier)
+            return original(tier, *args)
+        self.index.counter = counter
+        result = blind_risk(self.index, "IRON", 0, 2, [-1] * 5)
+        self.assertEqual(result["lane"]["status"], "insufficient")
+        self.assertNotEqual(result["scope"], "lane")
+        self.assertEqual(set(tiers), {"IRON"})
+        self.assertIn("Lane: kevés adat", [caption for caption, _ in risk_badges(result)])
+
+    def test_already_picked_laner_does_not_warn_about_visible_counter(self):
+        result = blind_risk(self.index, "GOLD", 0, 2, [-1, 10, 1, 12, 13])
+        self.assertEqual(result["lane"]["status"], "resolved")
+        self.assertTrue(all(not caption.startswith("Lane") for caption, _ in risk_badges(result)))
 
     def test_partial_coverage_never_turns_zero_known_counter_mass_into_safe_green(self):
         self.index.edges = {(0, 2): 0, (0, 3): 0}

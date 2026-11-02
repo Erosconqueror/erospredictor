@@ -4,6 +4,7 @@ __pycache__/
 env/
 erospredictor/.model_update.lock
 erospredictor/.model_update/
+erospredictor/.model_training/
 erospredictor/.scrape_only/
 erospredictor/.database_maintenance/
 erospredictor/models/.update-*

@@ -861,33 +861,46 @@ class MainWindow(QMainWindow):
             name_color = "#FFE082" if selected else "#FFFFFF"
             personal = rec.get("personal") if feature_flags.PERSONAL_HISTORY_ENABLED and self.chk_personal.isChecked() else None
             marker = personal.get("marker") if personal else None
-            frame_color = "#FFD166" if marker == "good" else "#64B5F6" if marker == "played" else None
-            frame = f"border-top: 2px solid {frame_color}; border-bottom: 2px solid {frame_color};" if frame_color else ""
-            left = f"border-left: 2px solid {frame_color};" if frame_color else ""
-            right = f"border-right: 2px solid {frame_color};" if frame_color else ""
+            tags = rec.get("pool_tags", ())
+            tag_colors = {"played": "#64B5F6", "comfort": "#81C784", "learn": "#B39DDB"}
+            frame_color = ("#FFD166" if marker == "good" else
+                           tag_colors["comfort"] if "comfort" in tags else
+                           tag_colors["learn"] if "learn" in tags else
+                           tag_colors["played"] if "played" in tags or marker == "played" else None)
+            frame_color = frame_color or "transparent"
+            frame = f"border-top: 2px solid {frame_color}; border-bottom: 2px solid {frame_color};"
+            left = f"border-left: 2px solid {frame_color};"
+            right = f"border-right: 2px solid {frame_color};"
             html += f"<tr bgcolor='{row_color}'>"
             html += f"<td style='width: 45px; {frame} {left}'><img src='assets/icons/{cid}.png' width='38' height='38' style='border-radius: 6px;'></td>"
-            html += (f"<td style='font-size: 18px; font-weight: bold; text-align: left; {frame}'>"
+            html += (f"<td style='font-size: 18px; font-weight: bold; text-align: left; white-space: nowrap; {frame}'>"
                      f"<a href='champion:{cid}' style='color: {name_color}; text-decoration: none;'>{name}</a>")
-            tags = rec.get("pool_tags", ())
+            details = []
             if tags:
-                badges = " · ".join(TAGS[tag] for tag in tags if tag in TAGS)
-                html += f"<br><span style='font-size: 11px; color: #B39DDB;'>{badges}</span>"
-            if rec.get("blind") is not None:
-                from services.blind_pick import risk_badge
-                caption, tint = risk_badge(rec["blind"])
-                if caption:
-                    html += f"<br><span style='font-size: 11px; color: {tint};'>{escape(caption)}</span>"
+                details.extend(f"<span style='color: {tag_colors[tag]};'>{TAGS[tag]}</span>"
+                               for tag in tags if tag in TAGS)
             robust = rec.get("robust")
             if robust and robust.get("count", 0) >= 2:
-                warning = " · ⚠ kényszerített pozíció is" if robust.get("forced") else ""
-                html += f"<br><a href='layouts:{cid}' style='font-size: 11px; color: #80CBC4;'>{robust['count']} kiosztás: {robust['min']:.1f}–{robust['max']:.1f}%{warning}</a>"
+                warning = " ⚠" if robust.get("forced") else ""
+                title = f"{robust['count']} kiosztás: {robust['min']:.1f}–{robust['max']:.1f}%{warning}"
+                html += f" <a href='layouts:{cid}' title='{title}' style='font-size: 10px; color: #80CBC4;'>↔{robust['count']}{warning}</a>"
             if personal:
-                from services.explanation_format import personal_history_html
-                summary = escape(personal_history_html(personal, id_name))
-                html += f"<br><span style='font-size: 11px; color: #CDD6E5;'>{summary}</span>"
+                # One compact metadata line; personal evidence remains in the detailed analysis.
+                summary = "Bevált saját hős" if marker == "good" else "Játszott saját hős"
+                if not tags:
+                    details.append(f"<span style='color: #CDD6E5;'>{summary}</span>")
+                elif marker == "good":
+                    details.append("<span style='color: #FFD166;'>★</span>")
+            html += "<br><span style='font-size: 10px;'>" + (" · ".join(details) or "&nbsp;") + "</span>"
             html += "</td>"
-            html += f"<td width='85' style='font-size: 18px; color: {color}; font-weight: bold; text-align: right; {frame} {right}'>{wr:.2f}%</td>"
+            blind = []
+            if rec.get("blind") is not None:
+                from services.blind_pick import risk_badges
+                blind = [f"<span style='color: {tint};'>{escape(caption)}</span>"
+                         for caption, tint in risk_badges(rec["blind"])]
+            blind_line = " · ".join(blind) or "&nbsp;"
+            html += (f"<td width='220' style='font-size: 18px; color: {color}; font-weight: bold; text-align: right; white-space: nowrap; {frame} {right}'>"
+                     f"{wr:.2f}%<br><span style='font-size: 10px; font-weight: normal;'>{blind_line}</span></td>")
             html += "</tr>"
         html += "</table>"
         self.lbl_recommend.setText(html)

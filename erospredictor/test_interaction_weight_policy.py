@@ -11,6 +11,7 @@ class InteractionWeightTests(unittest.TestCase):
     def test_both_policies_hold_after_normalization_with_extreme_raw_weights(self):
         for enhanced in (False, True):
             floors = ensemble_minimums(enhanced)
+            self.assertEqual(floors["statistical"], .30)
             for dominant in MODEL_NAMES:
                 weights = bounded_weights({name: int(name == dominant) for name in MODEL_NAMES}, minimums=floors)
                 self.assertAlmostEqual(sum(weights.values()), 1)
@@ -61,13 +62,28 @@ class InteractionWeightTests(unittest.TestCase):
             path = str(Path(folder) / "calibration.pkl")
             before = MetaLearningCalibrator()
             before.enhanced_statistical = True
-            before.weights = {"gnn": .16, "statistical": .16, "roleaware": .34, "roleweighted": .34}
+            before.weights = {"gnn": .16, "statistical": .30, "roleaware": .27, "roleweighted": .27}
             before.save(path)
             after = MetaLearningCalibrator()
             result = after.load(path)
         self.assertTrue(after.enhanced_statistical)
         self.assertAlmostEqual(result["gnn"], .16)
-        self.assertAlmostEqual(result["statistical"], .16)
+        self.assertAlmostEqual(result["statistical"], .30)
+
+    def test_old_calibration_and_defaults_are_upgraded_to_thirty_percent_without_training(self):
+        import pickle
+        import tempfile
+        from pathlib import Path
+        from model.meta_calibrator import MetaLearningCalibrator
+        calibrator = MetaLearningCalibrator()
+        self.assertGreaterEqual(calibrator.get_weights()["statistical"], .30)
+        self.assertGreaterEqual(calibrator.calibrate({name: object() for name in MODEL_NAMES}, "GOLD")["statistical"], .30)
+        with tempfile.TemporaryDirectory() as folder:
+            path = Path(folder) / "old.pkl"
+            with path.open("wb") as stream:
+                pickle.dump({"weights": {"statistical": .08, "gnn": .76, "roleaware": .08, "roleweighted": .08},
+                             "enhanced_statistical": False}, stream)
+            self.assertGreaterEqual(calibrator.load(path)["statistical"], .30)
 
 
 if __name__ == "__main__":

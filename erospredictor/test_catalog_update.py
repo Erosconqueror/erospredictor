@@ -229,7 +229,7 @@ class NewChampionTrainingTests(unittest.TestCase):
             weights = torch.load(app / "models/GOLD_roleaware.pth", weights_only=True)
             self.assertEqual(weights["c_emb.weight"].shape[0], count)
             self.assertTrue((app / f"assets/icons/{count - 1}.png").is_file())
-            self.assertEqual(json.loads((app / ".model_update/state.json").read_text())["status"], "complete")
+            self.assertEqual(json.loads((app / ".model_training/state.json").read_text())["status"], "complete")
 
 
 if __name__ == "__main__":

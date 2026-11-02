@@ -239,7 +239,8 @@ class TestNeuralEmptyChampionEncoding(unittest.TestCase):
         core.device = torch.device("cpu")
         core.active_div = "GOLD"
         blue, red = [-1, 0, -1, -1, -1], [-1] * 5
-        for model_name, feature_offset in (("roleweighted", 0), ("roleaware", 172)):
+        from model.core_model import CHAMPION_COUNT
+        for model_name, feature_offset in (("roleweighted", 0), ("roleaware", CHAMPION_COUNT)):
             capture = Capture()
             core.models = {model_name: capture}
             core._component_predictions("GOLD", blue, red)
@@ -256,7 +257,7 @@ class TestNeuralEmptyChampionEncoding(unittest.TestCase):
         captured = []
         hook = model.fc1.register_forward_pre_hook(lambda module, inputs: captured.append(inputs[0].detach().clone()))
         try:
-            features = torch.zeros((1, 1720))
+            features = torch.zeros((1, model.champ_count * 10))
             with torch.no_grad():
                 model(features)
                 features[0, 0] = 1.0

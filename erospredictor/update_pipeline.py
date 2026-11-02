@@ -31,7 +31,7 @@ import configs as cfg
 
 APP_DIR = Path(__file__).resolve().parent
 VERSIONS_URL = "https://ddragon.leagueoflegends.com/api/versions.json"
-INTERACTION_POLICY = "interaction-statistics-and-priors-v1"
+INTERACTION_POLICY = "interaction-statistics-and-priors-stat30-v2"
 
 
 class PermanentUpdateError(RuntimeError):
@@ -609,6 +609,11 @@ def _run_scrape_only(args, targets, log=print):
         if progress.state["status"] == "complete":
             log("The saved scrape-only run already completed successfully.")
             return 0
+        if progress.state.get("scrape_steps") != steps:
+            # Replan the next quota, keeping pending SQL writes and every player cursor.
+            progress.state.pop("scrape_goals", None)
+            progress.state["scrape_steps"] = steps
+            progress.save()
     plan = {"mode": "scrape-only", "patches": patches, "region": args.region,
             "tiers": args.tiers, "profile_proportions": targets, "records_per_round": steps,
             "fixed_match_limit": None, "stages": ["collect"]}
@@ -703,7 +708,8 @@ def _run(args, log=print) -> int:
         for name in ("golden_dataset.json",):
             path = APP_DIR / "data" / name
             request[name] = file_digest(path) if path.is_file() else None
-        progress = UpdateProgress.open(APP_DIR / ".model_update", request,
+        journal = ".model_training" if args.skip_scrape else ".model_update"
+        progress = UpdateProgress.open(APP_DIR / journal, request,
                     lambda: resolve_patch_window(args), fresh=args.fresh and not args.resume,
                     resume_completed=args.resume, upgrade=compatible_profile_upgrade,
                     collection_only_changes=("golden_dataset.json", "training_config", "epochs", "qa_min_pass", "min_matches", "targets", "tier_target"))

@@ -20,9 +20,8 @@ def rank_targets(args, configured):
 
 
 def collection_steps(targets):
-    """Roughly 1000 records per round, proportional to the chosen profile."""
-    divisor = max(1, sum(targets.values()) // 1000)
-    return {tier: max(1, (goal + divisor // 2) // divisor) for tier, goal in targets.items()}
+    """Switch tiers after one twentieth of each rank's base target (rounded up)."""
+    return {tier: max(1, (goal + 19) // 20) for tier, goal in targets.items()}
 
 
 def collection_order(tiers, priority=()):

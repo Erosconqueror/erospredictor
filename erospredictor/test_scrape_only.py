@@ -44,7 +44,7 @@ class AvailableRiot:
 class ScrapeOnlyTests(unittest.TestCase):
     def arguments(self, *extra):
         return pipeline.parser().parse_args(["--scrape-only", "--patches", "16.7", "--no-catalog",
-            "--tiers", "CHALLENGER", "GOLD", "--tier-target", "CHALLENGER=2", "--tier-target", "GOLD=4", *extra])
+            "--tiers", "CHALLENGER", "GOLD", "--tier-target", "CHALLENGER=40", "--tier-target", "GOLD=80", *extra])
 
     def test_default_is_full_update_and_scrape_only_requires_its_explicit_flag(self):
         self.assertFalse(pipeline.parser().parse_args([]).scrape_only)
@@ -56,7 +56,11 @@ class ScrapeOnlyTests(unittest.TestCase):
 
     def test_round_steps_follow_the_approved_profile(self):
         steps = collection_steps(configs.DATASET_TARGETS)
-        self.assertLess(abs(sum(steps.values()) - 1000), 20)
+        self.assertEqual(steps, {tier: goal // 20 for tier, goal in configs.DATASET_TARGETS.items()})
+        self.assertEqual(steps["CHALLENGER"], 100)
+        self.assertEqual(steps["GOLD"], 1100)
+        self.assertEqual(steps["SILVER"], 900)
+        self.assertEqual(collection_steps({"GOLD": 21, "IRON": 1}), {"GOLD": 2, "IRON": 1})
         self.assertGreater(steps["GOLD"], steps["SILVER"])
         self.assertGreater(steps["SILVER"], steps["PLATINUM"])
         self.assertAlmostEqual(steps["GOLD"] / steps["CHALLENGER"], 11, delta=0.3)
@@ -124,8 +128,16 @@ class ScrapeOnlyTests(unittest.TestCase):
                 state = json.loads((app / ".scrape_only/state.json").read_text())
                 self.assertEqual(state["collection"]["CHALLENGER"]["match_index"], 2)
                 self.assertEqual(state["collection"]["GOLD"]["match_index"], 2)
+                # An older rotation policy must not force us to finish its old quota.
+                state.pop("scrape_steps")
+                state["scrape_goals"] = {"CHALLENGER": 100, "GOLD": 100}
+                pipeline.atomic_json(app / ".scrape_only/state.json", state)
                 self.assertEqual(pipeline.run(self.arguments(), log=lambda _: None), 0)
+                resumed = json.loads((app / ".scrape_only/state.json").read_text())
+                self.assertEqual(resumed["run_id"], state["run_id"])
+                self.assertEqual(resumed["scrape_steps"], {"CHALLENGER": 2, "GOLD": 4})
             self.assertEqual(len(db.saved), 18)
+            self.assertEqual(Counter(mid.split("-")[0] for mid in db.saved[:6]), {"CHALLENGER": 2, "GOLD": 4})
             self.assertEqual(riot.downloads.count("GOLD-2"), 2)
             self.assertEqual(Counter(riot.players), {"CHALLENGER": 1, "GOLD": 1})
 

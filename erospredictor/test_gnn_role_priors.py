@@ -220,7 +220,7 @@ class GNNRolePriorTests(unittest.TestCase):
                                                      truth, "GOLD", enhanced_statistical=enhanced)
             self.assertEqual(report["status"], "success")
             self.assertAlmostEqual(report["weights"]["gnn"], .16 if enhanced else .24)
-            self.assertAlmostEqual(report["weights"]["statistical"], .16 if enhanced else .08)
+            self.assertAlmostEqual(report["weights"]["statistical"], .30)
             self.assertAlmostEqual(report["weights"]["roleaware"], .08)
             self.assertAlmostEqual(sum(report["weights"].values()), 1)
 
