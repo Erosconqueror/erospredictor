@@ -22,9 +22,45 @@ def selected_routes(regions):
     regions = list(dict.fromkeys(regions))
     if not regions or any(region not in ROUTES for region in regions):
         raise ValueError("Supported regions: euw1, eun1, kr, na1")
-    if len({ROUTES[region] for region in regions}) != len(regions):
-        raise ValueError("EUW and EUNE share europe's Match-v5 budget; choose one of them per run.")
     return regions
+
+
+def route_groups(regions):
+    groups = {}
+    for region in selected_routes(regions):
+        groups.setdefault(ROUTES[region], []).append(region)
+    return list(groups.values())
+
+
+def collected_count(region):
+    try:
+        state = json.loads((pipeline.APP_DIR / ".scrape_regions" / region / "state.json").read_text(encoding="utf-8"))
+        return sum(row.get("new_matches", 0) for row in state.get("collection", {}).values())
+    except (OSError, ValueError, TypeError):
+        return 0
+
+
+def collect_group(regions, extra):
+    """One process per routing budget; favour the region with fewer saved new games."""
+    if len({ROUTES[region] for region in regions}) != 1:
+        raise ValueError("A worker group must share one routing budget")
+    pipeline.REGIONAL_ROUND = len(regions) > 1
+    completed, started = {}, set()
+    while len(completed) < len(regions):
+        active = [region for region in regions if region not in completed]
+        region = min(active, key=collected_count)
+        pipeline.REGIONAL_WORKER = region
+        values = list(extra)
+        if region in started:
+            values = [value for value in values if value != "--fresh"]
+        started.add(region)
+        print(f"[{ROUTES[region]} rotation] {region}: {collected_count(region)} new saved games", flush=True)
+        code = pipeline.main(worker_arguments(region, values))
+        if code == 130:
+            return code
+        if code != pipeline.ROUND_YIELDED:
+            completed[region] = code
+    return max(completed.values(), default=0)
 
 
 def worker_arguments(region, extra):
@@ -69,7 +105,8 @@ def supervise(regions, profile, extra):
     key = get_api_key(profile)
     if not key:
         raise ValueError(f"Missing {profile} key. Fill secrets.local.json or its environment variable.")
-    plans = {region: worker_arguments(region, extra) for region in regions}
+    groups = {group[0]: group for group in route_groups(regions)}
+    plans = {region: worker_arguments(region, extra) for region in groups}
     # Pin the exact same patch window for every worker, including year boundaries.
     first = pipeline.parser().parse_args(plans[regions[0]])
     patches = pipeline.resolve_patch_window(first)
@@ -79,8 +116,8 @@ def supervise(regions, profile, extra):
     last_status = time.monotonic()
     try:
         with collector_lock(workers):
-            while len(finished) < len(regions):
-                for region in regions:
+            while len(finished) < len(groups):
+                for region in groups:
                     if region in finished:
                         continue
                     if region in workers:
@@ -108,7 +145,8 @@ def supervise(regions, profile, extra):
                     # Reuse each worker's journal-resolved window on later launches.
                     # The first launch gets the common window via a separate environment variable.
                     child_env = dict(env, ERO_COLLECT_PATCHES=json.dumps(patches))
-                    command = [sys.executable, "-u", str(Path(__file__).resolve()), "--worker", region, *plans[region]]
+                    command = [sys.executable, "-u", str(Path(__file__).resolve()), "--worker", region,
+                               "--worker-regions", *groups[region], *plans[region]]
                     if region in retry_at and "--resume" not in command:
                         command.append("--resume")
                     try:
@@ -137,9 +175,10 @@ def supervise(regions, profile, extra):
 
 def main(argv=None):
     cli = argparse.ArgumentParser(description=__doc__)
-    cli.add_argument("--regions", nargs="+", default=["euw1", "kr", "na1"], choices=ROUTES)
+    cli.add_argument("--regions", nargs="+", default=["euw1", "eun1", "kr", "na1"], choices=ROUTES)
     cli.add_argument("--key-profile", choices=("default", "development"), default="default")
     cli.add_argument("--worker", choices=ROUTES, help=argparse.SUPPRESS)
+    cli.add_argument("--worker-regions", nargs="+", choices=ROUTES, help=argparse.SUPPRESS)
     args, extra = cli.parse_known_args(argv)
     try:
         if args.worker:
@@ -154,7 +193,7 @@ def main(argv=None):
                     _thread.interrupt_main()
                 threading.Thread(target=watch_parent, daemon=True).start()
                 pipeline.fetch_versions = lambda: [p + ".1" for p in reversed(json.loads(pinned))]
-            return pipeline.main(extra)
+            return collect_group(args.worker_regions or [args.worker], extra)
         regions = selected_routes(args.regions)
         if "--dry-run" in extra:
             for region in regions:

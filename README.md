@@ -73,15 +73,18 @@ a tanítás nem töröl adatbázisrekordokat.
 Külön, csak adatgyűjtésre szolgáló mód:
 
 A **`scrape_continuous.bat`** alapból egy vezérlőből, párhuzamosan gyűjt
-**EUW1 / KR / NA1** régióból. A régi `collector_script.py` ugyanezt indítja.
+**EUW1 / EUN1 / KR / NA1** régióból. A régi `collector_script.py` ugyanezt indítja.
 A Match-v5 kereteik külön `europe / asia / americas` routing értékekhez tartoznak;
-EUW és EUNE közös europe keretet használ, ezért egy futásban csak az egyik
-választható. A nagyobb összsebesség a három külön keretből jön, nem kulcsváltásból;
+EUW és EUNE közös europe keretet használ: egy worker vált közöttük,
+legfeljebb 100 újonnan mentett meccsenként, a kevesebb mentett új meccsel
+rendelkező régiót választva. Ez közel fele-fele európai mintát céloz, a
+korábban elmentett regionális gyűjtést is figyelembe véve. A nagyobb összsebesség
+a három külön keretből jön, nem kulcsváltásból;
 a tényleges sebesség az elérhető új meccsektől és a Riot válaszaitól függ.
 
 ```powershell
 .\scrape_continuous.bat
-.\scrape_continuous.bat --regions euw1 kr na1 --key-profile development
+.\scrape_continuous.bat --regions euw1 eun1 kr na1 --key-profile development
 .\scrape_continuous.bat --patches 16.19 16.20 16.21 --dry-run
 ```
 
@@ -92,6 +95,12 @@ gyűjtőt, váratlan workerhiba után ugyanonnan folytatja; a vezérlő elveszt�
 a worker is leáll. A korábbi egy régiós `.scrape_only` mentés megmarad;
 az új regionális gyűjtő a már adatbázisban lévő meccseket beszámítja.
 Tanítás és gyűjtés közös zárral kizárja egymást.
+A League-v4 játékoslista következő oldalát a worker külön HTTP-klienssel,
+a Match-v5 feldolgozása közben tölti elő. Ugyanazt a kulcs- és routing-limitert
+használja; nincs extra Match-v5-keret. Előtöltési hibánál a normál újrapróbálkozó
+lekérés veszi át a helyét. Az előtöltő nem ír az adatbázisba vagy a kurzorba,
+és leállításkor megszakítható. Az európai worker naplója a kiválasztott csoport
+első régiójának `collector.log` fájlja; a régiós mentések külön maradnak.
 A **`train_models.bat` most minden tárolt régióból tanít** (`--skip-scrape --all-regions`),
 külön `.model_training_all` mentéssel. A régiók a nyers adatokban megmaradnak;
 a tanítás a kiválasztott patchablak és rangprofil szerinti közös mintát használja.

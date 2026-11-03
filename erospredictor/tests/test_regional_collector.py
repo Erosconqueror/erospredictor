@@ -13,11 +13,25 @@ from test_scrape_only import AvailableRiot
 
 
 class RegionalTests(unittest.TestCase):
-    def test_independent_routing_budgets_and_shared_europe_rejection(self):
+    def test_independent_routing_budgets_and_shared_europe_group(self):
         self.assertEqual(collector.selected_routes(["euw1", "kr", "na1"]), ["euw1", "kr", "na1"])
         self.assertEqual(collector.selected_routes(["kr", "kr"]), ["kr"])
-        with self.assertRaisesRegex(ValueError, "share"):
-            collector.selected_routes(["euw1", "eun1"])
+        self.assertEqual(collector.route_groups(["euw1", "eun1", "kr", "na1"]),
+                         [["euw1", "eun1"], ["kr"], ["na1"]])
+
+    def test_europe_rotates_by_saved_match_counts_and_preserves_one_process_budget(self):
+        counts = {"euw1": 0, "eun1": 0}
+        order = []
+        def collect(values):
+            region = pipeline.parser().parse_args(values).region
+            order.append(region)
+            counts[region] += 100
+            return pipeline.ROUND_YIELDED if len(order) < 4 else 0
+        with patch.object(collector, "collected_count", side_effect=counts.get), \
+                patch.object(pipeline, "main", side_effect=collect), \
+                patch.object(pipeline, "REGIONAL_ROUND", False), patch.object(pipeline, "REGIONAL_WORKER", None):
+            collector.collect_group(["euw1", "eun1"], [])
+        self.assertEqual(order[:4], ["euw1", "eun1", "euw1", "eun1"])
 
     def test_worker_route_cannot_be_overridden_and_never_trains(self):
         values = collector.worker_arguments("kr", ["--region", "euw1", "--continent", "europe"])
@@ -90,3 +104,30 @@ class RegionalTests(unittest.TestCase):
                 stopped.assert_called_once()
             with pipeline.UpdateLock(Path(folder) / ".model_update.lock"):
                 pass
+
+    def test_europe_slice_yields_after_one_hundred_commits_with_goal_and_cursor_kept(self):
+        from types import SimpleNamespace
+        class TwoPlayers(AvailableRiot):
+            def get_league_exp_players(self, tier, division, page):
+                return [{"puuid": "first"}, {"puuid": "second"}] if division == "I" and page == 1 else []
+        riot = TwoPlayers({"first": 100, "second": 100})
+        db = FakeDB()
+        args = pipeline.parser().parse_args(["--scrape-only", "--patches", "16.7", "--region", "euw1",
+            "--tiers", "GOLD", "--tier-target", "GOLD=4000", "--matches-per-player", "100", "--no-catalog"])
+        with tempfile.TemporaryDirectory() as folder:
+            root = Path(folder)
+            install_test_catalog(root)
+            with patch.object(pipeline, "APP_DIR", root), patch.object(pipeline, "REGIONAL_WORKER", "euw1"), \
+                    patch.object(pipeline, "REGIONAL_ROUND", True), \
+                    patch.dict("sys.modules", {"model.data_manager": SimpleNamespace(DataManager=lambda **kw: db),
+                        "model.riot": SimpleNamespace(Riot=lambda **kw: riot)}):
+                self.assertEqual(pipeline.run(args, log=lambda _: None), pipeline.ROUND_YIELDED)
+                state = json.loads((root / ".scrape_regions/euw1/state.json").read_text())
+                self.assertEqual(len(db.saved), 100)
+                self.assertEqual(state["scrape_goals"], {"GOLD": 200})
+                self.assertEqual(state["collection"]["GOLD"]["match_index"], 100)
+                self.assertEqual(pipeline.run(args, log=lambda _: None), pipeline.ROUND_YIELDED)
+                resumed = json.loads((root / ".scrape_regions/euw1/state.json").read_text())
+                self.assertEqual(resumed["run_id"], state["run_id"])
+                self.assertEqual(len(db.saved), 200)
+                self.assertEqual(len(set(db.saved)), 200)

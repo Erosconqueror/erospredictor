@@ -31,6 +31,8 @@ import configs as cfg
 
 APP_DIR = Path(__file__).resolve().parent
 REGIONAL_WORKER = None  # Set only by the supervised multi-region collector.
+REGIONAL_ROUND = False
+ROUND_YIELDED = 75
 VERSIONS_URL = "https://ddragon.leagueoflegends.com/api/versions.json"
 INTERACTION_POLICY = "interaction-statistics-and-priors-stat-tier50-13-mixed100-25-v4"
 
@@ -212,6 +214,7 @@ def collect_matches(args, patches, riot, db, log=print, progress=None, *, target
         context["mapping"] = db.get_champion_mapping()
     known, mapping = context["known"], context["mapping"]
     states = progress.state["collection"] if progress else {}
+    slice_start = sum(row.get("new_matches", 0) for row in states.values())
     save = progress.save if progress else lambda: None
     results = {}
     targets = targets if targets is not None else rank_targets(args, cfg.DATASET_TARGETS)
@@ -263,6 +266,8 @@ def collect_matches(args, patches, riot, db, log=print, progress=None, *, target
                 state["match_index"] += 1
                 state["pending"] = None
                 save()
+            if REGIONAL_ROUND and preserve_cursor and sum(row.get("new_matches", 0) for row in states.values()) - slice_start >= 100:
+                return {name: _collection_report(row, targets[name]) for name, row in states.items()}
             count = state.get("window_matches", 0) if population else state["new_matches"] + state.get("reused_matches", 0)
             if count >= targets[tier]:
                 state["done"] = True
@@ -273,7 +278,10 @@ def collect_matches(args, patches, riot, db, log=print, progress=None, *, target
                 save()
                 break
             if state["players"] is None:
-                players = riot.get_league_exp_players(tier, divisions[state["division"]], page=state["page"])
+                division, page = divisions[state["division"]], state["page"]
+                fetch = lambda: riot.get_league_exp_players(tier, division, page=page)
+                prefetch = context.get("league_prefetch")
+                players = prefetch.get(tier, division, page, fetch) if prefetch else fetch()
                 if not players:
                     state["division"] += 1
                     state["page"] = 1
@@ -282,6 +290,9 @@ def collect_matches(args, patches, riot, db, log=print, progress=None, *, target
                 state["players"] = [player.get("puuid") for player in players if player.get("puuid")]
                 state["player_index"] = 0
                 save()
+                if prefetch and tier not in {"MASTER", "GRANDMASTER", "CHALLENGER"}:
+                    if args.pages_per_division is None or page < args.pages_per_division:
+                        prefetch.schedule(tier, division, page + 1)
             if state["player_index"] >= len(state["players"]):
                 state["players"] = None
                 state["page"] += 1
@@ -633,6 +644,9 @@ def _run_scrape_only(args, targets, log=print):
         if not riot.api_key:
             raise ValueError("Set RIOT_API_KEY before collecting matches.")
         context = {}
+        if REGIONAL_WORKER and hasattr(riot, "rate_limiter"):
+            from services.league_prefetch import LeaguePrefetcher
+            context["league_prefetch"] = LeaguePrefetcher(riot, args.region, args.continent)
         while True:
             states = progress.state["collection"]
             active = [tier for tier in args.tiers if not states.get(tier, {}).get("exhausted")]
@@ -651,8 +665,11 @@ def _run_scrape_only(args, targets, log=print):
             report = collect_matches(args, patches, riot, db, log, progress=progress,
                                      targets=goals, preserve_cursor=True, context=context)
             progress.state["collection_report"] = report
-            del progress.state["scrape_goals"]
+            if all(row.get("done") for row in states.values()):
+                del progress.state["scrape_goals"]
             progress.save()
+            if REGIONAL_ROUND and any(not row.get("exhausted") for row in states.values()):
+                return ROUND_YIELDED
         # Also reconstruct the final report after a crash between the last SQL
         # cursor checkpoint and the end-of-round report checkpoint.
         report = {tier: _collection_report(progress.state["collection"][tier], None) for tier in args.tiers}
@@ -666,6 +683,8 @@ def _run_scrape_only(args, targets, log=print):
         log("[Scrape] Az elérhető játékosok feldolgozva. A meccsek elmentve; a gyűjtés befejeződött.")
         return 0
     finally:
+        if "context" in locals() and context.get("league_prefetch"):
+            context["league_prefetch"].close()
         db.close()
 
 

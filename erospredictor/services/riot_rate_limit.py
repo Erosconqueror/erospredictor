@@ -104,22 +104,26 @@ class RiotRateLimiter:
                 delay = max(delay, observed[1] - now)
         return delay
 
-    def _pause(self, seconds):
+    def _pause(self, seconds, cancelled=None):
         deadline = self.clock() + seconds
         if self.logger and seconds >= 1:
             self.logger(f"[Riot API] Kéréskorlát: várakozás {seconds:.1f} másodpercig...")
         while True:
+            if cancelled and cancelled():
+                raise InterruptedError("Prefetch cancelled")
             remaining = deadline - self.clock()
             if remaining <= 0:
                 return
-            self.sleeper(min(30.0, remaining))
+            self.sleeper(min(1.0 if cancelled else 30.0, remaining))
             remaining = deadline - self.clock()
             if self.logger and remaining >= 1:
                 self.logger(f"[Riot API] A várakozásból még {remaining:.1f} másodperc van hátra.")
 
-    def acquire(self, region, endpoint, method):
+    def acquire(self, region, endpoint, method, cancelled=None):
         """Reserve exactly one actual request after all applicable windows clear."""
         while True:
+            if cancelled and cancelled():
+                raise InterruptedError("Prefetch cancelled")
             with self._lock:
                 now = self.clock()
                 states = self._states(region, endpoint, method)
@@ -132,7 +136,7 @@ class RiotRateLimiter:
                             if expiry > now:
                                 state["observed"][duration] = (count + 1, expiry)
                     return
-            self._pause(delay)
+            self._pause(delay, cancelled)
 
     def wait_until(self, region, endpoint_name, method_name):
         # Block here using the same injected monotonic clock as retry handling.
