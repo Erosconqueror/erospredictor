@@ -30,6 +30,7 @@ import configs as cfg
 
 
 APP_DIR = Path(__file__).resolve().parent
+REGIONAL_WORKER = None  # Set only by the supervised multi-region collector.
 VERSIONS_URL = "https://ddragon.leagueoflegends.com/api/versions.json"
 INTERACTION_POLICY = "interaction-statistics-and-priors-stat-tier50-13-mixed100-25-v4"
 
@@ -178,6 +179,7 @@ def parser() -> argparse.ArgumentParser:
     cli.add_argument("--qa-min-pass", type=float, default=0.25, help="Minimum Golden Dataset pass fraction after retry (default: 0.25)")
     mode = cli.add_mutually_exclusive_group()
     mode.add_argument("--skip-scrape", action="store_true", help="Train from selected patches already in PostgreSQL")
+    cli.add_argument("--all-regions", action="store_true", help="With --skip-scrape, train from every stored region")
     mode.add_argument("--scrape-only", action="store_true", help="Collect beyond fixed quotas in profile proportions until available players are exhausted; never train")
     cli.add_argument("--dry-run", action="store_true", help="Print plan without API collection, database access or file changes")
     cli.add_argument("--fresh", action="store_true", help="Explicitly start over instead of resuming the unfinished update")
@@ -350,7 +352,7 @@ def usable_matches(records, mapping, patches, tiers, region):
     usable, rejected = [], Counter()
     for original in records:
         if (original.get("patch") not in patches or original.get("tier") not in tiers
-                or original.get("region") != region):
+                or (region is not None and original.get("region") != region)):
             rejected["outside_window"] += 1
             continue
         record = dict(original)
@@ -594,14 +596,15 @@ def _run_scrape_only(args, targets, log=print):
     else:
         request = {key: value for key, value in vars(args).items()
                    if not key.startswith("_") and key not in
-                   {"dry_run", "fresh", "resume", "epochs", "qa_min_pass", "min_matches", "priority_tier"}}
+                   {"dry_run", "fresh", "resume", "epochs", "qa_min_pass", "min_matches", "priority_tier", "all_regions"}}
         if args.patches:
             request["patches"] = sorted({normalize_patch(value) for value in args.patches})
         if args.end_patch:
             request["end_patch"] = normalize_patch(args.end_patch)
         request["targets"] = targets
         request["database"] = {key: getattr(cfg, key, None) for key in ("DB_NAME", "DB_HOST", "DB_PORT")}
-        progress = UpdateProgress.open(APP_DIR / ".scrape_only", request,
+        root = APP_DIR / ".scrape_regions" / args.region if REGIONAL_WORKER else APP_DIR / ".scrape_only"
+        progress = UpdateProgress.open(root, request,
             lambda: resolve_patch_window(args), fresh=args.fresh and not args.resume,
             resume_completed=args.resume, collection_only_changes=("targets", "tier_target"))
         _save_collection_priority(args, progress, log)
@@ -677,6 +680,10 @@ def _save_collection_priority(args, progress, log):
 
 
 def _run(args, log=print) -> int:
+    if args.all_regions:
+        if not args.skip_scrape:
+            raise ValueError("--all-regions requires --skip-scrape")
+        args.region = None
     if args.matches_per_player > 100:
         raise ValueError("--matches-per-player cannot exceed Riot's 100-record limit.")
     if args.patches and args.end_patch:
@@ -697,7 +704,7 @@ def _run(args, log=print) -> int:
         patches = resolve_patch_window(args)
     else:
         request = {key: value for key, value in vars(args).items()
-                   if not key.startswith("_") and key not in {"dry_run", "fresh", "resume", "scrape_only", "priority_tier"}}
+                   if not key.startswith("_") and key not in {"dry_run", "fresh", "resume", "scrape_only", "priority_tier", "all_regions"}}
         if args.patches:
             request["patches"] = sorted({normalize_patch(patch) for patch in args.patches})
         if args.end_patch:
@@ -708,7 +715,7 @@ def _run(args, log=print) -> int:
         for name in ("golden_dataset.json",):
             path = APP_DIR / "data" / name
             request[name] = file_digest(path) if path.is_file() else None
-        journal = ".model_training" if args.skip_scrape else ".model_update"
+        journal = ".model_training_all" if args.all_regions else ".model_training" if args.skip_scrape else ".model_update"
         progress = UpdateProgress.open(APP_DIR / journal, request,
                     lambda: resolve_patch_window(args), fresh=args.fresh and not args.resume,
                     resume_completed=args.resume, upgrade=compatible_profile_upgrade,
@@ -863,7 +870,13 @@ def _run(args, log=print) -> int:
 def run(args, log=print) -> int:
     if args.dry_run:
         return _run(args, log)
-    with UpdateLock(APP_DIR / ".model_update.lock"):
+    lock = APP_DIR / ".model_update.lock"
+    if REGIONAL_WORKER:
+        if not args.scrape_only or args.region != REGIONAL_WORKER:
+            raise ValueError("Invalid regional worker scope")
+        lock = APP_DIR / ".scrape_regions" / args.region / ".lock"
+        lock.parent.mkdir(parents=True, exist_ok=True)
+    with UpdateLock(lock):
         return _run(args, log)
 
 

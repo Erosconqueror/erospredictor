@@ -26,7 +26,7 @@ from test_update_pipeline import FakeDB, record
 
 class TrainingDB(FakeDB):
     def get_champion_names(self):
-        path = Path(__file__).parent / "data/champion_names.json"
+        path = Path(__file__).resolve().parents[1] / "data/champion_names.json"
         return {int(cid): name for cid, name in json.loads(path.read_text(encoding="utf-8")).items()}
 
 
@@ -143,7 +143,7 @@ class InteractionPipelineTests(unittest.TestCase):
         self.root = Path(self.folder.name)
         self.app = self.root / "app"
         (self.app / "data").mkdir(parents=True)
-        source = Path(__file__).parent / "data/golden_dataset.json"
+        source = Path(__file__).resolve().parents[1] / "data/golden_dataset.json"
         (self.app / "data/golden_dataset.json").write_bytes(source.read_bytes())
         self.db = TrainingDB([record(str(index)) for index in range(8)])
         self.args = pipeline.parser().parse_args(["--patches", "16.7", "--tiers", "GOLD", "--epochs", "1", "--qa-min-pass", "0"])

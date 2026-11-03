@@ -133,7 +133,7 @@ class SnapshotTests(unittest.TestCase):
             "model.data_manager": SimpleNamespace(DataManager=FakeDB),
             "model.gnn_predictor": SimpleNamespace(create_graph=lambda blue, red, win, weight: (blue, red, win, weight)),
         }):
-            spec = importlib.util.spec_from_file_location("_pipeline_test_preprocessor", Path(__file__).parent / "model/preprocessor.py")
+            spec = importlib.util.spec_from_file_location("_pipeline_test_preprocessor", Path(__file__).resolve().parents[1] / "model/preprocessor.py")
             module = importlib.util.module_from_spec(spec)
             spec.loader.exec_module(module)
         records = [record("old", patch_version="16.5"), record("previous", patch_version="16.6"), record("current")]
@@ -269,7 +269,7 @@ class RiotCleaningTests(unittest.TestCase):
         # RiotWatcher is optional for these offline data-cleaning tests.
         with patch.dict("sys.modules", {"riotwatcher": SimpleNamespace(LolWatcher=object),
                                         "requests": SimpleNamespace()}):
-            spec = importlib.util.spec_from_file_location("_pipeline_test_riot", Path(__file__).parent / "model/riot.py")
+            spec = importlib.util.spec_from_file_location("_pipeline_test_riot", Path(__file__).resolve().parents[1] / "model/riot.py")
             module = importlib.util.module_from_spec(spec)
             spec.loader.exec_module(module)
         client = module.Riot.__new__(module.Riot)

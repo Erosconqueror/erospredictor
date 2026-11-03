@@ -240,7 +240,7 @@ class TrainingPipelineResumeTests(unittest.TestCase):
         previous_threads = torch.get_num_threads()
         torch.set_num_threads(1)
         self.addCleanup(torch.set_num_threads, previous_threads)
-        source = Path(__file__).parent
+        source = Path(__file__).resolve().parents[1]
         names = {int(key): value for key, value in json.loads((source / "data/champion_names.json").read_text(encoding="utf-8")).items()}
         class DB(FakeDB):
             queries = 0

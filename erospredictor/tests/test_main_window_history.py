@@ -146,7 +146,7 @@ class WindowHistoryTests(unittest.TestCase):
         self.assertEqual(self.ctrl.explain_recommendations.call_args.kwargs["selected_id"], 0)
 
     def test_startup_schedules_history_read_after_showing_window(self):
-        spec = importlib.util.spec_from_file_location("_history_test_app", Path(__file__).parent / "erospredictor.py")
+        spec = importlib.util.spec_from_file_location("_history_test_app", Path(__file__).resolve().parents[1] / "erospredictor.py")
         module = importlib.util.module_from_spec(spec)
         spec.loader.exec_module(module)
         with patch.object(module, "QApplication"), patch.object(module, "DataManager") as db, \
@@ -196,7 +196,7 @@ class DisabledWindowHistoryTests(unittest.TestCase):
         self.assertTrue(self.window.btn_rec.isEnabled())
 
     def test_disabled_history_has_no_startup_timer(self):
-        spec = importlib.util.spec_from_file_location("_disabled_history_test_app", Path(__file__).parent / "erospredictor.py")
+        spec = importlib.util.spec_from_file_location("_disabled_history_test_app", Path(__file__).resolve().parents[1] / "erospredictor.py")
         module = importlib.util.module_from_spec(spec)
         spec.loader.exec_module(module)
         with patch.object(module, "QApplication"), patch.object(module, "DataManager") as db, \

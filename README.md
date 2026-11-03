@@ -16,7 +16,14 @@ a modellcserét, így a következő indítás megőrzi a helyi eredményt.
 ## Egy indítás: adatgyűjtés, tanítás és kalibrálás
 
 A projekt virtuális környezete, PostgreSQL adatbázis és érvényes Riot API-kulcs szükséges.
-A kapcsolódási adatokat a `configs.py` vagy az alábbi környezeti változók adják meg:
+A Riot-kulcsokat a **gitignore-olt `secrets.local.json`** tárolja, a
+`secrets.example.json` mintája szerint. A `riot.default` a rendes kulcs,
+a `riot.development` a 24 órás fejlesztői kulcs. A konfigurációban nincs
+beégetett Riot-kulcs. A `RIOT_API_KEY` és `RIOT_DEV_API_KEY` környezeti
+változók elsőbbséget élveznek. Egyszerre egy kulcsprofil használatos;
+429-nél nem vált kulcsot. A korábban commitolt kulcsot új kulcsra cseréld;
+a régi Git-előzményt nem írjuk át.
+A többi kapcsolódási adatot a `configs.py` vagy az alábbi környezeti változók adják meg:
 `RIOT_API_KEY`, `DB_NAME`, `DB_USER`, `DB_PASS`, `DB_HOST`, `DB_PORT`.
 Az alkalmazást a modellcsere idejére zárd be.
 
@@ -55,13 +62,41 @@ a meglévő adatbázisból az utolsó öt patchre újraszámolja a statisztikai 
 az off-meta és pozícióeloszlási listákat, interakciós mátrixokat és blindprofilokat,
 majd tanít, QA-t futtat, kalibrál és együtt publikál. Nem gyűjt új meccseket.
 A normál rangkvóták és a minimumadat-ellenőrzés itt is érvényesek.
-Saját `.model_training/state.json` mentést használ, a gyűjtő mentése megmarad.
+Az indító minden tárolt régióból tanít, és saját `.model_training_all/state.json`
+mentést használ; a gyűjtő mentése megmarad. A közvetlen `--skip-scrape`
+egyrégiós hívás továbbra is `.model_training/state.json` mentést használ.
 A tanításhoz előbb állítsd le a gyűjtőt Ctrl+C-vel; a közös zár megakadályozza
 az egyidejű futást. A gyűjtő később ugyanonnan folytatható.
 A régi adatbázismeccsek törlésére külön a fejlesztői `maintain_database.bat` szolgál;
 a tanítás nem töröl adatbázisrekordokat.
 
 Külön, csak adatgyűjtésre szolgáló mód:
+
+A **`scrape_continuous.bat`** alapból egy vezérlőből, párhuzamosan gyűjt
+**EUW1 / KR / NA1** régióból. A régi `collector_script.py` ugyanezt indítja.
+A Match-v5 kereteik külön `europe / asia / americas` routing értékekhez tartoznak;
+EUW és EUNE közös europe keretet használ, ezért egy futásban csak az egyik
+választható. A nagyobb összsebesség a három külön keretből jön, nem kulcsváltásból;
+a tényleges sebesség az elérhető új meccsektől és a Riot válaszaitól függ.
+
+```powershell
+.\scrape_continuous.bat
+.\scrape_continuous.bat --regions euw1 kr na1 --key-profile development
+.\scrape_continuous.bat --patches 16.19 16.20 16.21 --dry-run
+```
+
+Minden régió saját `.scrape_regions/<region>/state.json` mentést és
+`collector.log` naplót kap; a rangprofil 1/20-os körei régiónként érvényesek.
+A vezérlő 15 másodpercenként összesítést ír ki. Ctrl+C leállítja az összes
+gyűjtőt, váratlan workerhiba után ugyanonnan folytatja; a vezérlő elvesztésekor
+a worker is leáll. A korábbi egy régiós `.scrape_only` mentés megmarad;
+az új regionális gyűjtő a már adatbázisban lévő meccseket beszámítja.
+Tanítás és gyűjtés közös zárral kizárja egymást.
+A **`train_models.bat` most minden tárolt régióból tanít** (`--skip-scrape --all-regions`),
+külön `.model_training_all` mentéssel. A régiók a nyers adatokban megmaradnak;
+a tanítás a kiválasztott patchablak és rangprofil szerinti közös mintát használja.
+
+Az alábbi közvetlen frissítőkapcsoló az eredeti, **egy régiós** módot indítja:
 
 ```powershell
 .\update_models.bat --scrape-only
@@ -658,7 +693,7 @@ hogy az új előfeldolgozást használja; a gyűjtés mentett pontjáról folyta
 
 ```powershell
 Push-Location erospredictor
-..\env\Scripts\python.exe -m unittest discover -v
+..\env\Scripts\python.exe -m unittest discover -s tests -t . -v
 Pop-Location
 ```
 

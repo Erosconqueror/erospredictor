@@ -178,7 +178,7 @@ class NewChampionTrainingTests(unittest.TestCase):
         previous_threads = torch.get_num_threads()
         torch.set_num_threads(1)
         self.addCleanup(torch.set_num_threads, previous_threads)
-        source = Path(__file__).parent
+        source = Path(__file__).resolve().parents[1]
         count = configs.CHAMPION_COUNT + 1
         rows = [record(str(i)) for i in range(8)]
         for row in rows:

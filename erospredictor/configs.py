@@ -1,6 +1,6 @@
 """Application configuration constants."""
 
-RIOT_API_KEY = "RGAPI-c3d498f9-c7a6-4add-88a5-a2c5c12e7844"
+RIOT_API_KEY = ""  # Loaded from the ignored local credential file below.
 REGION = "euw1"
 CONTINENT = "europe"
 
@@ -54,7 +54,8 @@ TARGET_DIVISIONS = ["I", "II", "III", "IV"]
 # Environment overrides allow the unattended updater to use local credentials.
 # Existing local configuration remains the fallback for manual developer tools.
 import os as _os
-RIOT_API_KEY = _os.environ.get("RIOT_API_KEY", RIOT_API_KEY)
+from services.api_keys import get_api_key as _get_api_key
+RIOT_API_KEY = _get_api_key()
 DB_NAME = _os.environ.get("DB_NAME", DB_NAME)
 DB_USER = _os.environ.get("DB_USER", DB_USER)
 DB_PASS = _os.environ.get("DB_PASS", DB_PASS)
