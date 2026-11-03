@@ -31,6 +31,7 @@ import configs as cfg
 
 APP_DIR = Path(__file__).resolve().parent
 REGIONAL_WORKER = None  # Set only by the supervised multi-region collector.
+REGIONAL_PROFILE = ""
 REGIONAL_ROUND = False
 ROUND_YIELDED = 75
 VERSIONS_URL = "https://ddragon.leagueoflegends.com/api/versions.json"
@@ -614,7 +615,7 @@ def _run_scrape_only(args, targets, log=print):
             request["end_patch"] = normalize_patch(args.end_patch)
         request["targets"] = targets
         request["database"] = {key: getattr(cfg, key, None) for key in ("DB_NAME", "DB_HOST", "DB_PORT")}
-        root = APP_DIR / ".scrape_regions" / args.region if REGIONAL_WORKER else APP_DIR / ".scrape_only"
+        root = APP_DIR / ".scrape_regions" / REGIONAL_PROFILE / args.region if REGIONAL_WORKER else APP_DIR / ".scrape_only"
         progress = UpdateProgress.open(root, request,
             lambda: resolve_patch_window(args), fresh=args.fresh and not args.resume,
             resume_completed=args.resume, collection_only_changes=("targets", "tier_target"))
@@ -893,9 +894,13 @@ def run(args, log=print) -> int:
     if REGIONAL_WORKER:
         if not args.scrape_only or args.region != REGIONAL_WORKER:
             raise ValueError("Invalid regional worker scope")
-        lock = APP_DIR / ".scrape_regions" / args.region / ".lock"
+        lock = APP_DIR / ".scrape_regions" / REGIONAL_PROFILE / args.region / ".lock"
         lock.parent.mkdir(parents=True, exist_ok=True)
-    with UpdateLock(lock):
+    from contextlib import ExitStack
+    with ExitStack() as locks:
+        locks.enter_context(UpdateLock(lock))
+        if not REGIONAL_WORKER and not args.scrape_only:
+            locks.enter_context(UpdateLock(APP_DIR / ".model_update.development.lock"))
         return _run(args, log)
 
 

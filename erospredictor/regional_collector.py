@@ -34,7 +34,7 @@ def route_groups(regions):
 
 def collected_count(region):
     try:
-        state = json.loads((pipeline.APP_DIR / ".scrape_regions" / region / "state.json").read_text(encoding="utf-8"))
+        state = json.loads((pipeline.APP_DIR / ".scrape_regions" / pipeline.REGIONAL_PROFILE / region / "state.json").read_text(encoding="utf-8"))
         return sum(row.get("new_matches", 0) for row in state.get("collection", {}).values())
     except (OSError, ValueError, TypeError):
         return 0
@@ -93,8 +93,9 @@ def stop_workers(workers):
 
 
 @contextmanager
-def collector_lock(workers):
-    with pipeline.UpdateLock(pipeline.APP_DIR / ".model_update.lock"):
+def collector_lock(workers, profile="default"):
+    filename = ".model_update.development.lock" if profile == "development" else ".model_update.lock"
+    with pipeline.UpdateLock(pipeline.APP_DIR / filename):
         try:
             yield
         finally:
@@ -105,17 +106,20 @@ def supervise(regions, profile, extra):
     key = get_api_key(profile)
     if not key:
         raise ValueError(f"Missing {profile} key. Fill secrets.local.json or its environment variable.")
+    if profile == "development" and key == get_api_key("default"):
+        raise ValueError("The development profile must have its own key")
     groups = {group[0]: group for group in route_groups(regions)}
     plans = {region: worker_arguments(region, extra) for region in groups}
     # Pin the exact same patch window for every worker, including year boundaries.
     first = pipeline.parser().parse_args(plans[regions[0]])
     patches = pipeline.resolve_patch_window(first)
     env = dict(os.environ, RIOT_API_KEY=key, PYTHONUNBUFFERED="1")
-    root = pipeline.APP_DIR / ".scrape_regions"
+    namespace = "development" if profile == "development" else ""
+    root = pipeline.APP_DIR / ".scrape_regions" / namespace
     workers, retry_at, finished = {}, {}, {}
     last_status = time.monotonic()
     try:
-        with collector_lock(workers):
+        with collector_lock(workers, profile):
             while len(finished) < len(groups):
                 for region in groups:
                     if region in finished:
@@ -144,7 +148,7 @@ def supervise(regions, profile, extra):
                     stream.flush()
                     # Reuse each worker's journal-resolved window on later launches.
                     # The first launch gets the common window via a separate environment variable.
-                    child_env = dict(env, ERO_COLLECT_PATCHES=json.dumps(patches))
+                    child_env = dict(env, ERO_COLLECT_PATCHES=json.dumps(patches), ERO_COLLECT_NAMESPACE=namespace)
                     command = [sys.executable, "-u", str(Path(__file__).resolve()), "--worker", region,
                                "--worker-regions", *groups[region], *plans[region]]
                     if region in retry_at and "--resume" not in command:
@@ -182,6 +186,10 @@ def main(argv=None):
     args, extra = cli.parse_known_args(argv)
     try:
         if args.worker:
+            namespace = os.environ.get("ERO_COLLECT_NAMESPACE", "")
+            if namespace not in ("", "development"):
+                raise ValueError("Invalid collector namespace")
+            pipeline.REGIONAL_PROFILE = namespace
             pipeline.REGIONAL_WORKER = args.worker
             pinned = os.environ.get("ERO_COLLECT_PATCHES")
             if not pinned:

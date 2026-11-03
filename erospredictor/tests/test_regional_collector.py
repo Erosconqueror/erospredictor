@@ -13,6 +13,26 @@ from test_scrape_only import AvailableRiot
 
 
 class RegionalTests(unittest.TestCase):
+    def test_profile_locks_are_separate_but_training_requires_both(self):
+        with tempfile.TemporaryDirectory() as folder, patch.object(pipeline, "APP_DIR", Path(folder)):
+            with collector.collector_lock({}, "default"), collector.collector_lock({}, "development"):
+                pass
+            with collector.collector_lock({}, "development"), patch.object(pipeline, "_run") as run:
+                with self.assertRaises(pipeline.UpdateLockError):
+                    pipeline.run(pipeline.parser().parse_args(["--skip-scrape"]))
+                run.assert_not_called()
+
+    def test_development_counts_use_their_own_journal(self):
+        with tempfile.TemporaryDirectory() as folder, patch.object(pipeline, "APP_DIR", Path(folder)):
+            for profile, count in (("", 100), ("development", 5)):
+                root = Path(folder) / ".scrape_regions" / profile / "euw1"
+                root.mkdir(parents=True)
+                (root / "state.json").write_text(json.dumps({"collection": {"IRON": {"new_matches": count}}}))
+            with patch.object(pipeline, "REGIONAL_PROFILE", "development"):
+                self.assertEqual(collector.collected_count("euw1"), 5)
+            with patch.object(pipeline, "REGIONAL_PROFILE", ""):
+                self.assertEqual(collector.collected_count("euw1"), 100)
+
     def test_independent_routing_budgets_and_shared_europe_group(self):
         self.assertEqual(collector.selected_routes(["euw1", "kr", "na1"]), ["euw1", "kr", "na1"])
         self.assertEqual(collector.selected_routes(["kr", "kr"]), ["kr"])
