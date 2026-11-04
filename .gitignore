@@ -9,6 +9,8 @@ erospredictor/.model_update.development.lock
 erospredictor/.model_update/
 erospredictor/.model_training/
 erospredictor/.model_training_all/
+erospredictor/.model_training_full/
+erospredictor/.model_training_full_all/
 erospredictor/.scrape_only/
 erospredictor/.database_maintenance/
 erospredictor/models/.update-*

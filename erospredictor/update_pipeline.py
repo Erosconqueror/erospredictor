@@ -183,6 +183,7 @@ def parser() -> argparse.ArgumentParser:
     mode = cli.add_mutually_exclusive_group()
     mode.add_argument("--skip-scrape", action="store_true", help="Train from selected patches already in PostgreSQL")
     cli.add_argument("--all-regions", action="store_true", help="With --skip-scrape, train from every stored region")
+    cli.add_argument("--all-matches", action="store_true", help="With --skip-scrape, use every valid selected-patch match without rank quotas or sampling")
     mode.add_argument("--scrape-only", action="store_true", help="Collect beyond fixed quotas in profile proportions until available players are exhausted; never train")
     cli.add_argument("--dry-run", action="store_true", help="Print plan without API collection, database access or file changes")
     cli.add_argument("--fresh", action="store_true", help="Explicitly start over instead of resuming the unfinished update")
@@ -608,7 +609,7 @@ def _run_scrape_only(args, targets, log=print):
     else:
         request = {key: value for key, value in vars(args).items()
                    if not key.startswith("_") and key not in
-                   {"dry_run", "fresh", "resume", "epochs", "qa_min_pass", "min_matches", "priority_tier", "all_regions"}}
+                   {"dry_run", "fresh", "resume", "epochs", "qa_min_pass", "min_matches", "priority_tier", "all_regions", "all_matches"}}
         if args.patches:
             request["patches"] = sorted({normalize_patch(value) for value in args.patches})
         if args.end_patch:
@@ -700,6 +701,11 @@ def _save_collection_priority(args, progress, log):
 
 
 def _run(args, log=print) -> int:
+    if args.all_matches:
+        if not args.skip_scrape:
+            raise ValueError("--all-matches requires --skip-scrape")
+        if args.matches_per_tier is not None or args.tier_target:
+            raise ValueError("--all-matches cannot be combined with match quotas")
     if args.all_regions:
         if not args.skip_scrape:
             raise ValueError("--all-regions requires --skip-scrape")
@@ -717,14 +723,16 @@ def _run(args, log=print) -> int:
         raise ValueError("--min-matches must be at least 4 for training and validation.")
     if not 0 <= args.qa_min_pass <= 1:
         raise ValueError("--qa-min-pass must be between 0 and 1.")
-    if args.matches_per_tier is None and any(goal < args.min_matches for goal in targets.values()):
+    if not args.all_matches and args.matches_per_tier is None and any(goal < args.min_matches for goal in targets.values()):
         raise ValueError("Every population target must be at least --min-matches.")
     progress = None
     if args.dry_run:
         patches = resolve_patch_window(args)
     else:
         request = {key: value for key, value in vars(args).items()
-                   if not key.startswith("_") and key not in {"dry_run", "fresh", "resume", "scrape_only", "priority_tier", "all_regions"}}
+                   if not key.startswith("_") and key not in {"dry_run", "fresh", "resume", "scrape_only", "priority_tier", "all_regions", "all_matches"}}
+        if args.all_matches:
+            request["training_selection"] = "all_available"
         if args.patches:
             request["patches"] = sorted({normalize_patch(patch) for patch in args.patches})
         if args.end_patch:
@@ -736,6 +744,8 @@ def _run(args, log=print) -> int:
             path = APP_DIR / "data" / name
             request[name] = file_digest(path) if path.is_file() else None
         journal = ".model_training_all" if args.all_regions else ".model_training" if args.skip_scrape else ".model_update"
+        if args.all_matches:
+            journal = ".model_training_full_all" if args.all_regions else ".model_training_full"
         progress = UpdateProgress.open(APP_DIR / journal, request,
                     lambda: resolve_patch_window(args), fresh=args.fresh and not args.resume,
                     resume_completed=args.resume, upgrade=compatible_profile_upgrade,
@@ -765,7 +775,8 @@ def _run(args, log=print) -> int:
     plan = {"patches": patches, "region": args.region, "continent": args.continent,
             "tiers": args.tiers + ["MIXED"], "scrape": not args.skip_scrape,
             "max_new_matches_per_tier": args.matches_per_tier,
-            "dataset_targets": targets,
+            "dataset_targets": None if args.all_matches else targets,
+            "training_selection": "all_available" if args.all_matches else "profiled",
             "champion_catalog_update": not args.no_catalog,
             "max_players_per_tier": args.players_per_tier,
             "minimum_usable_matches_per_tier": args.min_matches,
@@ -807,7 +818,9 @@ def _run(args, log=print) -> int:
             log(f"Usable matches: {dict(counts)}; excluded: {rejected}")
             if rejected.get("unknown_champion"):
                 log("Matches containing champions absent from the selected Data Dragon catalog were excluded.")
-            if args.matches_per_tier is None:
+            if args.all_matches:
+                log(f"Full training snapshot: ALL {len(records)} valid selected-patch matches; no rank caps or downsampling. {dict(counts)}")
+            elif args.matches_per_tier is None:
                 short = {tier: {"available": counts[tier], "target": goal}
                          for tier, goal in targets.items() if counts[tier] < goal}
                 if short:

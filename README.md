@@ -61,8 +61,11 @@ Parancssor nélkül, dupla kattintással is indítható a **`train_models.bat`**
 a meglévő adatbázisból az utolsó öt patchre újraszámolja a statisztikai cache-t,
 az off-meta és pozícióeloszlási listákat, interakciós mátrixokat és blindprofilokat,
 majd tanít, QA-t futtat, kalibrál és együtt publikál. Nem gyűjt új meccseket.
-A normál rangkvóták és a minimumadat-ellenőrzés itt is érvényesek.
-Az indító minden tárolt régióból tanít, és saját `.model_training_all/state.json`
+A `train_models.bat` **minden érvényes tárolt meccset** felhasznál a kijelölt
+patchekből és rangokból, minden régióból: nincs rangkvóta vagy lefelé mintavételezés.
+Ugyanebből a teljes pillanatképből készül minden statisztika és modell.
+A minimumadat-ellenőrzés és a tanítás/validáció felosztása megmarad.
+Az indító saját `.model_training_full_all/state.json`
 mentést használ; a gyűjtő mentése megmarad. A közvetlen `--skip-scrape`
 egyrégiós hívás továbbra is `.model_training/state.json` mentést használ.
 A tanításhoz előbb állítsd le a gyűjtőt Ctrl+C-vel; a közös zár megakadályozza
@@ -101,9 +104,11 @@ használja; nincs extra Match-v5-keret. Előtöltési hibánál a normál újrap
 lekérés veszi át a helyét. Az előtöltő nem ír az adatbázisba vagy a kurzorba,
 és leállításkor megszakítható. Az európai worker naplója a kiválasztott csoport
 első régiójának `collector.log` fájlja; a régiós mentések külön maradnak.
-A **`train_models.bat` most minden tárolt régióból tanít** (`--skip-scrape --all-regions`),
-külön `.model_training_all` mentéssel. A régiók a nyers adatokban megmaradnak;
-a tanítás a kiválasztott patchablak és rangprofil szerinti közös mintát használja.
+A **`train_models.bat` minden tárolt régió összes érvényes meccséből tanít**
+(`--skip-scrape --all-regions --all-matches`), külön `.model_training_full_all`
+mentéssel. A korábbi kvótás tanítás mentését nem veszi át. A régiók a nyers
+adatokban megmaradnak; a kijelölt patchablak minden meccse bekerül a pillanatképbe.
+A gyűjtési rangprofil nem korlátozza ezt a tanítóindítót.
 
 Az alábbi közvetlen frissítőkapcsoló az eredeti, **egy régiós** módot indítja:
 
