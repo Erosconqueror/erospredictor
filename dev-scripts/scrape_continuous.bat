@@ -1,13 +1,13 @@
 @echo off
 setlocal
-if not exist "%~dp0env\Scripts\python.exe" (
+if not exist "%~dp0..\env\Scripts\python.exe" (
     echo Run install.bat first.
     pause
     exit /b 1
 )
 set "COLLECT_RESUME="
 :RUN_COLLECTOR
-"%~dp0env\Scripts\python.exe" -u "%~dp0erospredictor\collector_script.py" %* %COLLECT_RESUME%
+"%~dp0..\env\Scripts\python.exe" -u "%~dp0..\erospredictor\collector_script.py" %* %COLLECT_RESUME%
 set "COLLECT_EXIT=%ERRORLEVEL%"
 if "%COLLECT_EXIT%"=="0" goto COLLECT_DONE
 if "%COLLECT_EXIT%"=="2" goto COLLECT_DONE

@@ -70,10 +70,11 @@ class Riot:
             print(f"Player fetch error: {e}")
             return []
 
-    def get_match_ids(self, puuid: str, q_id: int = 420, limit: int = 20) -> list:
+    def get_match_ids(self, puuid: str, q_id: int = 420, limit: int = 20, start: int = 0) -> list:
         """Fetches match IDs for a specific player."""
         try:
-            return self._call(lambda: self.api.match.matchlist_by_puuid(self.cont, puuid, queue=q_id, count=limit), self.cont)
+            return self._call(lambda: self.api.match.matchlist_by_puuid(self.cont, puuid, queue=q_id, count=limit,
+                              **({"start": start} if start else {})), self.cont)
         except requests.exceptions.ConnectionError:
             if self.strict_errors:
                 raise

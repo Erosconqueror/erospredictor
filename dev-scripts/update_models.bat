@@ -1,13 +1,13 @@
 @echo off
 setlocal
-if not exist "%~dp0env\Scripts\python.exe" (
+if not exist "%~dp0..\env\Scripts\python.exe" (
     echo A projekt Python kornyezete hianyzik. Eloszor futtasd az install.bat fajlt.
     pause
     exit /b 1
 )
 set "UPDATE_RESUME="
 :RUN_UPDATE
-"%~dp0env\Scripts\python.exe" -u "%~dp0erospredictor\update_pipeline.py" %* %UPDATE_RESUME%
+"%~dp0..\env\Scripts\python.exe" -u "%~dp0..\erospredictor\update_pipeline.py" %* %UPDATE_RESUME%
 set "UPDATE_EXIT=%ERRORLEVEL%"
 if "%UPDATE_EXIT%"=="0" goto UPDATE_DONE
 if "%UPDATE_EXIT%"=="130" exit /b 130

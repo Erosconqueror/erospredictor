@@ -36,32 +36,32 @@ korábbi beállítású tanítás folytatása helyett új futás szükséges (`-
 
 ```powershell
 # Alapértelmezés: az utolsó öt megjelent patch, minden rang + MIXED.
-.\update_models.bat
+.\dev-scripts\update_models.bat
 
 # Három legutóbbi patch.
-.\update_models.bat --last-patches 3
+.\dev-scripts\update_models.bat --last-patches 3
 
 # Konkrét patchablak; a 26.x elnevezés 16.x belső verzióként is megadható.
-.\update_models.bat --patches 16.5 16.6 16.7
+.\dev-scripts\update_models.bat --patches 16.5 16.6 16.7
 
 # Korábbi patchnél végződő ablak.
-.\update_models.bat --end-patch 16.7 --last-patches 3
+.\dev-scripts\update_models.bat --end-patch 16.7 --last-patches 3
 
 # Terv ellenőrzése adatbázis és tanítás nélkül.
-.\update_models.bat --patches 16.5 16.6 16.7 --dry-run
+.\dev-scripts\update_models.bat --patches 16.5 16.6 16.7 --dry-run
 
 # Meglévő adatbázisból, új scrape nélkül.
-.\update_models.bat --last-patches 3 --skip-scrape
+.\dev-scripts\update_models.bat --last-patches 3 --skip-scrape
 
 # Az eddigi folytatási pont helyett tudatosan új futás indítása.
-.\update_models.bat --last-patches 3 --fresh
+.\dev-scripts\update_models.bat --last-patches 3 --fresh
 ```
 
-Parancssor nélkül, dupla kattintással is indítható a **`train_models.bat`**:
+Parancssor nélkül, dupla kattintással is indítható a **`dev-scripts/train_models.bat`**:
 a meglévő adatbázisból az utolsó öt patchre újraszámolja a statisztikai cache-t,
 az off-meta és pozícióeloszlási listákat, interakciós mátrixokat és blindprofilokat,
 majd tanít, QA-t futtat, kalibrál és együtt publikál. Nem gyűjt új meccseket.
-A `train_models.bat` **minden érvényes tárolt meccset** felhasznál a kijelölt
+A `dev-scripts/train_models.bat` **minden érvényes tárolt meccset** felhasznál a kijelölt
 patchekből és rangokból, minden régióból: nincs rangkvóta vagy lefelé mintavételezés.
 Ugyanebből a teljes pillanatképből készül minden statisztika és modell.
 A minimumadat-ellenőrzés és a tanítás/validáció felosztása megmarad.
@@ -70,25 +70,23 @@ mentést használ; a gyűjtő mentése megmarad. A közvetlen `--skip-scrape`
 egyrégiós hívás továbbra is `.model_training/state.json` mentést használ.
 A tanításhoz előbb állítsd le a gyűjtőt Ctrl+C-vel; a közös zár megakadályozza
 az egyidejű futást. A gyűjtő később ugyanonnan folytatható.
-A régi adatbázismeccsek törlésére külön a fejlesztői `maintain_database.bat` szolgál;
+A régi adatbázismeccsek törlésére külön a fejlesztői `dev-scripts/maintain_database.bat` szolgál;
 a tanítás nem töröl adatbázisrekordokat.
 
 Külön, csak adatgyűjtésre szolgáló mód:
 
-A **`scrape_continuous.bat`** alapból egy vezérlőből, párhuzamosan gyűjt
-**EUW1 / EUN1 / KR / NA1** régióból. A régi `collector_script.py` ugyanezt indítja.
-A Match-v5 kereteik külön `europe / asia / americas` routing értékekhez tartoznak;
-EUW és EUNE közös europe keretet használ: egy worker vált közöttük,
-legfeljebb 100 újonnan mentett meccsenként, a kevesebb mentett új meccsel
-rendelkező régiót választva. Ez közel fele-fele európai mintát céloz, a
-korábban elmentett regionális gyűjtést is figyelembe véve. A nagyobb összsebesség
-a három külön keretből jön, nem kulcsváltásból;
-a tényleges sebesség az elérhető új meccsektől és a Riot válaszaitól függ.
+A **`dev-scripts/scrape_continuous.bat`** egy kulcsprofil saját szervereit
+indítja. Alapból EUW1 / KR / NA1 / VN2, a development profillal
+EUN1 / JP1 / BR1 / SG2. A többi profil és a teljes, négykulcsos indító
+kiosztását a 24 órás fejezet mutatja. A régi collector_script.py ugyanezt indítja.
+A napi tervben minden kulcs routingonként egy szervert kap, ezért nincs
+EUW/EUNE-felezés. Kézzel azonos profilon több azonos routingú szervert
+is megadhatsz; ilyenkor az adott közös kereten belül rotál.
 
 ```powershell
-.\scrape_continuous.bat
-.\scrape_continuous.bat --regions euw1 eun1 kr na1 --key-profile development
-.\scrape_continuous.bat --patches 16.19 16.20 16.21 --dry-run
+.\dev-scripts\scrape_continuous.bat
+.\dev-scripts\scrape_continuous.bat --key-profile development
+.\dev-scripts\scrape_continuous.bat --patches 16.19 16.20 16.21 --dry-run
 ```
 
 Minden régió saját `.scrape_regions/<region>/state.json` mentést és
@@ -104,7 +102,7 @@ használja; nincs extra Match-v5-keret. Előtöltési hibánál a normál újrap
 lekérés veszi át a helyét. Az előtöltő nem ír az adatbázisba vagy a kurzorba,
 és leállításkor megszakítható. Az európai worker naplója a kiválasztott csoport
 első régiójának `collector.log` fájlja; a régiós mentések külön maradnak.
-A **`train_models.bat` minden tárolt régió összes érvényes meccséből tanít**
+A **`dev-scripts/train_models.bat` minden tárolt régió összes érvényes meccséből tanít**
 (`--skip-scrape --all-regions --all-matches`), külön `.model_training_full_all`
 mentéssel. A korábbi kvótás tanítás mentését nem veszi át. A régiók a nyers
 adatokban megmaradnak; a kijelölt patchablak minden meccse bekerül a pillanatképbe.
@@ -113,17 +111,17 @@ A gyűjtési rangprofil nem korlátozza ezt a tanítóindítót.
 Az alábbi közvetlen frissítőkapcsoló az eredeti, **egy régiós** módot indítja:
 
 ```powershell
-.\update_models.bat --scrape-only
+.\dev-scripts\update_models.bat --scrape-only
 
 # A terv ellenőrzése konkrét patchablakkal, hálózat és adatbázis nélkül.
-.\update_models.bat --scrape-only --patches 16.19 16.20 16.21 --dry-run
+.\dev-scripts\update_models.bat --scrape-only --patches 16.19 16.20 16.21 --dry-run
 ```
 
 A `--scrape-only` a jóváhagyott rangprofil számait **arányként** használja,
 és rangonként az alapmennyiség **1/20-át** gyűjti egy körben, majd vált:
-Challenger 100, Grandmaster 150, Master 250, Diamond 400, Emerald 600,
-Platinum 800, Gold 1100, Silver 900, Bronze 350, Iron 250 meccs.
-Nincs rögzített teljes meccslimit. Dupla kattintásos indítója a `scrape_continuous.bat`.
+Challenger 100, Grandmaster 225, Master 500, Diamond 400, Emerald 600,
+Platinum 800, Gold 1100, Silver 900, Bronze 235, Iron 168 meccs.
+Nincs rögzített teljes meccslimit. Dupla kattintásos indítója a `dev-scripts/scrape_continuous.bat`.
 Újraindításkor a régebbi körméretet is átállítja, a mentett játékos-/meccspozíciót
 megtartva; egy már futó régi folyamatot előbb Ctrl+C-vel állíts le.
 A már meglévő adatokat is figyelembe veszi, először az alulreprezentált rangokat
@@ -152,22 +150,22 @@ Az automatikus patchlista a Riot Data Dragon megjelent verzióiból készül, í
 a `--dry-run` hálózati kapcsolat nélkül is működik.
 
 Az alapértelmezett, közelítő játékoseloszlást követő profil az utolsó öt patchből
-összesen **98 000 használható, egyedi meccset** céloz. A táblázat rangonkénti,
+összesen **100 540 használható, egyedi meccset** céloz. A táblázat rangonkénti,
 az öt patchre együtt értendő célokat tartalmaz; Gold 22 000, Silver 18 000
 meccset kap. Ez szándékosan választott mintavételi profil.
 
 | Rang | Meccscél |
 | --- | ---: |
 | Challenger | 2 000 |
-| Grandmaster | 3 000 |
-| Master | 5 000 |
+| Grandmaster | 4 500 |
+| Master | 10 000 |
 | Diamond | 8 000 |
 | Emerald | 12 000 |
 | Platinum | 16 000 |
 | Gold | 22 000 |
 | Silver | 18 000 |
-| Bronze | 7 000 |
-| Iron | 5 000 |
+| Bronze | 4 690 |
+| Iron | 3 350 |
 
 A már adatbázisban lévő, megfelelő régiójú, rangú és patchű, érvényes meccsek
 beszámítanak: a frissítő a hiányzó mennyiséget gyűjti. A célig minden elérhető
@@ -613,11 +611,11 @@ megmaradnak, és a jelentés külön mutatja őket.
 
 ```powershell
 # Csak előnézet, alapértelmezés szerint nincs törlés:
-.\maintain_database.bat
+.\dev-scripts\maintain_database.bat
 # Kért takarítás, a régi sorokról ellenőrzött mentéssel:
-.\maintain_database.bat --apply
+.\dev-scripts\maintain_database.bat --apply
 # Opcionálisan csak egy adatbázis-régió:
-.\maintain_database.bat --apply --region euw1
+.\dev-scripts\maintain_database.bat --apply --region euw1
 ```
 
 Pythonból közvetlenül is fut: `python erospredictor/database_maintenance.py`.
@@ -713,3 +711,51 @@ Pop-Location
 
 Az automatizált tesztek helyi fixture-ökkel és mockokkal működnek; nem indítanak
 éles adatgyűjtést, adatbázisírást vagy teljes modell-újratanítást.
+
+## Négyprofilos, 24 órás gyűjtés
+
+Az alkalmazásindítók és az install.bat maradnak a projekt gyökerében;
+a fejlesztői indítók a dev-scripts mappába kerültek.
+Dupla kattintás: **dev-scripts/collect_24h.bat**. Terv ellenőrzése kulcsok,
+adatbázis és API-kérések nélkül, explicit patchablakkal:
+
+```powershell
+.\dev-scripts\collect_24h.bat --dry-run --patches 16.18 16.19 16.20 16.21 16.22
+```
+
+A secrets.local.json helyi, gitignore-olt fájlban töltsd ki a riot.default,
+riot.development, riot.development2 és riot.development3 mezőket. Az utolsó két
+profil környezeti változója RIOT_DEV_API_KEY_2 és RIOT_DEV_API_KEY_3.
+Mindegyik profilhoz különböző, érvényes kulcs kell. Meglévő gyűjtők mellett
+az indító még a folyamatindítás előtt jelez; előbb állítsd le őket Ctrl+C-vel.
+A tervet JSON-fájllal felülírhatod (--plan), de egy szerver egyetlen profilhoz
+kerülhet, és egy profilon belül nincs routingonkénti szerverfelezés.
+
+| Profil | Europe | Asia | Americas | SEA |
+| --- | --- | --- | --- | --- |
+| default | EUW1 | KR | NA1 | VN2 |
+| development | EUN1 | JP1 | BR1 | SG2 |
+| development2 | TR1 | – | LA1 | TW2 |
+| development3 | RU | – | LA2 | OC1 |
+
+A további platformok több külön routingkeret kihasználását szolgálják;
+a napló szerinti tényleges Riot-keretek mindenhol érvényesek. A külön
+szerverkiosztás csökkenti az ismételt játékoskeresést, az SQL egyedi match_id
+korlátja pedig megakadályozza a dupla mentést.
+A gyűjtés alapból 24 óra után leáll és megtartja a folytatási pontokat;
+rövidebb menet: --hours 6. A lejárt/hibás kulcsot jelzi, a többi profilt
+hagyja dolgozni. Naplók: erospredictor/.scrape_regions/day-logs/.
+A futásidő felső korlát; hálózati hibák, a Riot keretei és a kulcs lejárata
+befolyásolják a begyűjtött meccsek számát.
+
+A rangprofil Master 10k, Grandmaster 4.5k, Iron 3350 és Bronze 4690 célokkal
+módosult (Iron/Bronze: -33%). Ezek gyűjtési arányok; a külön tanítóindító
+továbbra is minden érvényes meccsből tanít a kijelölt patchekre.
+Az új napi indító 100 azonosítót kér oldalanként, legfeljebb 10 oldalra
+játékosonként; régi patchnél vagy ismételt oldalnál korábban megáll.
+Az alapértelmezett patchablak Data Dragon alapján indul, 15 percenként
+ellenőrzi az új megjelenést. Új patchnél leállítja a régi workereket és
+új, patchlistával nevesített mentésre tér át. A régi SQL-adatok és mentések
+megmaradnak. Explicit --patches vagy --end-patch esetén az ablak rögzített.
+A Data Dragon kiadása késhet a játék frissítéséhez képest; ilyenkor
+--patches kapcsolóval megadható a kívánt ablak.

@@ -1,0 +1,24 @@
+{
+  "default": [
+    "euw1",
+    "kr",
+    "na1",
+    "vn2"
+  ],
+  "development": [
+    "eun1",
+    "jp1",
+    "br1",
+    "sg2"
+  ],
+  "development2": [
+    "tr1",
+    "la1",
+    "tw2"
+  ],
+  "development3": [
+    "ru",
+    "la2",
+    "oc1"
+  ]
+}

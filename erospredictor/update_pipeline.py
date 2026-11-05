@@ -32,6 +32,7 @@ import configs as cfg
 APP_DIR = Path(__file__).resolve().parent
 REGIONAL_WORKER = None  # Set only by the supervised multi-region collector.
 REGIONAL_PROFILE = ""
+REGIONAL_WINDOW = ""
 REGIONAL_ROUND = False
 ROUND_YIELDED = 75
 VERSIONS_URL = "https://ddragon.leagueoflegends.com/api/versions.json"
@@ -177,6 +178,7 @@ def parser() -> argparse.ArgumentParser:
     cli.add_argument("--pages-per-division", type=positive_int, help="Optional page cap; default follows all available pages")
     cli.add_argument("--no-catalog", action="store_true", help="Keep the installed champion catalog (for restricted/offline model updates)")
     cli.add_argument("--matches-per-player", type=positive_int, default=50)
+    cli.add_argument("--history-pages", type=positive_int, default=1, help="Maximum match-history pages per player")
     cli.add_argument("--min-matches", type=positive_int, default=200, help="Minimum usable records required for EVERY requested tier")
     cli.add_argument("--epochs", type=positive_int, help="Override adaptive training epochs")
     cli.add_argument("--qa-min-pass", type=float, default=0.25, help="Minimum Golden Dataset pass fraction after retry (default: 0.25)")
@@ -195,7 +197,8 @@ def _collection_state():
     return {"new_matches": 0, "reused_matches": 0, "visited": [], "examined_ids": [],
             "outside_window_or_invalid": 0, "division": 0, "page": 1,
             "players": None, "player_index": 0, "active_player": None,
-            "match_ids": None, "match_index": 0, "pending": None, "done": False}
+            "match_ids": None, "match_index": 0, "pending": None, "done": False,
+            "match_page": 0, "previous_match_page": [], "history_reached_old": False}
 
 
 def _collection_report(state, target):
@@ -247,7 +250,8 @@ def collect_matches(args, patches, riot, db, log=print, progress=None, *, target
                     state["done"] = False
             else:
                 state.update(done=False, exhausted=False, division=0, page=1, players=None, player_index=0,
-                             active_player=None, match_ids=None, match_index=0)
+                             active_player=None, match_ids=None, match_index=0,
+                             match_page=0, previous_match_page=[], history_reached_old=False)
         divisions = ["I"] if tier in {"MASTER", "GRANDMASTER", "CHALLENGER"} else cfg.TARGET_DIVISIONS
         visited, examined = set(state["visited"]), set(state["examined_ids"])
         if state["done"]:
@@ -318,13 +322,26 @@ def collect_matches(args, patches, riot, db, log=print, progress=None, *, target
                 state["visited"] = sorted(visited)
                 save()
             if state["match_ids"] is None:
-                state["match_ids"] = riot.get_match_ids(puuid, limit=args.matches_per_player)
+                page = state.get("match_page", 0)
+                state["match_ids"] = riot.get_match_ids(puuid, limit=args.matches_per_player,
+                    **({"start": page * args.matches_per_player} if page else {}))
                 state["match_index"] = 0
+                signature = tuple(state["match_ids"])
+                if page and signature == tuple(state.get("previous_match_page", [])):
+                    state["match_ids"] = []
+                state["previous_match_page"] = list(signature)
                 save()
             if state["match_index"] >= len(state["match_ids"]):
+                if (len(state["match_ids"]) == args.matches_per_player and not state.get("history_reached_old")
+                        and state.get("match_page", 0) + 1 < args.history_pages):
+                    state["match_page"] = state.get("match_page", 0) + 1
+                    state["match_ids"] = None
+                    save()
+                    continue
                 state["player_index"] += 1
                 state["active_player"], state["match_ids"] = None, None
                 state["match_index"] = 0
+                state.update(match_page=0, previous_match_page=[], history_reached_old=False)
                 save()
                 continue
             match_id = state["match_ids"][state["match_index"]]
@@ -332,7 +349,19 @@ def collect_matches(args, patches, riot, db, log=print, progress=None, *, target
                 state["match_index"] += 1
                 save()
                 continue
+            platform = match_id.split("_", 1)[0].lower()
+            if platform in {"euw1", "eun1", "kr", "jp1", "na1", "br1", "la1", "la2", "ru", "tr1", "vn2", "sg2", "tw2", "oc1"} and platform != str(args.region).lower():
+                # A transferred account's regional history may include another platform.
+                state["match_index"] += 1
+                state["outside_window_or_invalid"] += 1
+                save()
+                continue
             data = riot.get_match_data(match_id, tier)
+            if data and data.get("patch"):
+                try:
+                    state["history_reached_old"] = state.get("history_reached_old", False) or tuple(map(int, data["patch"].split("."))) < min(tuple(map(int, p.split("."))) for p in patches)
+                except ValueError:
+                    pass
             examined.add(match_id)
             state["examined_ids"] = sorted(examined)
             if not data or data.get("patch") not in patches:
@@ -352,7 +381,8 @@ def collect_matches(args, patches, riot, db, log=print, progress=None, *, target
         # Completed tiers no longer need their large cursor/ID arrays in every
         # subsequent atomic checkpoint write.
         if not preserve_cursor or state.get("exhausted"):
-            state.update(visited=[], examined_ids=[], players=None, match_ids=None, active_player=None)
+            state.update(visited=[], examined_ids=[], players=None, match_ids=None, active_player=None,
+                         match_page=0, previous_match_page=[], history_reached_old=False)
         save()
         results[tier] = _collection_report(state, targets[tier])
         count = state.get("window_matches", 0) if population else state["new_matches"] + state.get("reused_matches", 0)
@@ -608,7 +638,7 @@ def _run_scrape_only(args, targets, log=print):
         patches = resolve_patch_window(args)
     else:
         request = {key: value for key, value in vars(args).items()
-                   if not key.startswith("_") and key not in
+                   if not key.startswith("_") and (key != "history_pages" or value != 1) and key not in
                    {"dry_run", "fresh", "resume", "epochs", "qa_min_pass", "min_matches", "priority_tier", "all_regions", "all_matches"}}
         if args.patches:
             request["patches"] = sorted({normalize_patch(value) for value in args.patches})
@@ -617,6 +647,8 @@ def _run_scrape_only(args, targets, log=print):
         request["targets"] = targets
         request["database"] = {key: getattr(cfg, key, None) for key in ("DB_NAME", "DB_HOST", "DB_PORT")}
         root = APP_DIR / ".scrape_regions" / REGIONAL_PROFILE / args.region if REGIONAL_WORKER else APP_DIR / ".scrape_only"
+        if REGIONAL_WINDOW:
+            root = root / REGIONAL_WINDOW
         progress = UpdateProgress.open(root, request,
             lambda: resolve_patch_window(args), fresh=args.fresh and not args.resume,
             resume_completed=args.resume, collection_only_changes=("targets", "tier_target"))
@@ -730,7 +762,7 @@ def _run(args, log=print) -> int:
         patches = resolve_patch_window(args)
     else:
         request = {key: value for key, value in vars(args).items()
-                   if not key.startswith("_") and key not in {"dry_run", "fresh", "resume", "scrape_only", "priority_tier", "all_regions", "all_matches"}}
+                   if not key.startswith("_") and (key != "history_pages" or value != 1) and key not in {"dry_run", "fresh", "resume", "scrape_only", "priority_tier", "all_regions", "all_matches"}}
         if args.all_matches:
             request["training_selection"] = "all_available"
         if args.patches:
@@ -913,7 +945,9 @@ def run(args, log=print) -> int:
     with ExitStack() as locks:
         locks.enter_context(UpdateLock(lock))
         if not REGIONAL_WORKER and not args.scrape_only:
-            locks.enter_context(UpdateLock(APP_DIR / ".model_update.development.lock"))
+            from services.api_keys import PROFILES
+            for profile in PROFILES[1:]:
+                locks.enter_context(UpdateLock(APP_DIR / f".model_update.{profile}.lock"))
         return _run(args, log)
 
 

@@ -41,7 +41,7 @@ Az ajánlás winrate-je alatt a **Lane** és **Más role** külön mutatja a mé
 
 A saját hősök kerete: Játszom – kék; Komfort – zöld; Tanulnám – lila. Több jelölésnél a komfort, majd a tanulási keret élvez elsőbbséget. A bevált saját hős arany keretet kap az előzmény alapján. A blindjelzések és címkék nem növelik a sorok magasságát.
 
-Dupla kattintásos fejlesztői indítók: **scrape_continuous.bat** csak gyűjt, rangonként a profil 1/20-ával váltva; **train_models.bat** a meglévő adatbázisból frissít minden statisztikát, hős-/pozíciólistát, blindprofilt, modellt és kalibrációt. Egyszerre egy folyamat futhat, Ctrl+C-vel leállítható és később folytatható.
+Dupla kattintásos fejlesztői indítók: **dev-scripts/scrape_continuous.bat** csak gyűjt, rangonként a profil 1/20-ával váltva; **dev-scripts/train_models.bat** a meglévő adatbázisból frissít minden statisztikát, hős-/pozíciólistát, blindprofilt, modellt és kalibrációt. Egyszerre egy folyamat futhat, Ctrl+C-vel leállítható és később folytatható.
 
 A statisztikai modell minimumsúlya alapból **16%**, és az adott draftban **30%**, ha minden ismert lane–ellenfél pár és minden más alkalmazható ellenfél- és szinergiaél eléri a mintaküszöböt: **MIXED: 100 / 25 meccs; egyes rangok: 50 / 13 meccs** (lane–ellenfél / többi él). A korábban nem tárolt, 13–19 meccses párok a következő tanításkor kerülnek az interakciós fájlba. Hiányos vagy küszöb alatti él esetén a minimum 16% marad. Az üres pozíciókat nem vizsgálja, de legalább egy ismert lane–ellenfél pár kell a 30%-hoz. A szabály a predikcióra, az egyes ajánlott hősökre és a magyarázat súlyaira is érvényes. Ez alsó korlát; a kalibrált súly lehet magasabb.
 

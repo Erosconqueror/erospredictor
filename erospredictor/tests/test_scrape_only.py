@@ -56,7 +56,7 @@ class ScrapeOnlyTests(unittest.TestCase):
 
     def test_round_steps_follow_the_approved_profile(self):
         steps = collection_steps(configs.DATASET_TARGETS)
-        self.assertEqual(steps, {tier: goal // 20 for tier, goal in configs.DATASET_TARGETS.items()})
+        self.assertEqual(steps, {tier: (goal + 19) // 20 for tier, goal in configs.DATASET_TARGETS.items()})
         self.assertEqual(steps["CHALLENGER"], 100)
         self.assertEqual(steps["GOLD"], 1100)
         self.assertEqual(steps["SILVER"], 900)

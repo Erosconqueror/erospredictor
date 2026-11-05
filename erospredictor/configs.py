@@ -63,11 +63,7 @@ DB_HOST = _os.environ.get("DB_HOST", DB_HOST)
 DB_PORT = _os.environ.get("DB_PORT", DB_PORT)
 
 # Approximate collection profile, with useful minimum samples for rare ranks.
-DATASET_TARGETS = {
-    "CHALLENGER": 2000, "GRANDMASTER": 3000, "MASTER": 5000,
-    "DIAMOND": 8000, "EMERALD": 12000, "PLATINUM": 16000,
-    "GOLD": 22000, "SILVER": 18000, "BRONZE": 7000, "IRON": 5000,
-}
+DATASET_TARGETS = {'CHALLENGER': 2000, 'GRANDMASTER': 4500, 'MASTER': 10000, 'DIAMOND': 8000, 'EMERALD': 12000, 'PLATINUM': 16000, 'GOLD': 22000, 'SILVER': 18000, 'BRONZE': 4690, 'IRON': 3350}
 
 
 def _load_runtime_config():

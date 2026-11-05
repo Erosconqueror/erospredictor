@@ -12,10 +12,18 @@ import time
 import threading
 import _thread
 
-from services.api_keys import get_api_key
+from services.api_keys import get_api_key, PROFILES
 import update_pipeline as pipeline
 
-ROUTES = {"euw1": "europe", "eun1": "europe", "kr": "asia", "na1": "americas"}
+ROUTES = {"euw1": "europe", "eun1": "europe", "kr": "asia", "jp1": "asia",
+          "na1": "americas", "br1": "americas", "la1": "americas", "la2": "americas",
+          "vn2": "sea", "sg2": "sea", "tw2": "sea", "oc1": "sea", "tr1": "europe", "ru": "europe"}
+PROFILE_REGIONS = {
+    "default": ["euw1", "kr", "na1", "vn2"],
+    "development": ["eun1", "jp1", "br1", "sg2"],
+    "development2": ["tr1", "la1", "tw2"],
+    "development3": ["ru", "la2", "oc1"],
+}
 
 
 def selected_routes(regions):
@@ -34,7 +42,7 @@ def route_groups(regions):
 
 def collected_count(region):
     try:
-        state = json.loads((pipeline.APP_DIR / ".scrape_regions" / pipeline.REGIONAL_PROFILE / region / "state.json").read_text(encoding="utf-8"))
+        state = json.loads((pipeline.APP_DIR / ".scrape_regions" / pipeline.REGIONAL_PROFILE / region / pipeline.REGIONAL_WINDOW / "state.json").read_text(encoding="utf-8"))
         return sum(row.get("new_matches", 0) for row in state.get("collection", {}).values())
     except (OSError, ValueError, TypeError):
         return 0
@@ -94,7 +102,9 @@ def stop_workers(workers):
 
 @contextmanager
 def collector_lock(workers, profile="default"):
-    filename = ".model_update.development.lock" if profile == "development" else ".model_update.lock"
+    if profile not in PROFILES:
+        raise ValueError("Unknown collector profile")
+    filename = f".model_update.{profile}.lock" if profile != "default" else ".model_update.lock"
     with pipeline.UpdateLock(pipeline.APP_DIR / filename):
         try:
             yield
@@ -102,11 +112,11 @@ def collector_lock(workers, profile="default"):
             stop_workers(workers)
 
 
-def supervise(regions, profile, extra):
+def supervise(regions, profile, extra, deadline=None):
     key = get_api_key(profile)
     if not key:
         raise ValueError(f"Missing {profile} key. Fill secrets.local.json or its environment variable.")
-    if profile == "development" and key == get_api_key("default"):
+    if profile != "default" and key == get_api_key("default"):
         raise ValueError("The development profile must have its own key")
     groups = {group[0]: group for group in route_groups(regions)}
     plans = {region: worker_arguments(region, extra) for region in groups}
@@ -114,13 +124,31 @@ def supervise(regions, profile, extra):
     first = pipeline.parser().parse_args(plans[regions[0]])
     patches = pipeline.resolve_patch_window(first)
     env = dict(os.environ, RIOT_API_KEY=key, PYTHONUNBUFFERED="1")
-    namespace = "development" if profile == "development" else ""
+    namespace = profile if profile != "default" else ""
+    window = "patches-" + "_".join(patches)
     root = pipeline.APP_DIR / ".scrape_regions" / namespace
     workers, retry_at, finished = {}, {}, {}
     last_status = time.monotonic()
+    patch_check = time.monotonic()
     try:
         with collector_lock(workers, profile):
             while len(finished) < len(groups):
+                if deadline is not None and time.time() >= deadline:
+                    print("Run deadline reached; stopping collectors with checkpoints kept.", flush=True)
+                    return 0
+                if not first.patches and not first.end_patch and time.monotonic() - patch_check >= 900:
+                    patch_check = time.monotonic()
+                    try:
+                        current = pipeline.resolve_patch_window(first)
+                        if current != patches:
+                            stop_workers(workers)
+                            patches = current
+                            window = "patches-" + "_".join(patches)
+                            finished.clear()
+                            retry_at.clear()
+                            print(f"New patch window: {patches}. Old checkpoints retained; reopening collection.", flush=True)
+                    except Exception:
+                        print("Patch check unavailable; keeping current window until the next check.", flush=True)
                 for region in groups:
                     if region in finished:
                         continue
@@ -148,7 +176,8 @@ def supervise(regions, profile, extra):
                     stream.flush()
                     # Reuse each worker's journal-resolved window on later launches.
                     # The first launch gets the common window via a separate environment variable.
-                    child_env = dict(env, ERO_COLLECT_PATCHES=json.dumps(patches), ERO_COLLECT_NAMESPACE=namespace)
+                    child_env = dict(env, ERO_COLLECT_PATCHES=json.dumps(patches), ERO_COLLECT_NAMESPACE=namespace,
+                                     ERO_COLLECT_WINDOW=window)
                     command = [sys.executable, "-u", str(Path(__file__).resolve()), "--worker", region,
                                "--worker-regions", *groups[region], *plans[region]]
                     if region in retry_at and "--resume" not in command:
@@ -165,7 +194,7 @@ def supervise(regions, profile, extra):
                 if time.monotonic() - last_status >= 15:
                     for region in regions:
                         try:
-                            state = json.loads((root / region / "state.json").read_text(encoding="utf-8"))
+                            state = json.loads((root / region / window / "state.json").read_text(encoding="utf-8"))
                             count = sum(row.get("window_matches", 0) for row in state.get("collection", {}).values())
                             print(f"[{region}] {count} matching stored games in this patch window.", flush=True)
                         except (OSError, ValueError, TypeError):
@@ -179,17 +208,22 @@ def supervise(regions, profile, extra):
 
 def main(argv=None):
     cli = argparse.ArgumentParser(description=__doc__)
-    cli.add_argument("--regions", nargs="+", default=["euw1", "eun1", "kr", "na1"], choices=ROUTES)
-    cli.add_argument("--key-profile", choices=("default", "development"), default="default")
+    cli.add_argument("--regions", nargs="+", choices=ROUTES)
+    cli.add_argument("--key-profile", choices=PROFILES, default="default")
+    cli.add_argument("--run-hours", type=float, help="Stop with checkpoints after this many hours")
     cli.add_argument("--worker", choices=ROUTES, help=argparse.SUPPRESS)
     cli.add_argument("--worker-regions", nargs="+", choices=ROUTES, help=argparse.SUPPRESS)
     args, extra = cli.parse_known_args(argv)
     try:
         if args.worker:
             namespace = os.environ.get("ERO_COLLECT_NAMESPACE", "")
-            if namespace not in ("", "development"):
+            if namespace not in ("", *PROFILES[1:]):
                 raise ValueError("Invalid collector namespace")
             pipeline.REGIONAL_PROFILE = namespace
+            window = os.environ.get("ERO_COLLECT_WINDOW", "")
+            if window and (not window.startswith("patches-") or any(c not in "patches-0123456789._" for c in window)):
+                raise ValueError("Invalid patch window namespace")
+            pipeline.REGIONAL_WINDOW = window
             pipeline.REGIONAL_WORKER = args.worker
             pinned = os.environ.get("ERO_COLLECT_PATCHES")
             if not pinned:
@@ -202,13 +236,17 @@ def main(argv=None):
                 threading.Thread(target=watch_parent, daemon=True).start()
                 pipeline.fetch_versions = lambda: [p + ".1" for p in reversed(json.loads(pinned))]
             return collect_group(args.worker_regions or [args.worker], extra)
-        regions = selected_routes(args.regions)
+        regions = selected_routes(args.regions or PROFILE_REGIONS[args.key_profile])
         if "--dry-run" in extra:
             for region in regions:
                 print(f"[{region} / {ROUTES[region]}]")
                 pipeline.main(worker_arguments(region, extra))
             return 0
-        return supervise(regions, args.key_profile, extra)
+        import math
+        if args.run_hours is not None and (not math.isfinite(args.run_hours) or args.run_hours <= 0):
+            raise ValueError("--run-hours must be positive")
+        return supervise(regions, args.key_profile, extra,
+                         deadline=time.time() + args.run_hours * 3600 if args.run_hours else None)
     except KeyboardInterrupt:
         print("Stopped by user. All region checkpoints kept.")
         return 130

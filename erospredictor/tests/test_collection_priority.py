@@ -82,8 +82,8 @@ class CollectionPriorityTests(unittest.TestCase):
         with patch.object(Path, "read_text", new=read):
             loaded = runpy.run_path(configs.__file__)
         self.assertEqual(loaded["DATASET_TARGETS"]["SILVER"], 18000)
-        self.assertEqual(loaded["DATASET_TARGETS"]["BRONZE"], 7000)
-        self.assertEqual(loaded["DATASET_TARGETS"]["IRON"], 5000)
+        self.assertEqual(loaded["DATASET_TARGETS"]["BRONZE"], 4690)
+        self.assertEqual(loaded["DATASET_TARGETS"]["IRON"], 3350)
 
 
 if __name__ == "__main__":
