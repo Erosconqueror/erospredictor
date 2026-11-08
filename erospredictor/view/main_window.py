@@ -1080,6 +1080,8 @@ class MainWindow(QMainWindow):
         self.lbl_effects_hint.show()
 
     def _on_effects_toggled(self, enabled):
+        from view.hud_layout import update_effects_visibility
+        update_effects_visibility(self)
         self._clear_effect_badges()
         if self._last_recommendations:
             self._render_recommendation_rows()

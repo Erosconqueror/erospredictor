@@ -1,7 +1,7 @@
 """Two reversible arrangements of the same controls and draft state."""
 
 from PyQt6.QtCore import Qt
-from PyQt6.QtWidgets import QWIDGETSIZE_MAX
+from PyQt6.QtWidgets import QWIDGETSIZE_MAX, QVBoxLayout, QSizePolicy
 
 
 def apply_layout(window, compact):
@@ -127,6 +127,13 @@ def apply_layout(window, compact):
 def style_workspace(window, compact):
     """Mirror the two teams around the result panel, keeping real widgets."""
     window.teams_layout.setSpacing(12 if compact else 6)
+    window.dashboard.setMinimumWidth(460)
+    window.dashboard.setMaximumWidth(QWIDGETSIZE_MAX if compact else 460)
+    window.teams_layout.setStretch(0, 0 if compact else 1)
+    window.teams_layout.setStretch(1, 1 if compact else 0)
+    window.teams_layout.setStretch(2, 0 if compact else 1)
+    if not hasattr(window, "_hud_role_stacks"):
+        window._hud_role_stacks = {}
     for side, card, column, title, labels, badges, picks, color, background in (
         ("blue", window.blue_team_card, window.blue_team_layout, window.blue_team_title,
          window.blue_role_labels, window.blue_effects, window.blue_picks, "#5CADEF", "#182331"),
@@ -134,10 +141,15 @@ def style_workspace(window, compact):
          window.red_role_labels, window.red_effects, window.red_picks, "#F08088", "#291F2B"),
     ):
         card.setStyleSheet("")
+        card.setMinimumWidth(254 if compact else 0)
+        card.setMaximumWidth(254 if compact else QWIDGETSIZE_MAX)
+        card.setSizePolicy(QSizePolicy.Policy.Fixed if compact else QSizePolicy.Policy.Preferred,
+                           QSizePolicy.Policy.Maximum if compact else QSizePolicy.Policy.Preferred)
+        window.teams_layout.setAlignment(card, Qt.AlignmentFlag.AlignTop if compact else Qt.AlignmentFlag(0))
         if compact:
             border = "#30465E" if side == "blue" else "#50333F"
             card.setStyleSheet(f"QFrame#{side}TeamCard {{ background: {background}; border: 1px solid {border}; border-radius: 12px; }}")
-        column.setContentsMargins(*(12, 14, 12, 14) if compact else (0, 0, 0, 0))
+        column.setContentsMargins(*(8, 10, 8, 10) if compact else (0, 0, 0, 0))
         title.setText(("KÉK CSAPAT" if side == "blue" else "PIROS CSAPAT") if compact else
                       ("Kék Csapat (Blue Team)" if side == "blue" else "Piros Csapat (Red Team)"))
         title.setStyleSheet(f"color: {color}; font-size: {'15' if compact else '18'}px; font-weight: bold; padding-bottom: 8px;")
@@ -145,19 +157,39 @@ def style_workspace(window, compact):
         column.setAlignment(title, Qt.AlignmentFlag.AlignVCenter if compact else Qt.AlignmentFlag.AlignCenter)
         for role, (label, badge, pick) in enumerate(zip(labels, badges, picks)):
             row = column.itemAt(role + 1).layout()
+            if (side, role) not in window._hud_role_stacks:
+                window._hud_role_stacks[(side, role)] = QVBoxLayout()
+            stack = window._hud_role_stacks[(side, role)]
+            row.removeItem(stack)
             for widget in (label, badge, pick):
                 row.removeWidget(widget)
-            widgets = ((badge, label, pick) if side == "blue" else (pick, label, badge)) if compact else (
-                (badge, label, pick) if side == "blue" else (label, pick, badge))
-            for widget in widgets:
-                row.addWidget(widget)
+                stack.removeWidget(widget)
+            if compact:
+                stack.setContentsMargins(0, 0, 0, 0)
+                stack.setSpacing(2)
+                stack.addWidget(label)
+                stack.addWidget(badge)
+                if side == "blue":
+                    row.addLayout(stack)
+                    row.addWidget(pick)
+                else:
+                    row.addWidget(pick)
+                    row.addLayout(stack)
+            else:
+                for widget in ((badge, label, pick) if side == "blue" else (label, pick, badge)):
+                    row.addWidget(widget)
             row.setSpacing(6)
             row.setAlignment(Qt.AlignmentFlag.AlignHCenter if compact else Qt.AlignmentFlag(0))
-            label.setFixedWidth(64 if compact else 65)
+            label.setFixedWidth(74 if compact else 65)
+            label.setMinimumHeight(0 if compact else 50)
             label.setStyleSheet(f"font-weight: bold; color: #A6AEC1; font-size: {13 if compact else 15}px;")
             label.setAlignment((Qt.AlignmentFlag.AlignRight if side == "blue" else Qt.AlignmentFlag.AlignLeft)
                                | Qt.AlignmentFlag.AlignVCenter if compact else Qt.AlignmentFlag.AlignVCenter)
-            badge.setFixedWidth(72 if compact else 92)
+            badge.setFixedWidth(74 if compact else 92)
+            badge.setMinimumHeight(26 if compact else 0)
+            badge.setMaximumHeight(26 if compact else QWIDGETSIZE_MAX)
+            pick.setMinimumHeight(56 if compact else 50)
+            pick.setMaximumHeight(56 if compact else QWIDGETSIZE_MAX)
             pick.setStyleSheet("QComboBox { font-size: 14px; border: 1px solid #3C4558; background: #252C3A; border-radius: 8px; padding: 5px; color: #F0F3FA; }"
                               "QComboBox QLineEdit { background: transparent; border: none; padding: 0; }"
                               "QComboBox:hover { border-color: #64738C; } QComboBox:focus { border-color: white; }"
@@ -169,3 +201,10 @@ def style_workspace(window, compact):
                                "QComboBox QLineEdit { background: transparent; border: none; padding: 0; }"
                                "QComboBox:hover { border-color: #8190A8; } QComboBox:focus { border-color: white; }"
                                if compact else "font-size: 14px; padding: 3px;")
+    update_effects_visibility(window)
+
+
+def update_effects_visibility(window):
+    visible = not getattr(window, "_compact_hud_active", False) or window.chk_effects.isChecked()
+    for badge in window.blue_effects + window.red_effects:
+        badge.setVisible(visible)
