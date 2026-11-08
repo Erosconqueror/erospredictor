@@ -336,6 +336,7 @@ class MainWindow(QMainWindow):
         blue_col = QVBoxLayout()
         self.blue_team_layout = blue_col
         lbl_blue = QLabel("Kék Csapat (Blue Team)")
+        self.blue_team_title = lbl_blue
         lbl_blue.setStyleSheet("color: #42A5F5; font-weight: bold; font-size: 18px; padding-bottom: 5px;")
         blue_col.addWidget(lbl_blue, alignment=Qt.AlignmentFlag.AlignCenter)
         
@@ -357,7 +358,10 @@ class MainWindow(QMainWindow):
             row.addWidget(lbl)
             row.addWidget(combo)
             blue_col.addLayout(row)
-        layout.addLayout(blue_col, stretch=1)
+        self.blue_team_card = QFrame()
+        self.blue_team_card.setObjectName("blueTeamCard")
+        self.blue_team_card.setLayout(blue_col)
+        layout.addWidget(self.blue_team_card, stretch=1)
         
         self.dashboard = QFrame()
         self.dashboard.setObjectName("centerDashboard")
@@ -415,6 +419,7 @@ class MainWindow(QMainWindow):
         red_col = QVBoxLayout()
         self.red_team_layout = red_col
         lbl_red = QLabel("Piros Csapat (Red Team)")
+        self.red_team_title = lbl_red
         lbl_red.setStyleSheet("color: #EF5350; font-weight: bold; font-size: 18px; padding-bottom: 5px;")
         red_col.addWidget(lbl_red, alignment=Qt.AlignmentFlag.AlignCenter)
         self.red_picks = []
@@ -435,7 +440,10 @@ class MainWindow(QMainWindow):
             self.red_effects.append(badge)
             row.addWidget(badge)
             red_col.addLayout(row)
-        layout.addLayout(red_col, stretch=1)
+        self.red_team_card = QFrame()
+        self.red_team_card.setObjectName("redTeamCard")
+        self.red_team_card.setLayout(red_col)
+        layout.addWidget(self.red_team_card, stretch=1)
         
         return layout
 
