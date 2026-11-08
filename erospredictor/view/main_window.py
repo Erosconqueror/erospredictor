@@ -88,7 +88,7 @@ class MainWindow(QMainWindow):
             "simple_effects": self.chk_effects, "robust_roles": self.chk_robust,
             "history_markers": self.chk_personal, "history_service": self.chk_history_service,
             "pool_only": self.chk_pool_only, "auto_calculate": self.chk_auto_calculate,
-            "compact_hud": self.chk_compact_hud, "expanded_bans": self.btn_toggle_bans}
+            "compact_hud": self.chk_compact_hud}
         combos = {"history_limit": (self.cb_history_limit, True), "sync_side": (self.cb_sync_side, True),
                   "active_pool": (self.cb_pool, False), "tier": (self.cb_rank, False)}
         for key, control in booleans.items():
@@ -275,12 +275,6 @@ class MainWindow(QMainWindow):
         self.btn_import.setToolTip("A már kiválasztott hősök és tiltások beolvasása a saját kliensből.")
         self.btn_import.clicked.connect(self._on_import_draft)
         layout.addWidget(self.btn_import)
-        self.btn_toggle_bans = QPushButton("Tiltások · 0/10")
-        self.btn_toggle_bans.setCheckable(True)
-        self.btn_toggle_bans.setToolTip("A tiltások megjelenítése vagy elrejtése. A rejtett tiltásokat is figyelembe veszi a modell.")
-        self.btn_toggle_bans.toggled.connect(lambda visible: self.bans_panel.setVisible(visible))
-        layout.addWidget(self.btn_toggle_bans)
-        self.btn_toggle_bans.hide()
         self.btn_lockfile = QPushButton("LoL lockfile…")
         self.btn_lockfile.setToolTip(f"A mentett vagy alapértelmezett LoL lockfile helye: {preferred_lockfile()}")
         self.btn_lockfile.clicked.connect(self._choose_lockfile)
@@ -549,8 +543,10 @@ class MainWindow(QMainWindow):
             self.cb_sync_side.addItem(title, value)
         self.cb_sync_side.currentIndexChanged.connect(self._on_sync_side_changed)
         pool_row = QHBoxLayout()
+        self.pool_row = pool_row
         pool_row.addWidget(QLabel("Hőspool:"))
         self.cb_pool = QComboBox()
+        self.cb_pool.setFixedWidth(220)
         self.cb_pool.addItems([ALL_MINE] + sorted(self._pool_library["lists"]))
         pool_row.addWidget(self.cb_pool, 1)
         self.chk_pool_only = QCheckBox("Csak ebből ajánlj")
@@ -558,6 +554,7 @@ class MainWindow(QMainWindow):
         self.btn_pool = QPushButton("Hőseim és listák…")
         self.btn_pool.clicked.connect(self._edit_pool)
         pool_row.addWidget(self.btn_pool)
+        pool_row.addStretch()
         rec_layout.addLayout(pool_row)
         self.btn_rec = QPushButton("AJÁNLÁS")
         self.btn_rec.setFixedSize(250, 40)
@@ -1129,8 +1126,6 @@ class MainWindow(QMainWindow):
     def _connect_draft_changes(self):
         for combo in self.blue_picks + self.red_picks + self.blue_bans + self.red_bans:
             combo.currentTextChanged.connect(self._invalidate_recommendations)
-        for combo in self.blue_bans + self.red_bans:
-            combo.currentTextChanged.connect(self._update_ban_count)
         self.cb_rank.currentTextChanged.connect(self._invalidate_recommendations)
         self.grp_team.idClicked.connect(self._invalidate_recommendations)
         self.grp_role.idClicked.connect(self._invalidate_recommendations)
@@ -1153,10 +1148,6 @@ class MainWindow(QMainWindow):
                     widget.customContextMenuRequested.connect(
                         lambda point, t=team, r=role, w=widget: self._show_pick_role_menu(t, r, w, point))
                 self._clear_role_slot(team, role)
-
-    def _update_ban_count(self, *_):
-        count = sum(cid >= 0 for cid in self._get_ids(self.blue_bans + self.red_bans))
-        self.btn_toggle_bans.setText(f"Tiltások · {count}/10")
 
     def _pick_role_menu(self, team, role):
         combos = self.blue_picks if team == "blue" else self.red_picks
@@ -1381,7 +1372,8 @@ class MainWindow(QMainWindow):
     def _update_explain_button(self):
         prediction = self._prediction_context is not None
         recommendation = self._recommendation_context is not None
-        self.btn_explain.setText("Miért? – Predikció fókuszhőse" if prediction else
+        self.btn_explain.setText("Miért?" if getattr(self, "_compact_hud_active", False) else
+            "Miért? – Predikció fókuszhőse" if prediction else
             "Miért? – Kijelölt hős + első 5" if recommendation else "Miért? – Részletes elemzés")
         self.btn_explain.setToolTip("Csak a kijelölt csapat és pozíció predikcióban szereplő hősének részletes elemzése."
             if prediction else "Ajánlás után a kijelölt hős + első öt, predikció után a fókuszhős elemezhető. Fókuszhöz válassz hőst a kijelölt pozíción, majd kérj predikciót.")

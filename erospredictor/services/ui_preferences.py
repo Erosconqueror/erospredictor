@@ -3,7 +3,7 @@
 from services import client_settings
 
 BOOLEAN_KEYS = {"auto_draft", "off_meta", "simple_effects", "robust_roles",
-                "history_markers", "history_service", "pool_only", "auto_calculate", "compact_hud", "expanded_bans"}
+                "history_markers", "history_service", "pool_only", "auto_calculate", "compact_hud"}
 
 
 def validated(values):

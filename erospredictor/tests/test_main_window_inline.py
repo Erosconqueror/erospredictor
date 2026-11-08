@@ -96,7 +96,8 @@ class InlineEffectsWindowTests(unittest.TestCase):
         self.window._on_predict()
         self.wait_for_worker()
         self.assertTrue(self.window.btn_explain.isEnabled())
-        self.assertIn("Predikció fókuszhőse", self.window.btn_explain.text())
+        self.assertEqual(self.window.btn_explain.text(), "Miért?")
+        self.assertIn("predikcióban", self.window.btn_explain.toolTip())
         self.assertIsNone(self.window._recommendation_context)
         self.controller.explain_prediction.return_value = []
         with patch.object(self.window, "_display_explanations") as display:
@@ -175,7 +176,8 @@ class InlineEffectsWindowTests(unittest.TestCase):
         self.window._on_recommend()
         self.wait_for_worker()
         self.assertIsNone(self.window._prediction_context)
-        self.assertIn("Kijelölt hős + első 5", self.window.btn_explain.text())
+        self.assertEqual(self.window.btn_explain.text(), "Miért?")
+        self.assertIn("kijelölt hős + első öt", self.window.btn_explain.toolTip())
 
     def test_default_recommendation_runs_no_optional_effect_inference(self):
         self.window._on_recommend()
