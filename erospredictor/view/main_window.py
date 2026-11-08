@@ -53,6 +53,12 @@ class MainWindow(QMainWindow):
         self._role_document = None
         self._role_stamp = None
         self._sync_latest_snapshot = None
+        self._last_draft_action = None
+        self._auto_calculation_pending = False
+        self._auto_calculation_timer = QTimer(self)
+        self._auto_calculation_timer.setSingleShot(True)
+        self._auto_calculation_timer.setInterval(400)
+        self._auto_calculation_timer.timeout.connect(self._run_auto_calculation)
         self._pending_ui_preferences = {}
         self._preferences_suspended = False
         self._pool_library = load_library()
@@ -81,7 +87,8 @@ class MainWindow(QMainWindow):
         booleans = {"auto_draft": self.chk_follow, "off_meta": self.chk_meta,
             "simple_effects": self.chk_effects, "robust_roles": self.chk_robust,
             "history_markers": self.chk_personal, "history_service": self.chk_history_service,
-            "pool_only": self.chk_pool_only}
+            "pool_only": self.chk_pool_only, "auto_calculate": self.chk_auto_calculate,
+            "compact_hud": self.chk_compact_hud, "expanded_bans": self.btn_toggle_bans}
         combos = {"history_limit": (self.cb_history_limit, True), "sync_side": (self.cb_sync_side, True),
                   "active_pool": (self.cb_pool, False), "tier": (self.cb_rank, False)}
         for key, control in booleans.items():
@@ -104,6 +111,7 @@ class MainWindow(QMainWindow):
         self.grp_role.idClicked.connect(lambda role: self._remember_ui_preference("preferred_role", role))
         if self.chk_follow.isChecked():
             QTimer.singleShot(0, self._resume_saved_follow)
+        self._set_compact_hud(self.chk_compact_hud.isChecked())
 
     def _resume_saved_follow(self):
         if self.isVisible() and not self._preferences_suspended:
@@ -182,15 +190,20 @@ class MainWindow(QMainWindow):
 
     def _build_ui(self):
         """Constructs the UI components and adds them to the main layout."""
-        self.main_layout.addWidget(self._create_header())
-        self.main_layout.addLayout(self._create_rank_selector())
+        self.header = self._create_header()
+        self.main_layout.addWidget(self.header)
+        self.rank_toolbar = self._create_rank_selector()
+        self.main_layout.addLayout(self.rank_toolbar)
         self.lbl_draft_sync = QLabel("Automatikus draftkövetés kikapcsolva.")
         self.lbl_draft_sync.setTextFormat(Qt.TextFormat.PlainText)
         self.lbl_draft_sync.setStyleSheet("font-size: 11px; color: #BDBDCB;")
         self.main_layout.addWidget(self.lbl_draft_sync)
-        self.main_layout.addWidget(self._create_bans())
-        self.main_layout.addLayout(self._create_teams())
-        self.main_layout.addWidget(self._create_controls())
+        self.bans_panel = self._create_bans()
+        self.main_layout.addWidget(self.bans_panel)
+        self.teams_layout = self._create_teams()
+        self.main_layout.addLayout(self.teams_layout, 1)
+        self.controls_panel = self._create_controls()
+        self.main_layout.addWidget(self.controls_panel)
 
     def _create_header(self) -> QWidget:
         """Builds the header widget containing title and help button."""
@@ -199,10 +212,12 @@ class MainWindow(QMainWindow):
         layout.setContentsMargins(0, 0, 7, 0)
         
         spacer = QWidget()
+        self.header_spacer = spacer
         spacer.setFixedWidth(270)
         layout.addWidget(spacer)
         
         title = QLabel("League of Legends Hősválasztási Segédprogram")
+        self.header_title = title
         title.setStyleSheet("font-size: 28px; font-weight: 900; letter-spacing: 1px; margin: 10px; color: #FFFFFF;")
         layout.addWidget(title, alignment=Qt.AlignmentFlag.AlignCenter)
         
@@ -260,6 +275,12 @@ class MainWindow(QMainWindow):
         self.btn_import.setToolTip("A már kiválasztott hősök és tiltások beolvasása a saját kliensből.")
         self.btn_import.clicked.connect(self._on_import_draft)
         layout.addWidget(self.btn_import)
+        self.btn_toggle_bans = QPushButton("Tiltások · 0/10")
+        self.btn_toggle_bans.setCheckable(True)
+        self.btn_toggle_bans.setToolTip("A tiltások megjelenítése vagy elrejtése. A rejtett tiltásokat is figyelembe veszi a modell.")
+        self.btn_toggle_bans.toggled.connect(lambda visible: self.bans_panel.setVisible(visible))
+        layout.addWidget(self.btn_toggle_bans)
+        self.btn_toggle_bans.hide()
         self.btn_lockfile = QPushButton("LoL lockfile…")
         self.btn_lockfile.setToolTip(f"A mentett vagy alapértelmezett LoL lockfile helye: {preferred_lockfile()}")
         self.btn_lockfile.clicked.connect(self._choose_lockfile)
@@ -319,6 +340,7 @@ class MainWindow(QMainWindow):
         layout = QHBoxLayout()
         
         blue_col = QVBoxLayout()
+        self.blue_team_layout = blue_col
         lbl_blue = QLabel("Kék Csapat (Blue Team)")
         lbl_blue.setStyleSheet("color: #42A5F5; font-weight: bold; font-size: 18px; padding-bottom: 5px;")
         blue_col.addWidget(lbl_blue, alignment=Qt.AlignmentFlag.AlignCenter)
@@ -397,6 +419,7 @@ class MainWindow(QMainWindow):
         layout.addWidget(self.dashboard)
         
         red_col = QVBoxLayout()
+        self.red_team_layout = red_col
         lbl_red = QLabel("Piros Csapat (Red Team)")
         lbl_red.setStyleSheet("color: #EF5350; font-weight: bold; font-size: 18px; padding-bottom: 5px;")
         red_col.addWidget(lbl_red, alignment=Qt.AlignmentFlag.AlignCenter)
@@ -446,10 +469,12 @@ class MainWindow(QMainWindow):
         bottom_area.addStretch(1)
         
         group_rec = QGroupBox("Hős Ajánló")
+        self.focus_panel = group_rec
         group_rec.setFixedWidth(700) 
         rec_layout = QVBoxLayout(group_rec)
         rec_layout.setSpacing(4)
         row_team = QHBoxLayout()
+        self.team_row = row_team
         self.grp_team = QButtonGroup(self)
         self.btn_blue = QPushButton("Kék Csapat (Blue)")
         self.btn_blue.setCheckable(True)
@@ -467,6 +492,7 @@ class MainWindow(QMainWindow):
         rec_layout.addLayout(row_team)
         
         row_roles = QHBoxLayout()
+        self.role_row = row_roles
         self.grp_role = QButtonGroup(self)
         role_map = {"Mid": "Middle", "ADC": "Bottom"}
         for i, role in enumerate(self.roles):
@@ -513,6 +539,7 @@ class MainWindow(QMainWindow):
             "Bekapcsolás után az Előzmények frissítése indítja a lekérést.")
         
         row_action = QHBoxLayout()
+        self.action_row = row_action
         self.chk_meta = QCheckBox("Off-Meta hősök szűrése")
         self.chk_meta.setChecked(True)
         self.chk_robust = QCheckBox("Több felállás vizsgálata kézi / mentett draftnál is (első 5)")
@@ -559,7 +586,9 @@ class MainWindow(QMainWindow):
         rec_layout.addWidget(self.lbl_effects_hint)
         
         bottom_area.addWidget(group_rec)
+        self.controls_bottom = bottom_area
         right_panel = QVBoxLayout()
+        self.clear_panel = right_panel
         right_panel.addStretch() 
         self.btn_clear = QPushButton("Új Draft")
         self.btn_clear.setFixedSize(80, 35)
@@ -568,9 +597,53 @@ class MainWindow(QMainWindow):
         right_panel.addWidget(self.btn_clear, alignment=Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignBottom)
         bottom_area.addLayout(right_panel, 1)
         layout.addLayout(bottom_area)
+        self.chk_auto_calculate = QCheckBox("Utolsó művelet automatikus újraszámítása")
+        self.chk_auto_calculate.setChecked(True)
+        self.chk_auto_calculate.setToolTip("Draftváltozáskor az utolsó ajánlást vagy predikciót ismétli. Ha a fókuszhely betelt, predikcióra vált. Nem választ hőst a kliensben.")
+        self.chk_auto_calculate.toggled.connect(self._on_auto_calculate_toggled)
+        self.chk_compact_hud = QCheckBox("Áttekinthető felület (kikapcsolva: klasszikus)")
+        self.chk_compact_hud.setChecked(True)
+        self.chk_compact_hud.toggled.connect(self._set_compact_hud)
         from view.options_dialog import OptionsDialog
         self.options_dialog = OptionsDialog(self)
         return container
+
+    def _set_compact_hud(self, enabled):
+        from view.hud_layout import apply_layout
+        apply_layout(self, enabled)
+
+    def _on_auto_calculate_toggled(self, enabled):
+        if not enabled:
+            self._auto_calculation_pending = False
+            self._auto_calculation_timer.stop()
+
+    def _schedule_auto_calculation(self):
+        if (self.chk_follow.isChecked() and self.chk_auto_calculate.isChecked()
+                and self._last_draft_action is not None):
+            self._auto_calculation_pending = True
+            self._auto_calculation_timer.start()
+
+    def _run_auto_calculation(self):
+        if not (self._auto_calculation_pending and self.chk_follow.isChecked()
+                and self.chk_auto_calculate.isChecked() and self._client_draft_loaded):
+            return
+        if self._busy or self._manual_import_active:
+            return  # _task_finished restarts the debounce after applying the newest snapshot.
+        self._auto_calculation_pending = False
+        if not self.controller:
+            return
+        if not any(cid >= 0 for cid in self._get_ids(self.blue_picks + self.red_picks)):
+            return
+        picks = self.blue_picks if self.grp_team.checkedId() == 0 else self.red_picks
+        occupied = self._get_ids(picks)[self.grp_role.checkedId()] >= 0
+        action = self._last_draft_action
+        try:
+            if action == "recommend" and not occupied:
+                self._on_recommend()
+            else:
+                self._on_predict()
+        finally:
+            self._last_draft_action = action
 
     def _create_combo(self, is_ban: bool = False) -> QComboBox:
         combo = QComboBox()
@@ -635,6 +708,7 @@ class MainWindow(QMainWindow):
     def _on_clear_all(self):
         """Clears all champion selections and resets the UI."""
         self.chk_follow.setChecked(False)
+        self._last_draft_action = None
         self._draft_unavailable()
         self._client_draft_loaded = False
         self._clear_role_metadata()
@@ -747,6 +821,9 @@ class MainWindow(QMainWindow):
             if enabled:
                 self._display_optional_effects(effects, error)
 
+        self._last_draft_action = "predict"
+        self._auto_calculation_pending = False
+        self._auto_calculation_timer.stop()
         self._start_task(predict, display)
 
     def _display_prediction(self, res, div_ui):
@@ -798,6 +875,10 @@ class MainWindow(QMainWindow):
         tags = internal_tags(self._pool_library, self._pool_mapping)
         robust = self._client_draft_loaded or self.chk_robust.isChecked()
         manual_roles = dict(self._sync_manual_roles)
+        if self._sync_last_snapshot is not None and self._client_draft_loaded:
+            manual_roles.update({(pick.team, pick.internal_id): pick.role
+                                 for pick in self._sync_last_snapshot.picks
+                                 if pick.role_confirmed and pick.role is not None})
 
         def recommend():
             if history is not None:
@@ -823,6 +904,9 @@ class MainWindow(QMainWindow):
             if enabled:
                 self._display_optional_effects(effects, error)
 
+        self._last_draft_action = "recommend"
+        self._auto_calculation_pending = False
+        self._auto_calculation_timer.stop()
         self._start_task(recommend, display)
 
     def _display_recommendations(self, recs, context):
@@ -1045,6 +1129,8 @@ class MainWindow(QMainWindow):
     def _connect_draft_changes(self):
         for combo in self.blue_picks + self.red_picks + self.blue_bans + self.red_bans:
             combo.currentTextChanged.connect(self._invalidate_recommendations)
+        for combo in self.blue_bans + self.red_bans:
+            combo.currentTextChanged.connect(self._update_ban_count)
         self.cb_rank.currentTextChanged.connect(self._invalidate_recommendations)
         self.grp_team.idClicked.connect(self._invalidate_recommendations)
         self.grp_role.idClicked.connect(self._invalidate_recommendations)
@@ -1067,6 +1153,10 @@ class MainWindow(QMainWindow):
                     widget.customContextMenuRequested.connect(
                         lambda point, t=team, r=role, w=widget: self._show_pick_role_menu(t, r, w, point))
                 self._clear_role_slot(team, role)
+
+    def _update_ban_count(self, *_):
+        count = sum(cid >= 0 for cid in self._get_ids(self.blue_bans + self.red_bans))
+        self.btn_toggle_bans.setText(f"Tiltások · {count}/10")
 
     def _pick_role_menu(self, team, role):
         combos = self.blue_picks if team == "blue" else self.red_picks
@@ -1113,6 +1203,10 @@ class MainWindow(QMainWindow):
                      and (pick.team == own or pick.team == "own")}
             if team == own and (source in fixed or target in fixed):
                 return "A saját csapat kliens által közölt pozícióját az automatikus követés kezeli."
+            confirmed = {pick.role for pick in snapshot.picks
+                         if pick.team == team and pick.role_confirmed and pick.role is not None}
+            if source in confirmed or target in confirmed:
+                return "A játék kliens által közölt pozícióját az automatikus követés kezeli. Kézi cseréhez kapcsold ki a követést."
         return ""
 
     def _swap_pick_roles(self, team, source, target, expected_ids=None):
@@ -1369,6 +1463,8 @@ class MainWindow(QMainWindow):
             task.deleteLater()
         if manual_import:
             self._draft_follower.set_enabled(self.chk_follow.isChecked())
+        if self._auto_calculation_pending:
+            self._auto_calculation_timer.start()
 
     def _on_explain(self):
         if self._busy or not (self._recommendation_context or self._prediction_context):
@@ -1460,15 +1556,20 @@ class MainWindow(QMainWindow):
 
     def _read_followed_draft(self):
         from services.draft_import import LcuDraftClient
-        return LcuDraftClient(lockfile_path=self._lockfile_path).read_draft()
+        return LcuDraftClient(lockfile_path=self._lockfile_path).read_draft(previous=self._sync_latest_snapshot)
 
     def _on_follow_toggled(self, enabled):
+        if not enabled:
+            self._auto_calculation_pending = False
+            self._auto_calculation_timer.stop()
         self._sync_pending = None
         self._sync_last_snapshot = None
         self._sync_latest_snapshot = None
         self._draft_follower.set_enabled(enabled and not self._manual_import_active)
 
     def _draft_unavailable(self):
+        self._auto_calculation_pending = False
+        self._auto_calculation_timer.stop()
         self._sync_pending = None
         self._sync_last_snapshot = None
         self._sync_session_key = ""
@@ -1534,9 +1635,15 @@ class MainWindow(QMainWindow):
         current = {key: [cid if cid >= 0 else None for cid in self._get_ids(combos)]
                    for key, combos in (("blue", self.blue_picks), ("red", self.red_picks),
                                        ("blue_bans", self.blue_bans), ("red_bans", self.red_bans))}
+        old_focus = (self.grp_team.checkedId(), self.grp_role.checkedId())
+        draft_changed = signature(current) != signature(result.values)
+        def confirmed_roles(value):
+            return frozenset((pick.team, pick.internal_id, pick.role) for pick in value.picks
+                             if pick.role_confirmed) if value is not None else frozenset()
+        confirmation_changed = confirmed_roles(snapshot) != confirmed_roles(previous)
         self._sync_applying = True
         try:
-            if signature(current) != signature(result.values):
+            if draft_changed or confirmation_changed:
                 self._apply_import(result.values, from_client=True)
             own = snapshot.own_team or self.cb_sync_side.currentData() or self._sync_manual_side
             if own and (previous is None or previous.own_team != snapshot.own_team):
@@ -1559,6 +1666,8 @@ class MainWindow(QMainWindow):
         count_bans = len(result.values["blue_bans"]) + len(result.values["red_bans"])
         mode = "Custom" if snapshot.custom_game else {400: "Normal draft", 420: "Ranked Solo/Duo", 440: "Ranked Flex"}.get(snapshot.queue_id, "Draft")
         summary = f"{mode}: {assigned}/{len(snapshot.picks)} látható hős besorolva, {count_bans} tiltás; {inferred} becsült pozíció."
+        if snapshot.phase != "ChampSelect":
+            summary = "Játék betöltése / játékban · " + summary
         forced = sum(item.source == "forced" for item in result.assignments)
         if forced:
             summary += f" ⚠ {forced} kényszerített pozíció."
@@ -1573,6 +1682,9 @@ class MainWindow(QMainWindow):
             summary += f" Kézi pozíció szükséges: {unknown} (LoL-kliens beolvasása)."
         self._set_sync_status(summary)
         self.lbl_draft_sync.setToolTip(summary + "\n" + "\n".join(notes))
+        if (draft_changed or confirmation_changed or old_focus != (self.grp_team.checkedId(), self.grp_role.checkedId())
+                or (previous is not None and previous.phase != snapshot.phase)):
+            self._schedule_auto_calculation()
 
     def _clear_role_slot(self, team, role):
         labels = self.blue_role_labels if team == "blue" else self.red_role_labels
@@ -1658,7 +1770,7 @@ class MainWindow(QMainWindow):
         self.lbl_dash_title.setText("A LoL-kliens hősválasztásának beolvasása…")
         def read_client():
             from services.draft_import import LcuDraftClient
-            return LcuDraftClient(lockfile_path=self._lockfile_path).read_draft()
+            return LcuDraftClient(lockfile_path=self._lockfile_path).read_draft(previous=self._sync_latest_snapshot)
         self._start_task(read_client, self._review_import)
 
     def _review_import(self, snapshot):
@@ -1714,6 +1826,7 @@ class MainWindow(QMainWindow):
             self._sync_manual_roles = {(team, cid): role for team in ("blue", "red")
                 for role, cid in enumerate(values[team]) if cid is not None}
         self._apply_import(values, from_client=True)
+        self._sync_latest_snapshot = original
         if preview is not None:
             chosen = {(team, cid): role for team in ("blue", "red") for role, cid in enumerate(values[team])
                       if cid is not None}

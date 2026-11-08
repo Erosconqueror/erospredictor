@@ -79,7 +79,7 @@ class MainWindowFeatureTests(unittest.TestCase):
         main_thread = get_ident()
         worker_threads = []
         snapshot = object()
-        def read():
+        def read(previous=None):
             worker_threads.append(get_ident())
             return snapshot
         with patch("services.draft_import.LcuDraftClient") as factory, patch.object(self.window, "_review_import") as review:

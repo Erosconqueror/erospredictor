@@ -121,7 +121,7 @@ def assign_draft(snapshot, role_distributions, own_side=None, previous_roles=Non
     for team in ("blue", "red"):
         pending, occupied = [], {}
         team_picks = sorted((pick for pick in picks if pick.team == team),
-                            key=lambda pick: (not (team == own and pick.role is not None), pick.internal_id))
+                            key=lambda pick: (not ((team == own or pick.role_confirmed) and pick.role is not None), pick.internal_id))
         for pick in team_picks:
             probabilities, total = role_probabilities(role_distributions, pick.riot_id, tier=tier)
             probabilities = tuple(probabilities)
@@ -129,7 +129,7 @@ def assign_draft(snapshot, role_distributions, own_side=None, previous_roles=Non
             manual = previous_roles.get((team, pick.internal_id))
             if manual is not None and not _role(manual):
                 raise ValueError("A kézzel megerősített pozíció érvénytelen.")
-            if team == own and pick.role is not None:
+            if (team == own or pick.role_confirmed) and pick.role is not None:
                 if not _role(pick.role):
                     raise ValueError("A kliens érvénytelen saját csapatszerepkört közölt.")
                 role, source = pick.role, "client"

@@ -246,8 +246,8 @@ class LocalClientTests(unittest.TestCase):
         transport.get.return_value = response
         result = LcuDraftClient(self.lockfile, MAPPING, transport).read_draft()
         self.assertEqual(result.own_team, "blue")
-        url = transport.get.call_args.args[0]
-        options = transport.get.call_args.kwargs
+        url = transport.get.call_args_list[0].args[0]
+        options = transport.get.call_args_list[0].kwargs
         self.assertEqual(url, "https://127.0.0.1:34567/lol-champ-select/v1/session")
         self.assertFalse(options["allow_redirects"])
         self.assertEqual(options["timeout"], (1, 2))
@@ -290,13 +290,14 @@ class LocalClientTests(unittest.TestCase):
                     LcuDraftClient(self.lockfile, MAPPING, transport).read_draft()
         self.assertEqual(save.call_count, 1)
 
-    def test_session_id_does_not_trigger_an_extra_gameflow_request(self):
+    def test_known_side_still_checks_gameflow_once_for_loading_transition(self):
         transport = MagicMock()
         transport.get.return_value.status_code = 200
         transport.get.return_value.json.return_value = dict(draft(), gameId=123)
         snapshot = LcuDraftClient(self.lockfile, MAPPING, transport).read_draft()
         self.assertEqual(snapshot.session_key, "game:123")
-        self.assertEqual(transport.get.call_count, 1)
+        self.assertEqual(transport.get.call_count, 2)
+        self.assertTrue(transport.get.call_args.args[0].endswith("/lol-gameflow/v1/session"))
 
     def test_connection_error_does_not_leak_authentication(self):
         transport = MagicMock()

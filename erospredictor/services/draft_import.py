@@ -41,6 +41,8 @@ class DraftPick:
     internal_id: int
     role: int | None
     cell_id: int
+    role_confirmed: bool = False
+    role_origin: str = ""
 
 
 @dataclass(frozen=True)
@@ -57,6 +59,7 @@ class DraftSnapshot:
     queue_id: int | None = None
     custom_game: bool = False
     roster_sizes: tuple[int, int] = (0, 0)
+    phase: str = "ChampSelect"
 
 
 _ROLES = {
@@ -350,6 +353,82 @@ def parse_draft_session(session: dict, mapping: dict, gameflow=None, current_sum
                          queue_id if queue_id >= 0 else None, custom, sizes)
 
 
+def parse_gameflow_session(gameflow, mapping, current_summoner=None, players=None, previous=None, names=None):
+    """Read the final roster; array order never establishes a lane.
+
+    Live Client Data position is preferred when the game client is ready.
+    Only explicitly identified members of this game's roster can be updated.
+    """
+    phase = gameflow.get("phase")
+    if phase not in ("GameStart", "InProgress", "Reconnect"):
+        raise DraftUnavailable(LcuDraftClient.missing_message)
+    data = gameflow.get("gameData") or {}
+    if not isinstance(data, dict):
+        raise DraftImportError("A betöltődő játék névsora még nem érhető el; újrapróbáljuk.")
+    own = resolve_own_side({"myTeam": []}, gameflow, current_summoner)
+    session_key = _session_key({}, gameflow)
+    same_game = bool(previous and session_key and previous.session_key == session_key)
+    picks, notes, own_role, sizes = [], [], None, []
+    for key, team in (("teamOne", "blue"), ("teamTwo", "red")):
+        roster = data.get(key) or []
+        if not isinstance(roster, list) or len(roster) > 5:
+            raise DraftImportError("A beolvasás csak az 5 az 5 elleni felállást támogatja.")
+        sizes.append(len(roster))
+        for member in roster:
+            if not isinstance(member, dict):
+                continue
+            riot_id = _number(member.get("championId"))
+            cid = _number(mapping.get(str(riot_id), mapping.get(riot_id)), -1)
+            if riot_id <= 0 or cid < 0:
+                if riot_id > 0:
+                    notes.append(f"Ismeretlen hősazonosító: {riot_id}. Frissítsd a hősadatokat.")
+                continue
+            role = next((_ROLES[str(member[field]).upper()] for field in
+                         ("selectedPosition", "position", "assignedPosition")
+                         if str(member.get(field, "")).upper() in _ROLES), None)
+            origin = "gameflow" if role is not None else ""
+            # Riot IDs are public identity fields; never use team array order.
+            identity = member.get("riotId") or "#".join(str(member.get(field) or member.get(alternate) or "")
+                for field, alternate in (("gameName", "riotIdGameName"), ("tagLine", "riotIdTagLine")))
+            matches = [player for player in (players or []) if isinstance(player, dict)
+                       and identity not in ("", "#") and player.get("riotId") == identity
+                       and player.get("team") == ("ORDER" if team == "blue" else "CHAOS")]
+            if not matches and names and str(cid) in names:
+                def normalized(value):
+                    return "".join(char for char in str(value).casefold() if char.isalnum())
+                champion = normalized(names[str(cid)])
+                matches = [player for player in (players or []) if isinstance(player, dict)
+                           and player.get("team") == ("ORDER" if team == "blue" else "CHAOS")
+                           and normalized(str(player.get("rawChampionName", "")).removeprefix(
+                               "game_character_displayname_")) == champion]
+            live_role = (_ROLES.get(str(matches[0].get("position", "")).upper())
+                         if len(matches) == 1 else None)
+            if live_role is not None:
+                role, origin = live_role, "live"
+            elif same_game:
+                known = [pick for pick in previous.picks if pick.team == team
+                         and pick.internal_id == cid and pick.role_origin == "live"]
+                if len(known) == 1:
+                    role, origin = known[0].role, "live"
+            picks.append(DraftPick(team, riot_id, cid, role, -1, role is not None, origin))
+            if current_summoner and _same_player(current_summoner, member):
+                own_role = role
+    if not picks:
+        raise DraftImportError("A betöltődő játék hősei még nem érhetők el; újrapróbáljuk.")
+    if own is None and same_game:
+        own, own_role = previous.own_team, own_role if own_role is not None else previous.own_role
+    if any(pick.role is None for pick in picks):
+        notes.append("A kliens még nem közöl minden pozíciót; a hiányzó szerepkörök becslések maradnak.")
+    queue = data.get("queue") or {}
+    return DraftSnapshot(tuple(picks),
+        blue_bans=previous.blue_bans if same_game else (), red_bans=previous.red_bans if same_game else (),
+        own_team=own, own_bans=previous.own_bans if same_game else (),
+        enemy_bans=previous.enemy_bans if same_game else (), warnings=tuple(notes),
+        session_key=session_key, own_role=own_role,
+        queue_id=_number(queue.get("id"), -1) if isinstance(queue, dict) else None,
+        custom_game=bool(data.get("isCustomGame")), roster_sizes=tuple(sizes), phase=phase)
+
+
 class LcuDraftClient:
     """One-shot client. Call read_draft from a GUI worker, never the UI thread."""
 
@@ -391,7 +470,19 @@ class LcuDraftClient:
                 return {}
             raise DraftImportError("Nem érhető el a helyi LoL-kliens. Ellenőrizd, hogy fut-e, majd próbáld újra a beolvasást.") from None
 
-    def read_draft(self) -> DraftSnapshot:
+    def _live_players(self, transport):
+        """Separate unauthenticated loopback API: never forward the LCU token."""
+        try:
+            with warnings.catch_warnings():
+                warnings.simplefilter("ignore", InsecureRequestWarning)
+                response = transport.get("https://127.0.0.1:2999/liveclientdata/playerlist",
+                    verify=False, timeout=(0.3, 0.7), allow_redirects=False)
+            value = response.json() if response.status_code == 200 else []
+            return value if isinstance(value, list) else []
+        except (requests.RequestException, ValueError):
+            return []
+
+    def read_draft(self, previous=None) -> DraftSnapshot:
         candidates = discover_lockfiles(self.lockfile_path)
         if not candidates:
             raise DraftImportError("Nem található a LoL lockfile. Indítsd el a klienst, vagy válaszd ki a telepítési mappában lévő lockfile fájlt.")
@@ -402,20 +493,36 @@ class LcuDraftClient:
         if not remembered:
             remembered = save_lockfile_path(path)
         mapping = self.mapping
+        names = None
         if mapping is None:
             path = Path(__file__).resolve().parents[1] / "data/champion_id.json"
             try:
                 mapping = json.loads(path.read_text(encoding="utf-8"))
             except (OSError, ValueError):
                 raise DraftImportError("Nem olvasható a helyi hősazonosító-lista. Ellenőrizd a data/champion_id.json fájlt.") from None
+            try:
+                names = json.loads(path.with_name("champion_names.json").read_text(encoding="utf-8"))
+            except (OSError, ValueError):
+                pass
         transport = self.transport or requests.Session()
         if self.transport is None:
             transport.trust_env = False  # The local auth token must never go through a proxy.
         try:
-            session = self._get(transport, credentials, "/lol-champ-select/v1/session")
-            gameflow, current_summoner = {}, {}
+            try:
+                session = self._get(transport, credentials, "/lol-champ-select/v1/session")
+            except DraftUnavailable:
+                session = {}
+            # Some client builds keep the last champ-select session during
+            # loading. Check phase even when that endpoint still returns 200.
+            gameflow = self._get(transport, credentials, "/lol-gameflow/v1/session", optional=True)
+            if gameflow.get("phase") in ("GameStart", "InProgress", "Reconnect"):
+                current = self._get(transport, credentials, "/lol-summoner/v1/current-summoner", optional=True)
+                return parse_gameflow_session(gameflow, mapping, current,
+                                              self._live_players(transport), previous, names)
+            if not session:
+                raise DraftUnavailable(self.missing_message)
+            current_summoner = {}
             if resolve_own_side(session) is None:
-                gameflow = self._get(transport, credentials, "/lol-gameflow/v1/session", optional=True)
                 if resolve_own_side(session, gameflow) is None:
                     current_summoner = self._get(transport, credentials, "/lol-summoner/v1/current-summoner", optional=True)
             snapshot = parse_draft_session(session, mapping, gameflow, current_summoner)
