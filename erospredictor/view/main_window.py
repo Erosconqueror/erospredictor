@@ -403,22 +403,17 @@ class MainWindow(QMainWindow):
         dash_layout.addWidget(self.bar_wr)
         self.bar_wr.hide()
         
-        self.scroll_recommend = QScrollArea()
-        self.scroll_recommend.setWidgetResizable(True)
+        from view.recommendation_list import RecommendationList
+        self.scroll_recommend = RecommendationList()
         self.scroll_recommend.setVerticalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAsNeeded)
         self.scroll_recommend.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
         self.scroll_recommend.setFrameShape(QFrame.Shape.NoFrame)
         self.scroll_recommend.setStyleSheet("background: transparent;")
         
-        self.lbl_recommend = QLabel("")
-        self.lbl_recommend.setWordWrap(True)
-        self.lbl_recommend.setAlignment(Qt.AlignmentFlag.AlignTop | Qt.AlignmentFlag.AlignHCenter)
-        self.lbl_recommend.setStyleSheet("background: transparent;")
-        self.lbl_recommend.setTextInteractionFlags(Qt.TextInteractionFlag.LinksAccessibleByMouse)
+        self.lbl_recommend = self.scroll_recommend
         self.lbl_recommend.setOpenExternalLinks(False)
         self.lbl_recommend.linkActivated.connect(self._on_recommendation_selected)
         self.lbl_recommend.setToolTip("A hős nevére kattintva az egyszerű hőshatások fókusza választható ki.")
-        self.scroll_recommend.setWidget(self.lbl_recommend)
         self.scroll_recommend.hide()
         
         dash_layout.addWidget(self.scroll_recommend, 100) 
@@ -1028,7 +1023,9 @@ class MainWindow(QMainWindow):
             html += "</tr>"
         html += "</table>"
         self.lbl_recommend.setText(html)
-        self.lbl_counterpick.setVisible(has_counterpick)
+        self.lbl_counterpick.setText(f"{len(self._last_recommendations)} ajánlás" +
+            (" · Counterpick: <b>Lane</b> · Más role" if has_counterpick else ""))
+        self.lbl_counterpick.setVisible(bool(self._last_recommendations))
         self.lbl_recommend.setToolTip("A winrate melletti előjeles érték a pickkel és az üres fókuszpozícióval becsült nyerési esély különbsége, százalékpontban. Zöld: javulás; piros: romlás.")
         self.scroll_recommend.show()
 
