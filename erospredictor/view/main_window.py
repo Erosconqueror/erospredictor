@@ -389,6 +389,10 @@ class MainWindow(QMainWindow):
         self.lbl_red_wr.setStyleSheet("color: #E57373; font-weight: bold; font-size: 20px;")
         self.lbl_red_wr.setAlignment(Qt.AlignmentFlag.AlignRight)
         wr_layout.addWidget(self.lbl_blue_wr)
+        self.lbl_focus_gain = QLabel()
+        self.lbl_focus_gain.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self.lbl_focus_gain.setToolTip("A fókuszhős és az üres fókuszpozíció nyerési esélyének különbsége, százalékpontban.")
+        wr_layout.addWidget(self.lbl_focus_gain)
         wr_layout.addWidget(self.lbl_red_wr)
         dash_layout.addWidget(self.wr_container)
         self.wr_container.hide()
@@ -709,6 +713,7 @@ class MainWindow(QMainWindow):
         return set(picks).union(set(bans))
 
     def _reset_dash(self):
+        self.lbl_focus_gain.clear()
         self.lbl_counterpick.hide()
         """Hides results and readies dashboard for new calculation."""
         self.lbl_dash_title.show()
@@ -821,11 +826,25 @@ class MainWindow(QMainWindow):
         def predict():
             result = self.controller.predict_match(div, blue, red)
             effects, error = self._optional_inline_effects(context, enabled)
-            return result, effects, error
+            gain = None
+            if context is not None:
+                base_blue, base_red = list(blue), list(red)
+                (base_blue if context['team'] == 'blue' else base_red)[context['r_idx']] = -1
+                baseline = self.controller.predict_match(div, base_blue, base_red)
+                key = f"{context['team']}_win_prob"
+                if isinstance(result.get(key), (int, float)) and isinstance(baseline.get(key), (int, float)):
+                    gain = result[key] - baseline[key]
+            return result, effects, error, gain
 
         def display(result):
-            prediction, effects, error = result
+            prediction, effects, error, gain = result
             self._display_prediction(prediction, div_ui)
+            if gain is not None and context is not None:
+                names = {cid: name for name, cid in self.name_map.items()}
+                champions = blue if context['team'] == 'blue' else red
+                champion = escape(names.get(champions[context['r_idx']], ""))
+                self.lbl_focus_gain.setText(f"{champion} <b>{gain:+.2f}%</b>")
+                self.lbl_focus_gain.setStyleSheet(f"font-size: 13px; color: {self._effect_color(gain)};")
             self._effects_context = context
             self._prediction_context = dict(context) if context is not None else None
             self._update_explain_button()
@@ -994,20 +1013,23 @@ class MainWindow(QMainWindow):
             blind = []
             if rec.get("blind") is not None:
                 from services.blind_pick import risk_badges
-                blind = [f"<span style='color: {tint};'>{'<b>' if caption.startswith('Lane') else ''}{escape(caption)}{'</b>' if caption.startswith('Lane') else ''}</span>"
-                         for caption, tint in risk_badges(rec["blind"])]
+                for caption, tint in risk_badges(rec["blind"]):
+                    text = escape(caption)
+                    if caption.startswith("Lane"):
+                        text = f"<span style='font-size: 10px; background-color: #26364B;'><b><u>{text}</u></b></span>"
+                    blind.append(f"<span style='color: {tint};'>{text}</span>")
             has_counterpick |= bool(blind)
             blind_line = " · ".join(blind) or "&nbsp;"
             delta = rec.get("candidate_delta_pp")
             gain = (f" <span style='font-size: 12px; color: {self._effect_color(delta)};'>"
-                    f"Δ {delta:+.2f} pp</span>" if isinstance(delta, (int, float)) else "")
+                    f"{delta:+.2f}%</span>" if isinstance(delta, (int, float)) else "")
             html += (f"<td width='220' style='font-size: 18px; color: {color}; font-weight: bold; text-align: right; white-space: nowrap; {frame} {right}'>"
                      f"{wr:.2f}%{gain}<br><span style='font-size: 10px; font-weight: normal;'>{blind_line}</span></td>")
             html += "</tr>"
         html += "</table>"
         self.lbl_recommend.setText(html)
         self.lbl_counterpick.setVisible(has_counterpick)
-        self.lbl_recommend.setToolTip("Δ: a pickkel és az üres fókuszpozícióval becsült nyerési esély különbsége, százalékpontban. Zöld: javulás; piros: romlás.")
+        self.lbl_recommend.setToolTip("A winrate melletti előjeles érték a pickkel és az üres fókuszpozícióval becsült nyerési esély különbsége, százalékpontban. Zöld: javulás; piros: romlás.")
         self.scroll_recommend.show()
 
     def _current_effects_context(self):

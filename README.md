@@ -612,10 +612,12 @@ hozzájárulást; a megmaradt komponensek újranormalizálódnak.
 Mindkét kalibrációs út már a minimumot betartó súlyokat menti. A golden
 adatfájl kézi eseteit a pontozás változtatása nem írja át.
 
-Az ajánlási winrate melletti színkódolt **Δ** az adott pick és az üres
+Az ajánlási winrate melletti színkódolt, előjeles érték az adott pick és az üres
 fókuszpozíció becsült győzelmi esélyének különbsége, százalékpontban.
 Az alapbecslést ajánlásonként egyszer számolja, az aktuális csapattársakkal
-és ellenfelekkel. A counterpick-jelzés közös fejlécet kap, a lane-érték félkövér.
+és ellenfelekkel. Predikciónál a kijelölt csapat fókuszhőséhez is megjelenik.
+A felületen például **+3,00%** szerepel; a különbség százalékpontban értendő.
+A counterpick-jelzés közös fejlécet kap, a lane-érték félkövér, aláhúzott és háttérrel kiemelt.
 
 ## Fejlesztői adatbázis-karbantartás
 

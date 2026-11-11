@@ -86,10 +86,33 @@ class InlineEffectsWindowTests(unittest.TestCase):
         self.window.blue_picks[0].setCurrentText("Aatrox")
         self.window._on_predict()
         self.wait_for_worker()
-        self.controller.predict_match.assert_called_once()
+        self.assertEqual(self.controller.predict_match.call_count, 2)
         self.controller.explain_champion_effects.assert_not_called()
         self.controller.explain_recommendations.assert_not_called()
         self.controller.explain_prediction.assert_not_called()
+
+    def test_prediction_focus_change_is_shown_without_optional_effects(self):
+        self.window.blue_picks[0].setCurrentText("Aatrox")
+        self.controller.predict_match.side_effect = [
+            dict(blue_text="Kék: 55%", red_text="Piros: 45%", bar_val=55, blue_win_prob=55, red_win_prob=45),
+            dict(blue_win_prob=52, red_win_prob=48)]
+        self.window._on_predict()
+        self.wait_for_worker()
+        self.assertIn("+3.00%", self.window.lbl_focus_gain.text())
+        self.assertNotIn("Δ", self.window.lbl_focus_gain.text())
+        self.assertEqual(self.controller.predict_match.call_args.args[1][0], -1)
+
+    def test_red_prediction_focus_change_uses_red_probability(self):
+        self.window.btn_red.setChecked(True)
+        self.window.red_picks[0].setCurrentText("Ahri")
+        self.controller.predict_match.side_effect = [
+            dict(blue_text="Kék: 55%", red_text="Piros: 45%", bar_val=55, blue_win_prob=55, red_win_prob=45),
+            dict(blue_win_prob=52, red_win_prob=48)]
+        self.window._on_predict()
+        self.wait_for_worker()
+        self.assertIn("-3.00%", self.window.lbl_focus_gain.text())
+        self.assertIn("#FF5252", self.window.lbl_focus_gain.styleSheet())
+        self.assertEqual(self.controller.predict_match.call_args.args[2][0], -1)
 
     def test_prediction_why_analyzes_only_focus_even_with_inline_effects_disabled(self):
         self.window.blue_picks[0].setCurrentText("Aatrox")
