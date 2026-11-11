@@ -374,6 +374,11 @@ class MainWindow(QMainWindow):
         self.lbl_dash_title.setStyleSheet("font-size: 18px; font-weight: bold; color: #FFFFFF;")
         self.lbl_dash_title.setAlignment(Qt.AlignmentFlag.AlignCenter)
         dash_layout.addWidget(self.lbl_dash_title)
+        self.lbl_counterpick = QLabel("Counterpick: <b>Lane</b> · Más role")
+        self.lbl_counterpick.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self.lbl_counterpick.setStyleSheet("font-size: 11px; color: #BDBDCB;")
+        self.lbl_counterpick.hide()
+        dash_layout.addWidget(self.lbl_counterpick)
         
         self.wr_container = QWidget()
         wr_layout = QHBoxLayout(self.wr_container)
@@ -704,6 +709,7 @@ class MainWindow(QMainWindow):
         return set(picks).union(set(bans))
 
     def _reset_dash(self):
+        self.lbl_counterpick.hide()
         """Hides results and readies dashboard for new calculation."""
         self.lbl_dash_title.show()
         self.wr_container.hide()
@@ -942,6 +948,7 @@ class MainWindow(QMainWindow):
         id_name = {v: k for k, v in self.name_map.items()}
         html = "<table width='100%' cellspacing='0' cellpadding='8' align='center' style='margin-top: 21px;'>"
         colors = ["#323242", "#2C2C3A", "#262632", "#20202A", "#1A1A22"]
+        has_counterpick = False
         for i, rec in enumerate(self._last_recommendations):
             cid, wr, color = rec['id'], rec['wr'], rec['display_color']
             name = escape(id_name.get(cid, "Unknown"))
@@ -987,14 +994,20 @@ class MainWindow(QMainWindow):
             blind = []
             if rec.get("blind") is not None:
                 from services.blind_pick import risk_badges
-                blind = [f"<span style='color: {tint};'>{escape(caption)}</span>"
+                blind = [f"<span style='color: {tint};'>{'<b>' if caption.startswith('Lane') else ''}{escape(caption)}{'</b>' if caption.startswith('Lane') else ''}</span>"
                          for caption, tint in risk_badges(rec["blind"])]
+            has_counterpick |= bool(blind)
             blind_line = " · ".join(blind) or "&nbsp;"
+            delta = rec.get("candidate_delta_pp")
+            gain = (f" <span style='font-size: 12px; color: {self._effect_color(delta)};'>"
+                    f"Δ {delta:+.2f} pp</span>" if isinstance(delta, (int, float)) else "")
             html += (f"<td width='220' style='font-size: 18px; color: {color}; font-weight: bold; text-align: right; white-space: nowrap; {frame} {right}'>"
-                     f"{wr:.2f}%<br><span style='font-size: 10px; font-weight: normal;'>{blind_line}</span></td>")
+                     f"{wr:.2f}%{gain}<br><span style='font-size: 10px; font-weight: normal;'>{blind_line}</span></td>")
             html += "</tr>"
         html += "</table>"
         self.lbl_recommend.setText(html)
+        self.lbl_counterpick.setVisible(has_counterpick)
+        self.lbl_recommend.setToolTip("Δ: a pickkel és az üres fókuszpozícióval becsült nyerési esély különbsége, százalékpontban. Zöld: javulás; piros: romlás.")
         self.scroll_recommend.show()
 
     def _current_effects_context(self):

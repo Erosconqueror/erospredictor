@@ -35,10 +35,12 @@ class BlindPickWindowTests(unittest.TestCase):
 
     def test_colored_inline_text_has_no_details_link_or_dialog(self):
         info = blind_risk(Index(), "GOLD", 0, 2, [-1, 10, 11, 12, 13])
-        rec = {"id": 0, "wr": 55.5, "display_color": "#66BB6A", "blind": info}
+        rec = {"id": 0, "wr": 55.5, "display_color": "#66BB6A", "blind": info, "candidate_delta_pp": 1.25}
         context = dict(div="GOLD", blue=[-1] * 5, red=[-1] * 5, team="blue", r_idx=2)
         self.window._display_recommendations([rec], context)
         html = self.window.lbl_recommend.text()
+        self.assertIn("Δ +1.25 pp", html)
+        self.assertEqual(self.window.lbl_counterpick.text().count("Counterpick:"), 1)
         self.assertNotIn("blind:", html)
         self.assertIn("Más role ~20%", html)
         self.assertGreater(html.index("Más role ~20%"), html.index("55.50%"))

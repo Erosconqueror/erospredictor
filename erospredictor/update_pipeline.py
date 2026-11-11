@@ -508,7 +508,7 @@ def train_outputs(args, patches, db, records, staging, log=print):
     from model.predictor import ChampionPredictor, RoleAwareEmbeddingPredictor
     from trainer_script import (quick_evaluate_model, interaction_artifacts, interaction_fingerprint,
                                 make_interaction_prior_factory, GNN_PRIOR_POLICY)
-    from services.ensemble_weights import ensemble_minimums
+    from services.ensemble_weights import ensemble_minimums, MAX_MODEL_WEIGHTS
     from services.patch_weighting import PATCH_WEIGHT_POLICY
     progress = getattr(args, "_progress", None)
 
@@ -612,6 +612,7 @@ def train_outputs(args, patches, db, records, staging, log=print):
         calibration = model_dir / f"{tier}_meta_calibrator.pkl"
         cached_calibration = progress.completed_unit(f"{tier}:calibration") if progress else None
         calibration_inputs = {"interaction_policy": INTERACTION_POLICY, "interaction_fingerprint": evidence_id,
+            "maximums": MAX_MODEL_WEIGHTS,
             "patch_weights": prep.weights,
             "model_sha256": {name: file_digest(path) for name, path in model_paths.items()},
             "minimums": ensemble_minimums(stat.has_interactions(tier))}

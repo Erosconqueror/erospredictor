@@ -9,6 +9,14 @@ from model.golden_dataset import GoldenDataset
 
 
 class WeightFloorTests(unittest.TestCase):
+    def test_roleweighted_cap_preserves_floors_and_total(self):
+        for dominant in MODEL_NAMES:
+            weights = bounded_weights({name: int(name == dominant) for name in MODEL_NAMES})
+            self.assertLessEqual(weights["roleweighted"], .12)
+            self.assertGreaterEqual(weights["roleweighted"], .08)
+            self.assertAlmostEqual(sum(weights.values()), 1)
+        self.assertEqual(bounded_weights({"roleweighted": 1}), {"roleweighted": .12, "fallback": .88})
+
     def test_minimum_survives_normalization_and_preserves_total(self):
         for raw in ({name: (100 if name == "gnn" else 0) for name in MODEL_NAMES},
                     {name: 0 for name in MODEL_NAMES}, {"gnn": 1, "statistical": .001}):

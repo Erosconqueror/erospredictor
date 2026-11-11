@@ -602,12 +602,20 @@ szükséges a 30%-hoz. A kiválasztott rang adatait vizsgálja; a régi lane-/bo
 ment, a 30%-os minimumot futás közben, jelöltenként ellenőrzi. Ha az új interakciós
 statisztika az adott draftban ténylegesen használható, a GNN minimuma **16%**,
 egyébként **24%**. A RoleWeighted és RoleAware minimuma **8–8%**.
+A RoleWeighted felső korlátja **12%**, a kalibrációban, a betöltött régi
+súlyoknál és a futás közbeni újranormalizálásnál is. Ha csak ez a modell
+működik, a fennmaradó súly jelölt, semleges 50%-os becslésre kerül.
 Ezek normalizálás utáni alsó korlátok,
 nem rögzített súlyok. Predikciónál, ajánlásnál és magyarázatnál, a két oldal
 összesítése után is érvényesek. Hiányzó vagy hibás komponens nem kap kitalált
 hozzájárulást; a megmaradt komponensek újranormalizálódnak.
 Mindkét kalibrációs út már a minimumot betartó súlyokat menti. A golden
 adatfájl kézi eseteit a pontozás változtatása nem írja át.
+
+Az ajánlási winrate melletti színkódolt **Δ** az adott pick és az üres
+fókuszpozíció becsült győzelmi esélyének különbsége, százalékpontban.
+Az alapbecslést ajánlásonként egyszer számolja, az aktuális csapattársakkal
+és ellenfelekkel. A counterpick-jelzés közös fejlécet kap, a lane-érték félkövér.
 
 ## Fejlesztői adatbázis-karbantartás
 

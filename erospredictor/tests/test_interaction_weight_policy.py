@@ -68,8 +68,9 @@ class InteractionWeightTests(unittest.TestCase):
             after = MetaLearningCalibrator()
             result = after.load(path)
         self.assertTrue(after.enhanced_statistical)
-        self.assertAlmostEqual(result["gnn"], .16)
-        self.assertAlmostEqual(result["statistical"], .30)
+        self.assertGreaterEqual(result["gnn"], .16)
+        self.assertGreaterEqual(result["statistical"], .30)
+        self.assertLessEqual(result["roleweighted"], .12)
 
     def test_old_calibration_and_defaults_have_sixteen_percent_base_floor_without_training(self):
         import pickle
@@ -102,7 +103,8 @@ class InteractionWeightTests(unittest.TestCase):
                                     core._prediction_components("GOLD", blue, red, "blue"),
                                     core._prediction_components("GOLD", blue, red, "red")):
                         weight = next(row["weight"] for row in details if row["model"] == "statistical")
-                        self.assertAlmostEqual(weight, .30 if strong else .16)
+                        self.assertGreaterEqual(weight, .30 if strong else .16)
+                        self.assertLessEqual(next(row["weight"] for row in details if row["model"] == "roleweighted"), .12)
 
 
 if __name__ == "__main__":

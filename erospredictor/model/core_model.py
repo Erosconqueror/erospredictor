@@ -139,6 +139,8 @@ class CoreModel:
             self.load_errors["statistical"] = str(exc)
 
         from services.ensemble_weights import bounded_weights, draft_minimums
+        if set(predictions) == {"roleweighted"}:
+            predictions["fallback"] = .5
         minimums = draft_minimums(self.stat_model if "statistical" in predictions else None, div, blue, red)
         weights = bounded_weights(self.ensemble_weights, predictions, minimums=minimums)
         return [{"model": name, "probability": probability, "weight": weights[name]}
@@ -177,13 +179,19 @@ class CoreModel:
         candidates = range(CHAMPION_COUNT) if candidate_ids is None else sorted(set(candidate_ids))
         if any(not isinstance(cid, int) or isinstance(cid, bool) or not 0 <= cid < CHAMPION_COUNT for cid in candidates):
             raise ValueError("Érvénytelen hős a saját listában.")
+        baseline = None
         for cid in candidates:
             if cid in unavailable or (allowed is not None and cid not in allowed):
                 continue
             candidate_blue, candidate_red = list(blue), list(red)
             (candidate_blue if team == "blue" else candidate_red)[r_idx] = cid
             score = self.predict_match(div, candidate_blue, candidate_red)[f"{team}_win_prob"]
-            results.append({"id": cid, "wr": score, "uncertainty": 0.0, "confidence": 100.0})
+            if baseline is None:
+                base_blue, base_red = list(blue), list(red)
+                (base_blue if team == "blue" else base_red)[r_idx] = -1
+                baseline = self.predict_match(div, base_blue, base_red)[f"{team}_win_prob"]
+            results.append({"id": cid, "wr": score, "uncertainty": 0.0, "confidence": 100.0,
+                            "baseline_win_prob": baseline, "candidate_delta_pp": score - baseline})
         results.sort(key=lambda item: item["wr"], reverse=True)
         return results[:top_k]
 

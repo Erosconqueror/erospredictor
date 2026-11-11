@@ -76,7 +76,15 @@ class TestRecommendationExplanations(unittest.TestCase):
             recommendations = self.model.recommend_champs(
                 "GOLD", self.blue, self.red, [], "blue", 0, top_k=2)
         self.assertEqual([item["id"] for item in recommendations], [0, 3])
-        self.assertEqual(len(self.model.calls), 4)
+        self.assertEqual(len(self.model.calls), 6)
+        self.assertAlmostEqual(recommendations[0]["candidate_delta_pp"], 9.0)
+        self.assertAlmostEqual(recommendations[0]["baseline_win_prob"], 50.0)
+
+    def test_normal_red_recommendation_delta_uses_red_baseline(self):
+        recommendations = self.model.recommend_champs(
+            "GOLD", self.red, self.blue, [], "red", 0, candidate_ids=[0])
+        self.assertAlmostEqual(recommendations[0]["candidate_delta_pp"], 9.0)
+        self.assertAlmostEqual(recommendations[0]["baseline_win_prob"], 50.0)
 
     def test_selected_outside_top_five_is_added_first_with_ranked_five_intact(self):
         candidates = [{"id": cid} for cid in (0, 3, 4, 5, 6, 7, 8)]

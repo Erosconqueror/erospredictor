@@ -25,7 +25,7 @@ class PoolTests(unittest.TestCase):
         blue, red = [0, -1, -1, -1, -1], [-1] * 5
         result = core.recommend_champs("GOLD", blue, red, [2], "blue", 2, candidate_ids={0, 1, 2})
         self.assertEqual([item["id"] for item in result], [1])
-        core.predict_match.assert_called_once()
+        self.assertEqual(core.predict_match.call_count, 2)
         self.assertEqual(blue, [0, -1, -1, -1, -1])
         core.predict_match.reset_mock()
         self.assertEqual(core.recommend_champs("GOLD", blue, red, [], "blue", 2, candidate_ids=set()), [])

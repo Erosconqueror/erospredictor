@@ -219,9 +219,10 @@ class GNNRolePriorTests(unittest.TestCase):
                 report = trainer.calibrate_ensemble(predictions, predictions, predictions, predictions,
                                                      truth, "GOLD", enhanced_statistical=enhanced)
             self.assertEqual(report["status"], "success")
-            self.assertAlmostEqual(report["weights"]["gnn"], .16 if enhanced else .24)
-            self.assertAlmostEqual(report["weights"]["statistical"], .16)
-            self.assertAlmostEqual(report["weights"]["roleaware"], .08)
+            self.assertGreaterEqual(report["weights"]["gnn"], .16 if enhanced else .24)
+            self.assertLessEqual(report["weights"]["roleweighted"], .12)
+            self.assertGreaterEqual(report["weights"]["statistical"], .16)
+            self.assertGreaterEqual(report["weights"]["roleaware"], .08)
             self.assertAlmostEqual(sum(report["weights"].values()), 1)
 
     def test_legacy_epoch_optimizer_can_resume_without_a_prior(self):
