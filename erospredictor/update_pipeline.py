@@ -509,6 +509,7 @@ def train_outputs(args, patches, db, records, staging, log=print):
     from trainer_script import (quick_evaluate_model, interaction_artifacts, interaction_fingerprint,
                                 make_interaction_prior_factory, GNN_PRIOR_POLICY)
     from services.ensemble_weights import ensemble_minimums
+    from services.patch_weighting import PATCH_WEIGHT_POLICY
     progress = getattr(args, "_progress", None)
 
     view = WindowData(db, records, staging)
@@ -534,7 +535,7 @@ def train_outputs(args, patches, db, records, staging, log=print):
         subset = records if tier == "MIXED" else [m for m in records if m["tier"] == tier]
         prep = Preprocessor(db=WindowData(db, subset, staging), allowed_patches=patches)
         trainer = DynamicTrainer(tier, output_dir=model_dir, dataset_size=len(subset),
-                                 checkpoint_dir=staging / "epochs" if progress else None)
+                                 checkpoint_dir=staging / "epochs" / PATCH_WEIGHT_POLICY if progress else None)
         if args.epochs:
             trainer.config["epochs"] = args.epochs
         models, qa = {"statistical": stat}, {}
@@ -543,6 +544,9 @@ def train_outputs(args, patches, db, records, staging, log=print):
         for kind in ("roleweighted", "roleaware", "gnn"):
             key = f"{tier}:{kind}"
             cached = progress.completed_unit(key) if progress else None
+            if cached and cached["report"].get("patch_weights") != prep.weights:
+                log(f"{tier}/{kind}: patch weights changed; rebuilding the saved model.")
+                cached = None
             if cached and kind == "gnn" and (cached["report"].get("interaction_policy") != GNN_PRIOR_POLICY
                     or cached["report"].get("interaction_fingerprint") != evidence_id):
                 log(f"{tier}/gnn: interaction priors changed; rebuilding the saved model.")
@@ -583,7 +587,8 @@ def train_outputs(args, patches, db, records, staging, log=print):
                 model.load_state_dict(torch.load(path, map_location=device, weights_only=True))
                 model.eval()
                 score = quick_evaluate_model(kind, model, tier, dataset, device)
-                qa[kind] = {"golden_pass_fraction": score, "fallback": fallback, **result}
+                qa[kind] = {"golden_pass_fraction": score, "fallback": fallback, **result,
+                            "patch_weights": prep.weights}
                 if kind == "gnn":
                     qa[kind].update(interaction_policy=GNN_PRIOR_POLICY, interaction_fingerprint=evidence_id)
                 log(f"{tier}/{kind}: Golden Dataset {score:.1%}, fallback={fallback}")
@@ -607,6 +612,7 @@ def train_outputs(args, patches, db, records, staging, log=print):
         calibration = model_dir / f"{tier}_meta_calibrator.pkl"
         cached_calibration = progress.completed_unit(f"{tier}:calibration") if progress else None
         calibration_inputs = {"interaction_policy": INTERACTION_POLICY, "interaction_fingerprint": evidence_id,
+            "patch_weights": prep.weights,
             "model_sha256": {name: file_digest(path) for name, path in model_paths.items()},
             "minimums": ensemble_minimums(stat.has_interactions(tier))}
         cached_report = cached_calibration["report"] if cached_calibration else {}

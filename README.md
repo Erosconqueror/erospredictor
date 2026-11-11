@@ -175,6 +175,14 @@ teljesüléséig nem indít kisebb mintával tanítást. A nagyobb korábbi rang
 csak a profil szerinti mennyiséget használja; a rendelkezésre álló patchek között
 közel egyenletesen mintáz, majd a meglévő frissességi súlyokat alkalmazza.
 
+A neurális tanítás patchsúlyai a legfrissebbtől visszafelé:
+**1,0; 1,0; 0,9; 0,8; 0,7; …**, legalább **0,1**.
+A két legfrissebb patch teljes súlyt kap. Ezek a tanítási veszteség
+mintasúlyai, a rangsúlyokkal szorozva. A következő tanítás alkalmazza őket;
+a régi súlyozással készült tanítási mentések helyett új modellt készít.
+Az oldalcsere mellett is azonos, pozíciónként egyező teljes draftokhoz a
+`dev-scripts/sql/repeated_role_drafts.sql` ad lekérdezést; a patchlista a fájlban állítható.
+
 A profil a `configs.py` `DATASET_TARGETS` beállításában szerepel. Egyedi cél például
 `--tier-target GOLD=24000`; ismételhető több ranghoz. A külön megadott
 `--matches-per-tier 2000` a régebbi, egységes újmeccs-kvótás működést választja.

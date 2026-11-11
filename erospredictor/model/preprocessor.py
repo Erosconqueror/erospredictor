@@ -2,6 +2,7 @@ import torch
 from configs import CHAMPION_COUNT, ALLOWED_PATCHES, ROLE_WEIGHTS, DIVISION_WEIGHTS
 from model.data_manager import DataManager
 from model.gnn_predictor import create_graph
+from services.patch_weighting import patch_weights
 
 class Preprocessor:
     """Prepares and transforms match data for ML model training, keeping data in RAM for fast access."""
@@ -17,11 +18,8 @@ class Preprocessor:
         self.c_map = self.db.get_champion_mapping()
 
     def _calc_weights(self) -> dict:
-        """Calculates weights for each patch based on recency, with a minimum threshold to prevent zeroing out."""
-        w_map = {}
-        for i, p in enumerate(reversed(self.allowed_patches)):
-            w_map[p] = max(0.1, 1.0 - (i * 0.2))
-        return w_map
+        """Keep the newest two patches at full weight; older patches lose 0.1."""
+        return patch_weights(self.allowed_patches)
 
     def _get_matches(self):
         """Keep every representation, including off-meta lists, in one patch window."""

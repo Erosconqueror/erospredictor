@@ -222,6 +222,28 @@ class InteractionPipelineTests(unittest.TestCase):
         self.assertEqual(retrained, [])
         self.assertEqual(recalibrated, [])
 
+    def test_legacy_patch_weight_models_rebuild_once_then_resume(self):
+        progress = UpdateProgress.open(self.root / "journal", {}, lambda: ["16.7"])
+        self.args._progress = progress
+        self.fit(progress.staging)
+        for tier in ("GOLD", "MIXED"):
+            for kind in ("roleweighted", "roleaware", "gnn"):
+                progress.state["training"][f"{tier}:{kind}"]["report"].pop("patch_weights")
+        progress.save()
+        single, gnn = DynamicTrainer.train_single_model, DynamicTrainer.train_gnn_model
+        with patch.object(DynamicTrainer, "train_single_model", autospec=True, side_effect=single) as fitted, \
+             patch.object(DynamicTrainer, "train_gnn_model", autospec=True, side_effect=gnn) as graph_fitted:
+            self.fit(progress.staging)
+            self.assertEqual(fitted.call_count, 4)
+            self.assertEqual(graph_fitted.call_count, 2)
+            self.fit(progress.staging)
+            self.assertEqual(fitted.call_count, 4)
+            self.assertEqual(graph_fitted.call_count, 2)
+        for tier in ("GOLD", "MIXED"):
+            for kind in ("roleweighted", "roleaware", "gnn", "calibration"):
+                self.assertEqual(progress.state["training"][f"{tier}:{kind}"]["report"]["patch_weights"],
+                                 {"16.7": 1.0})
+
 
 if __name__ == "__main__":
     unittest.main()
