@@ -153,8 +153,9 @@ class Preprocessor:
         for div, t_match in totals.items():
             meta[div] = {"strict": {}, "loose": {}}
             t_picks = t_match * 2 
+            minimum_picks = 3000 if div == "MIXED" else 1500
             for r_idx in range(5):
-                strict_c = [c for c, count in stats[div][r_idx].items() if count >= 1500 or (count / t_picks) >= 0.005]
+                strict_c = [c for c, count in stats[div][r_idx].items() if count >= minimum_picks or (count / t_picks) >= 0.005]
                 loose_c = [c for c, count in stats[div][r_idx].items() if (count / t_picks) >= 0.0005]
                 
                 meta[div]["strict"][str(r_idx)] = strict_c

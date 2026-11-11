@@ -619,6 +619,10 @@ Az alapbecslést ajánlásonként egyszer számolja, az aktuális csapattársakk
 A felületen például **+3,00%** szerepel; a különbség százalékpontban értendő.
 A counterpick-jelzés közös fejlécet kap, a lane-érték félkövér, aláhúzott és háttérrel kiemelt.
 
+Az off-meta szűrő szigorú listáján a küszöb **0,5% pickarány vagy
+1500 előfordulás** szerepkörönként; All Ranks (MIXED) esetén az abszolút
+határ **3000**. A laza lista küszöbe továbbra is **0,05%**.
+
 ## Fejlesztői adatbázis-karbantartás
 
 A normál alkalmazás nem takarítja az adatbázist. A fejlesztői eszköz a
