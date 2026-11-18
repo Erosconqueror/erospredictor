@@ -651,6 +651,35 @@ Ez kísérleti megjelenítési skála és nem CC-nehézség vagy megbízhatósá
 A mért sebzéstípus-arány csak elegendő mintánál jelenik meg, lefedettséggel.
 Ezek kísérleti értelmezési szabályok, nem validált győzelmiesély-becslések.
 
+Predikció után a százalékos kijelzés alatt két rövid címkecsoport mutatja a
+csapatok legnagyobb profil-eltéréseit, ugyanazzal a ritkán kitöltött nyolcas
+korláttal, mint az ajánló alatti csapatösszegzés. A referencia 128,
+rögzített maggal mintázott, szerepkörhelyes csapat; a hősöket a mentett
+szerepkörgyakoriságuk súlyozza (legalább 5%-os szerepelőfordulás).
+Részleges draftnál azonos látható pozíciókkal készül a referencia.
+Legalább 60%-os profil-lefedettség, 32 használható referenciaminta,
+legalább 0,5 pont eltérés és egy szórásnyi hatás szükséges a címkéhez;
+a szórás alsó korlátja 0,35. A harci táv / elérés címkéi leírók,
+nem automatikusan erősségek vagy gyengeségek. A pontos pontszámok,
+referenciaátlagok és lefedettség a súgóbuborékban látszanak.
+Hiányzó adatból nem állít elő gyengeséget. Nincs extra modellinferencia,
+és a funkció kikapcsolásakor az összefoglaló sem számolódik.
+
+Az ajánlási sorban legfeljebb öt kísérleti címke szerepel: maximum 3/2 vagy
+2/3 arányban az erősségek/jellemzők és gyengeségek között. A hiányzó
+adat nem negatív tulajdonság. Elsőként a
+szerepköri referencia nagy eltéréseit mutatja, ennek hiányában a profil 4–5-ös
+és 1–2-es ismert jellemzői közül választ. A harci táv továbbra is leíró címke.
+A lista alatt összesen legfeljebb nyolc csapatjellemző és lehetséges hiány
+látszik, 5/3, 3/5 vagy 4/4 felső korláttal. Általában legfeljebb három hős- és
+négy csapatcímkét mutatunk. A további helyekhez legalább egy pont és
+1,5 szórásnyi profil-eltérés, vagy az ismert profilértéknél legalább 4,5 / legfeljebb
+1,5 pont szükséges. A korlátokat nem tölti fel kötelezően;
+a teljes tulajdonságlista kizárólag a külön elemző ablakban marad. A címkék
+a betűszínükkel megegyező keretet kapnak; a pontszám erősségét a szín
+élénksége követi, az 5/5-ös erősség és az 1/5-ös hiány vastagabb kerettel
+és félkövér szöveggel is kiemelkedik. A pontos érték a súgóbuborékban látszik.
+
 Minden gyűjtési indító közös adatútja a `model/riot.py` → `DataManager.save_match`:
 `collector_script.py`, `regional_collector.py`, `collection_day.py`, valamint
 a teljes updater és a scrape-only mód mind gyűjti az elérhető megfigyeléseket.

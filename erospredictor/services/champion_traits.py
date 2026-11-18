@@ -200,3 +200,172 @@ def fit_notes(profile, allies):
     if profile["values"].get("follow_up", 0) >= 3 and (summary["engage"]["score"] or 0) >= 3:
         additions.append("Follow-up")
     return additions[:2]
+
+
+def composition_outliers(library, picks, tier="MIXED", distributions=None, limit=3):
+    """Compare the visible roles with reproducible, role-frequency-weighted teams.
+
+    This is a descriptive profile reference, never a winrate model. Unknowns
+    are excluded on both sides, with a minimum coverage and effect threshold.
+    """
+    import random
+    from services.role_distribution import role_probabilities
+    actual = [library.profile(riot, role, tier) for riot, role in picks]
+    summary = team_summary(actual)
+    if not picks:
+        return {"tags": [], "picks": 0, "note": "Még nincs kiválasztott hős."}
+    roles = tuple(sorted(role for _, role in picks))
+    key = (tier, roles, id(distributions))
+    if not hasattr(library, "_reference_teams"):
+        library._reference_teams = {}
+    if key not in library._reference_teams:
+        pools = {}
+        riots = set(library.basics.get("champions", {})) | set(library.overrides)
+        for role in roles:
+            pool = []
+            for riot in sorted(riots):
+                probabilities, total = role_probabilities(distributions or {}, riot, tier)
+                if total and probabilities[role] >= .05:
+                    pool.append((riot, probabilities[role] * total))
+            pools[role] = pool
+        references = []
+        rng = random.Random(1701)
+        for _ in range(128):
+            selected, profiles = set(), []
+            for role in roles:
+                choices = [(riot, weight) for riot, weight in pools[role] if riot not in selected]
+                if not choices:
+                    break
+                riot = rng.choices([item[0] for item in choices], weights=[item[1] for item in choices])[0]
+                selected.add(riot)
+                profiles.append(library.profile(riot, role, tier))
+            if len(profiles) == len(roles):
+                references.append(team_summary(profiles))
+        library._reference_teams[key] = references
+    references = library._reference_teams[key]
+    coverage = max(1, math.ceil(len(picks) * .6))
+    tags = []
+    eligible_metrics = 0
+    descriptive = {"range": ("Hosszú harci táv", "Rövid harci táv"),
+                   "reach": ("Nagy elérés", "Kis elérés"),
+                   "spacing": ("Erős távolságtartás", "Kevés távolságtartás")}
+    for metric, caption in LABELS.items():
+        value = summary[metric]
+        reference = [item[metric]["score"] for item in references
+                     if item[metric]["known"] >= coverage and item[metric]["score"] is not None]
+        if value["known"] < coverage or len(reference) < 32:
+            continue
+        eligible_metrics += 1
+        mean = sum(reference) / len(reference)
+        spread = math.sqrt(sum((score - mean)**2 for score in reference) / len(reference))
+        delta = value["score"] - mean
+        z = delta / max(.35, spread)
+        if abs(delta) < .5 or abs(z) < 1:
+            continue
+        direction = "high" if delta > 0 else "low"
+        label = (descriptive[metric][0 if delta > 0 else 1] if metric in descriptive else
+                 ("Erős " if delta > 0 else "Kevés ") + caption)
+        tags.append(dict(key=metric, label=label, direction=direction, descriptive=metric in descriptive,
+                         score=value["score"], mean=mean, delta=delta, deviation=abs(z), known=value["known"]))
+    tags.sort(key=lambda item: item["deviation"], reverse=True)
+    return {"tags": tags if limit is None else tags[:max(0, min(8, limit))], "picks": len(picks), "references": len(references),
+            "note": "Szerepkörhöz illesztett profilreferencia; kísérleti becslés." if tags else
+                    "Kevés profiladat a megbízható összehasonlításhoz." if not eligible_metrics else
+                    "Nincs nagy eltérés a profilreferenciától."}
+
+
+def _balanced_tags(candidates, team=False):
+    """Hero cap 3/2 or 2/3; team cap 5/3, 3/5 or 4/4. No forced filling."""
+    candidates = sorted(candidates, key=lambda item: item.get("priority", 0), reverse=True)
+    groups = {tone: [item for item in candidates if (item["tone"] == "negative") == (tone == "negative")]
+              for tone in ("positive", "negative")}
+    dominant = max(groups, key=lambda tone: (len(groups[tone]),
+                   sum(item.get("priority", 0) for item in groups[tone][:5])))
+    caps = {tone: 3 if tone == dominant else 2 for tone in groups}
+    if team:
+        caps = {tone: 5 if tone == dominant else 3 for tone in groups}
+        other = "negative" if dominant == "positive" else "positive"
+        dominant_items, other_items = groups[dominant], groups[other]
+        if (len(other_items) >= 4 and other_items[3].get("extreme") and
+                (len(dominant_items) < 5 or other_items[3]["priority"] > dominant_items[4]["priority"])):
+            caps = {"positive": 4, "negative": 4}
+    selected = []
+    counts = {"positive": 0, "negative": 0}
+    for item in candidates:
+        tone = "negative" if item["tone"] == "negative" else "positive"
+        if len(selected) >= (4 if team else 3) and not item.get("extreme"):
+            continue
+        if counts[tone] < caps[tone]:
+            selected.append(item)
+            counts[tone] += 1
+    return selected
+
+
+def composition_summary(library, picks, tier="MIXED", distributions=None):
+    """Prediction-side team summary with the same sparse 5/3–4/4–3/5 budget."""
+    result = composition_outliers(library, picks, tier, distributions, limit=None)
+    candidates = [dict(tag,
+                       tone="descriptive" if tag["descriptive"] else
+                            "positive" if tag["direction"] == "high" else "negative",
+                       priority=tag["deviation"],
+                       extreme=abs(tag["delta"]) >= 1 and tag["deviation"] >= 1.5)
+                  for tag in result["tags"]]
+    return dict(result, tags=_balanced_tags(candidates, team=True))
+
+
+def recommendation_badges(library, riot, role, tier, distributions=None):
+    """Salient known traits only, with a 3/2 or 2/3 cap."""
+    profile = library.profile(riot, role, tier)
+    outliers = composition_outliers(library, [(riot, role)], tier, distributions, limit=None)["tags"]
+    candidates, used = [], set()
+    descriptive = {"range", "reach", "spacing"}
+    for tag in outliers:
+        key = tag["key"]
+        candidates.append({"key": key, "label": tag["label"] if tag["descriptive"] else LABELS[key],
+                           "tone": "descriptive" if tag["descriptive"] else
+                                   "positive" if tag["direction"] == "high" else "negative",
+                           "priority": 10 + tag["deviation"],
+                           "extreme": abs(tag["delta"]) >= 1 and tag["deviation"] >= 1.5,
+                           "score": tag["score"],
+                           "tooltip": f"{tag['score']:.2f}/5 · szerepköri referencia: {tag['mean']:.2f}/5"})
+        used.add(key)
+    extreme = sorted(profile["values"].items(), key=lambda item: abs(item[1]-3), reverse=True)
+    for key, value in extreme:
+        if key in used or key in descriptive or 2 < value < 4:
+            continue
+        candidates.append({"key": key, "label": LABELS[key], "tone": "positive" if value >= 4 else "negative",
+                           "priority": abs(value-3),
+                           "extreme": value >= 4.5 or value <= 1.5,
+                           "score": value,
+                           "tooltip": f"{value:.2f}/5 · {profile['sources'].get(key, 'kísérleti profil')}"})
+    return _balanced_tags(candidates)
+
+
+def recommendation_team_digest(library, picks, tier, distributions=None):
+    result = composition_outliers(library, picks, tier, distributions, limit=None)
+    if not picks:
+        return {"character": [], "needs": [], "note": "Még nincs választott hős."}
+    profiles = [library.profile(riot, role, tier) for riot, role in picks]
+    summary = team_summary(profiles)
+    candidates, used = [], set()
+    for tag in result["tags"]:
+        candidates.append({"label": LABELS[tag["key"]] if not tag["descriptive"] else tag["label"],
+                           "tone": "descriptive" if tag["descriptive"] else
+                                   "negative" if tag["direction"] == "low" else "positive",
+                           "priority": 10 + tag["deviation"],
+                           "score": tag["score"],
+                           "extreme": abs(tag["delta"]) >= 1 and tag["deviation"] >= 1.5})
+        used.add(tag["key"])
+    coverage = max(1, math.ceil(len(picks)*.6))
+    for key in ("frontline", "engage", "peel", "waveclear", "sustained"):
+        score = summary[key]["score"]
+        if summary[key]["known"] < coverage or score is None:
+            continue
+        if key not in used and (score >= 4 or score <= 2):
+            candidates.append({"label": LABELS[key], "tone": "positive" if score >= 4 else "negative",
+                               "score": score, "priority": abs(score-3), "extreme": score >= 4.5 or score <= 1.5})
+    selected = _balanced_tags(candidates, team=True)
+    return {"character": [tag["label"] for tag in selected if tag["tone"] != "negative"],
+            "needs": [tag["label"] for tag in selected if tag["tone"] == "negative"],
+            "character_tags": [tag for tag in selected if tag["tone"] != "negative"],
+            "need_tags": [tag for tag in selected if tag["tone"] == "negative"], "note": result["note"]}

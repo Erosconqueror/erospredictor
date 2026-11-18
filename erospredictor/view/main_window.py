@@ -414,6 +414,19 @@ class MainWindow(QMainWindow):
         self.bar_wr.setRange(0, 100)
         dash_layout.addWidget(self.bar_wr)
         self.bar_wr.hide()
+        self.trait_summary_panel = QFrame()
+        self.trait_summary_panel.setObjectName("inlineTraitSummary")
+        self.trait_summary_panel.setStyleSheet("QFrame#inlineTraitSummary { background:#1B2330; border:1px solid #354052; border-radius:8px; }")
+        trait_layout = QHBoxLayout(self.trait_summary_panel)
+        self.lbl_trait_blue = QLabel()
+        self.lbl_trait_red = QLabel()
+        for label in (self.lbl_trait_blue, self.lbl_trait_red):
+            label.setWordWrap(True)
+            label.setAlignment(Qt.AlignmentFlag.AlignTop)
+            label.setStyleSheet("font-size:12px; padding:4px;")
+            trait_layout.addWidget(label, 1)
+        self.trait_summary_panel.hide()
+        dash_layout.addWidget(self.trait_summary_panel)
         
         from view.recommendation_list import RecommendationList
         self.scroll_recommend = RecommendationList()
@@ -429,6 +442,12 @@ class MainWindow(QMainWindow):
         self.scroll_recommend.hide()
         
         dash_layout.addWidget(self.scroll_recommend, 100) 
+        self.lbl_recommend_team = QLabel()
+        self.lbl_recommend_team.setWordWrap(True)
+        self.lbl_recommend_team.setStyleSheet("font-size:11px; color:#CCD4E3; padding:6px;")
+        self.lbl_recommend_team.setToolTip("Kísérleti összefoglaló a kiválasztott csapatról; az ismeretlen tulajdonság nem gyengeség.")
+        self.lbl_recommend_team.hide()
+        dash_layout.addWidget(self.lbl_recommend_team)
         dash_layout.addStretch(1) 
         layout.addWidget(self.dashboard)
         
@@ -743,6 +762,8 @@ class MainWindow(QMainWindow):
         return set(picks).union(set(bans))
 
     def _reset_dash(self):
+        self.lbl_recommend_team.hide()
+        self.trait_summary_panel.hide()
         self.lbl_focus_gain.clear()
         self.lbl_counterpick.hide()
         """Hides results and readies dashboard for new calculation."""
@@ -851,6 +872,9 @@ class MainWindow(QMainWindow):
         self.lbl_dash_title.setText("Számítás folyamatban...")
         context = self._current_effects_context()
         enabled = self.chk_effects.isChecked()
+        trait_enabled = self.chk_traits.isChecked()
+        if trait_enabled:
+            trait_roles, _ = self._load_roles()
         self._clear_effect_badges()
 
         def predict():
@@ -864,11 +888,31 @@ class MainWindow(QMainWindow):
                 key = f"{context['team']}_win_prob"
                 if isinstance(result.get(key), (int, float)) and isinstance(baseline.get(key), (int, float)):
                     gain = result[key] - baseline[key]
-            return result, effects, error, gain
+            traits = None
+            if trait_enabled:
+                try:
+                    from services.champion_traits import composition_summary
+                    library = self._get_trait_library()
+                    inverse = {cid: riot for riot, cid in self._pool_mapping.items()}
+                    traits = {side: composition_summary(library,
+                        [(inverse[cid], role) for role, cid in enumerate(picks) if cid in inverse],
+                        div, trait_roles) for side, picks in (("blue", blue), ("red", red))}
+                except Exception:
+                    traits = {side: {"tags": [], "picks": 0, "note": "A profilösszefoglaló most nem elérhető."}
+                              for side in ("blue", "red")}
+            return result, effects, error, gain, traits
 
         def display(result):
-            prediction, effects, error, gain = result
+            prediction, effects, error, gain, traits = result
             self._display_prediction(prediction, div_ui)
+            if traits is not None and self.chk_traits.isChecked():
+                from view.trait_summary import summary_html
+                for side, label, title, color in (("blue", self.lbl_trait_blue, "Kék csapat", "#64B5F6"),
+                                                  ("red", self.lbl_trait_red, "Piros csapat", "#EF8088")):
+                    html, tooltip = summary_html(traits[side], title, color)
+                    label.setText(html)
+                    label.setToolTip(tooltip)
+                self.trait_summary_panel.show()
             if gain is not None and context is not None:
                 names = {cid: name for name, cid in self.name_map.items()}
                 champions = blue if context['team'] == 'blue' else red
@@ -930,6 +974,7 @@ class MainWindow(QMainWindow):
 
         candidates = member_ids(self._pool_library, self._pool_mapping, self.cb_pool.currentText()) if self.chk_pool_only.isChecked() else None
         trait_library = self._get_trait_library() if self.chk_traits.isChecked() else None
+        trait_distributions = self._load_roles()[0] if trait_library else None
         inverse = {cid: riot for riot, cid in self._pool_mapping.items()} if trait_library else {}
         if trait_library and self._trait_filters:
             candidates = [cid for cid in (range(CHAMPION_COUNT) if candidates is None else candidates)
@@ -961,7 +1006,7 @@ class MainWindow(QMainWindow):
                                                      r_id, CHAMPION_COUNT, filter_meta,
                                                      **({"history": history} if history is not None else {}), **extra)
             if trait_library:
-                from services.champion_traits import fit_notes, LABELS
+                from services.champion_traits import fit_notes, LABELS, recommendation_badges
                 own = blue if picking == "blue" else red
                 allies = [trait_library.profile(inverse[cid], role, div)
                           for role, cid in enumerate(own) if cid in inverse and role != r_id]
@@ -973,13 +1018,28 @@ class MainWindow(QMainWindow):
                         rec['experimental_fit'] = bool(notes)
                         top = sorted(profile['values'], key=profile['values'].get, reverse=True)
                         rec['experimental_tags'] = notes or [LABELS[key] for key in top[:2] if profile['values'][key] >= 3]
+                        rec['experimental_badges'] = recommendation_badges(trait_library, inverse[rec['id']],
+                            r_id, div, trait_distributions)
             focus = dict(context, champion_id=recs[0]['id']) if recs else None
             effects, error = self._optional_inline_effects(focus, enabled and bool(recs))
-            return recs, effects, error
+            digest = None
+            if trait_library:
+                from services.champion_traits import recommendation_team_digest
+                own = blue if picking == "blue" else red
+                digest = recommendation_team_digest(trait_library,
+                    [(inverse[cid], role) for role, cid in enumerate(own) if cid in inverse], div, trait_distributions)
+            return recs, effects, error, digest
 
         def display(result):
-            recs, effects, error = result
+            recs, effects, error, digest = result
             self._display_recommendations(recs, context)
+            if digest is not None and self.chk_traits.isChecked():
+                from view.trait_summary import digest_html
+                self.lbl_recommend_team.setText(digest_html(digest))
+                self.lbl_recommend_team.setToolTip("\n".join([digest.get("note", "")] +
+                    [f"{tag['label']}: {tag['score']:.2f}/5 · kísérleti csapatprofil"
+                     for key in ("character_tags", "need_tags") for tag in digest.get(key, [])]))
+                self.lbl_recommend_team.show()
             if enabled:
                 self._display_optional_effects(effects, error)
 
@@ -1039,10 +1099,20 @@ class MainWindow(QMainWindow):
             right = f"border-right: 2px solid {frame_color};"
             html += f"<tr bgcolor='{row_color}'>"
             html += f"<td style='width: 45px; {frame} {left}'><img src='assets/icons/{cid}.png' width='38' height='38' style='border-radius: 6px;'></td>"
-            html += (f"<td style='font-size: 18px; font-weight: bold; text-align: left; white-space: nowrap; {frame}'>"
+            html += (f"<td style='font-size: 18px; font-weight: bold; text-align: left; {frame}'>"
                      f"<a href='champion:{cid}' style='color: {name_color}; text-decoration: none;'>{name}</a>")
             details = []
-            if rec.get("experimental_tags") and self.chk_traits.isChecked():
+            if rec.get("experimental_badges") and self.chk_traits.isChecked():
+                badges = []
+                from view.trait_summary import chip_html
+                for badge in rec["experimental_badges"][:5]:
+                    tone = badge["tone"]
+                    tooltip = badge.get('tooltip', '')
+                    if badge['label'] in rec.get('experimental_tags', ()) and rec.get('experimental_fit'):
+                        tooltip += ' · Kiegészíti a jelenlegi csapatot.'
+                    badges.append(chip_html(badge['label'], tone, badge.get('score', 3), tooltip, f"traits:{cid}"))
+                details.append(" ".join(badges))
+            elif rec.get("experimental_tags") and self.chk_traits.isChecked():
                 prefix = "Pótol / kiegészít: " if rec.get("experimental_fit") else "Kísérleti: "
                 details.append(f"<a href='traits:{cid}' style='color: #80CBC4; text-decoration: none;'>" +
                                escape(prefix + " · ".join(rec["experimental_tags"][:2])) + "</a>")
@@ -1464,6 +1534,8 @@ class MainWindow(QMainWindow):
         self._remember_ui_preference("ban_role", role)
 
     def _invalidate_recommendations(self, *_):
+        self.lbl_recommend_team.hide()
+        self.trait_summary_panel.hide()
         self.scroll_recommend.hide()
         self.lbl_recommend.clear()
         self._recommendation_context = None
