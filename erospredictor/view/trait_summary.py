@@ -60,6 +60,8 @@ def summary_html(summary, title, color):
         html += chip_html(tag["label"], tone, tag["score"]) + " "
         tooltip.append(f"{tag['label']}: {tag['score']:.2f}/5; referenciaátlag {tag['mean']:.2f}/5; "
                        f"eltérés {tag['delta']:+.2f}; {tag['known']}/{summary['picks']} ismert profil.")
+        if tag.get("tooltip"):
+            tooltip.append(tag["tooltip"])
     if not summary.get("tags"):
         html += "<br><span style='color:#A0A0B5;'>" + escape(summary.get("note", "Nincs adat")) + "</span>"
     html += f"<br><span style='font-size:10px;color:#9CA7BB;'>Kísérleti profil · {summary.get('picks', 0)}/5 hős</span>"
@@ -75,5 +77,5 @@ def digest_html(digest):
         tags = digest.get(key, [{"label": label, "score": 3} for label in digest.get(fallback, [])])
         if tags:
             lines.append(f"<b>{caption}:</b> " + " ".join(chip_html(tag["label"], tag.get("tone", tone),
-                         tag.get("score", 3), f"{tag.get('score', 3):.2f}/5 · kísérleti csapatprofil") for tag in tags))
+                         tag.get("score", 3), tag.get("tooltip") or f"{tag.get('score', 3):.2f}/5 · kísérleti csapatprofil") for tag in tags))
     return "<br>".join(lines)

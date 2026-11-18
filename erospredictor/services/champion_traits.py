@@ -8,6 +8,7 @@ import json
 import math
 from pathlib import Path
 from services.update_progress import atomic_json
+from services.trait_metrics import DAMAGE_KEYS, PHASE_PREFIX, damage_rate, phase_profiles, tag_priority
 
 DATA = Path(__file__).resolve().parents[1] / "data"
 LABELS = {"frontline": "Frontline", "engage": "Engage", "follow_up": "Follow-up",
@@ -16,9 +17,10 @@ LABELS = {"frontline": "Frontline", "engage": "Engage", "follow_up": "Follow-up"
           "cc_use": "Mért CC-kihasználás",
           "burst": "Burst", "sustained": "Folyamatos sebzés", "percent_health": "% HP sebzés",
           "waveclear": "Waveclear", "poke": "Poke", "mobility": "Harci mobilitás",
-          "early": "Early", "mid": "Mid game", "late": "Late game",
+          "early": "Early WR", "mid": "Mid WR", "late": "Late WR",
           "range": "Harci távolság", "reach": "Elérési távolság", "spacing": "Távolságtartás",
-          "team_sustain": "Csapatfenntartás", "map_presence": "Map presence"}
+          "team_sustain": "Csapatfenntartás", "map_presence": "Map presence",
+          "physical_damage": "Fizikai sebzés", "magic_damage": "Mágikus sebzés"}
 # Reviewable starting points only. Empty fields remain unknown.
 PRESETS = {
     "Tank": {"frontline": 4, "engage": 3, "peel": 3, "cc": 4, "range": 1},
@@ -59,6 +61,7 @@ def extract_observations(info):
                   "healing_per_min": "totalHeal", "ally_heal_per_min": "totalHealsOnTeammates",
                   "ally_shield_per_min": "totalDamageShieldedOnTeammates", "gold_per_min": "goldEarned"}
         fields.update({f"spell{slot}_casts_per_min": f"spell{slot}Casts" for slot in range(1, 5)})
+        fields.update({kind+"_damage_per_min": kind+"DamageDealtToChampions" for kind in ("physical", "magic", "true")})
         for name, field in fields.items():
             if finite(player.get(field)):
                 metrics[name] = player[field] / minutes
@@ -74,6 +77,8 @@ def extract_observations(info):
         if isinstance(player.get("win"), bool):
             phase = "early" if minutes < 20 else "mid" if minutes < 30 else "late"
             metrics[f"observed_win_{phase}"] = float(player["win"])
+            new_phase = "early" if minutes < 23 else "mid" if minutes < 34 else "late"
+            metrics[PHASE_PREFIX+new_phase] = float(player["win"])
         champion = player.get("championId")
         if isinstance(champion, int) and not isinstance(champion, bool) and champion > 0 and metrics:
             observations.append({"champion": champion, "role": roles[player["teamPosition"]],
@@ -119,6 +124,14 @@ class TraitLibrary:
             for tier in set((row.get("tier"), "MIXED")):
                 key = (str(row.get("champion")), row.get("role"), tier)
                 self._measured[key] = merge_metrics(self._measured.get(key, {}), row.get("metrics", {}))
+        self._damage_baselines = {}
+        for (_, _, tier), metrics in self._measured.items():
+            for kind in ("physical", "magic", "true"):
+                value = damage_rate(metrics, kind)
+                if value:
+                    rate, count, _ = value
+                    total, n = self._damage_baselines.get((tier, kind), (0, 0))
+                    self._damage_baselines[tier, kind] = (total+rate*count, n+count)
 
     def measured(self, riot, role, tier):
         return self._measured.get((str(riot), role, tier), {})
@@ -158,6 +171,23 @@ class TraitLibrary:
                 values["map_presence"] = score
                 sources["map_presence"] += f" · aktuális ellopható R: {enemy}, {score}/5; lehetőség, nem ellopott/használatra kész ulti"
         measured = self.measured(riot, role, tier)
+        damage_details = {}
+        for key, kind in DAMAGE_KEYS.items():
+            rate = damage_rate(measured, kind)
+            total, n = self._damage_baselines.get((tier, kind), (0, 0))
+            if rate and n >= 100 and total > 0:
+                dpm, samples, estimated = rate
+                baseline = total/n
+                values[key] = max(1, min(5, 1+2*dpm/baseline))
+                damage_details[kind] = dict(dpm=dpm, baseline=baseline, samples=samples, estimated=estimated)
+                sources[key] = (f"{dpm:.1f}/perc; rangon belüli összes szerepkör átlaga {baseline:.1f}/perc; "
+                    f"n={samples}; " + ("régi arány × DPM becslés" if estimated else "mért típusonkénti sebzés/perc"))
+        phases = phase_profiles(measured)
+        for key, detail in phases.items():
+            values[key] = detail["score"]
+            sources[key] = (f"Meccsvégi {key} WR {detail['wr']:.1%}, saját alap-WR {detail['baseline']:.1%}, "
+                f"eltérés {detail['delta']*100:+.1f}%; n={detail['samples']}/{detail['baseline_samples']}; "
+                "23/34 perces időhatárok; nem játékon belüli erősségmérés")
         cc_total, cc_samples = measured.get("cc_seconds_per_min", (0, 0))
         if cc_samples >= 30:
             values["cc_use"] = 1 + 4 * min(1, cc_total / cc_samples / 6)
@@ -175,13 +205,16 @@ class TraitLibrary:
         for entry in (manual.get("all", {}), manual.get(str(role), {})):
             for key, value in entry.items():
                 if key in LABELS and value is None:
+                    phases.pop(key, None)
                     values.pop(key, None)
                     sources.pop(key, None)
                     continue
                 if key in LABELS and finite(value) and 1 <= value <= 5:
+                    phases.pop(key, None)
                     values[key], sources[key] = float(value), "kézzel megadott"
         # Observations stay descriptive: no CC 'difficulty' or HP-damage inference.
         return {"values": values, "sources": sources, "metrics": measured,
+                "damage_details": damage_details, "phase_details": phases,
                 "samples": max((value[1] for value in measured.values()), default=0),
                 "attack_range": base.get("stats", {}).get("attackrange"), "name": base.get("name", str(riot))}
 
@@ -225,6 +258,29 @@ def team_summary(profiles):
     total = sum(damage.values())
     result["damage_mix"] = {key: value/total for key, value in damage.items()} if total else {}
     result["damage_known"] = known
+    result["damage_rates"] = {}
+    for kind in ("physical", "magic"):
+        details = [p.get("damage_details", {}).get(kind) for p in profiles]
+        details = [detail for detail in details if detail]
+        if details:
+            result["damage_rates"][kind] = dict(dpm=sum(d["dpm"] for d in details),
+                baseline=sum(d["baseline"] for d in details), known=len(details),
+                estimated=any(d["estimated"] for d in details))
+            key = next(key for key, value in DAMAGE_KEYS.items() if value == kind)
+            info = result["damage_rates"][kind]
+            result[key]["detail"] = (f"{info['dpm']:.1f}/perc; referencia {info['baseline']:.1f}/perc; "
+                f"{len(details)}/{len(profiles)} ismert; " + ("részben régi arány × DPM becslés" if info['estimated'] else "mért DPM"))
+    for phase in ("early", "mid", "late"):
+        details = [p.get("phase_details", {}).get(phase) for p in profiles]
+        details = [detail for detail in details if detail]
+        if details:
+            delta = sum(detail["delta"] for detail in details)/len(details)
+            result[phase]["score"] = max(1, min(5, 3+delta/.05))
+            result[phase]["known"] = len(details)
+            result[phase]["phase_delta"] = delta
+            result[phase]["phase_known"] = len(details)
+            result[phase]["detail"] = (f"Hősönkénti saját alap-WR-hez viszonyított meccsvégi WR-eltérés átlaga: "
+                f"{delta*100:+.1f}%; {len(details)}/{len(profiles)} ismert. 23/34 perces időhatárok; nem csapat-winrate.")
     return result
 
 
@@ -287,8 +343,21 @@ def composition_outliers(library, picks, tier="MIXED", distributions=None, limit
                    "spacing": ("Erős távolságtartás", "Kevés távolságtartás")}
     for metric, caption in LABELS.items():
         value = summary[metric]
+        if "phase_delta" in value:
+            if value["phase_known"] < coverage:
+                continue
+            shift = value["phase_delta"]
+            if abs(shift) >= .03:
+                tags.append(dict(key=metric, label=f"{caption} {shift*100:+.1f}%", direction="high" if shift > 0 else "low",
+                    descriptive=False, score=value["score"], mean=3, delta=value["score"]-3,
+                    deviation=abs(shift)/.05, known=value["phase_known"], tooltip=value["detail"]))
+            continue
         reference = [item[metric]["score"] for item in references
                      if item[metric]["known"] >= coverage and item[metric]["score"] is not None]
+        if metric in DAMAGE_KEYS:
+            # A common absolute-DPM baseline across all roles; no 100% split
+            # and no support-only normalization that would inflate tank damage.
+            reference = [3]*32
         if value["known"] < coverage or len(reference) < 32:
             continue
         eligible_metrics += 1
@@ -296,13 +365,17 @@ def composition_outliers(library, picks, tier="MIXED", distributions=None, limit
         spread = math.sqrt(sum((score - mean)**2 for score in reference) / len(reference))
         delta = value["score"] - mean
         z = delta / max(.35, spread)
-        if abs(delta) < .5 or abs(z) < 1:
+        mild = metric in ("map_presence", "physical_damage", "magic_damage") or (delta > 0 and metric in ("frontline", "engage", "peel", "waveclear", "team_sustain"))
+        if abs(delta) < (.35 if mild else .5) or abs(z) < (.75 if mild else 1):
             continue
         direction = "high" if delta > 0 else "low"
         label = (descriptive[metric][0 if delta > 0 else 1] if metric in descriptive else
                  ("Erős " if delta > 0 else "Kevés ") + caption)
+        if "phase_delta" in value:
+            label = f"{caption} {value['phase_delta']*100:+.1f}%"
         tags.append(dict(key=metric, label=label, direction=direction, descriptive=metric in descriptive,
-                         score=value["score"], mean=mean, delta=delta, deviation=abs(z), known=value["known"]))
+                         score=value["score"], mean=mean, delta=delta, deviation=abs(z), known=value["known"],
+                         tooltip=value.get("detail", "")))
     tags.sort(key=lambda item: item["deviation"], reverse=True)
     return {"tags": tags if limit is None else tags[:max(0, min(8, limit))], "picks": len(picks), "references": len(references),
             "note": "Szerepkörhöz illesztett profilreferencia; kísérleti becslés." if tags else
@@ -312,7 +385,7 @@ def composition_outliers(library, picks, tier="MIXED", distributions=None, limit
 
 def _balanced_tags(candidates, team=False):
     """Hero cap 3/2 or 2/3; team cap 5/3, 3/5 or 4/4. No forced filling."""
-    candidates = sorted(candidates, key=lambda item: item.get("priority", 0), reverse=True)
+    candidates = sorted(candidates, key=lambda item: (tag_priority(item), item.get("priority", 0)), reverse=True)
     groups = {tone: [item for item in candidates if (item["tone"] == "negative") == (tone == "negative")]
               for tone in ("positive", "negative")}
     dominant = max(groups, key=lambda tone: (len(groups[tone]),
@@ -357,19 +430,25 @@ def recommendation_badges(library, riot, role, tier, distributions=None):
     descriptive = {"range", "reach", "spacing"}
     for tag in outliers:
         key = tag["key"]
-        candidates.append({"key": key, "label": tag["label"] if tag["descriptive"] else LABELS[key],
+        label = (f"{LABELS[key]} {profile['phase_details'][key]['delta']*100:+.1f}%"
+                 if key in profile.get("phase_details", {}) else tag["label"] if tag["descriptive"] else LABELS[key])
+        candidates.append({"key": key, "label": label,
                            "tone": "descriptive" if tag["descriptive"] else
                                    "positive" if tag["direction"] == "high" else "negative",
                            "priority": 10 + tag["deviation"],
                            "extreme": abs(tag["delta"]) >= 1 and tag["deviation"] >= 1.5,
                            "score": tag["score"],
-                           "tooltip": f"{tag['score']:.2f}/5 · szerepköri referencia: {tag['mean']:.2f}/5"})
+                           "tooltip": f"{tag['score']:.2f}/5 · szerepköri referencia: {tag['mean']:.2f}/5 · " + profile['sources'].get(key, '')})
         used.add(key)
     extreme = sorted(profile["values"].items(), key=lambda item: abs(item[1]-3), reverse=True)
     for key, value in extreme:
-        if key in used or key in descriptive or 2 < value < 4:
+        positive_min = 3.5 if key in ("map_presence", "frontline", "engage", "peel", "waveclear", "team_sustain", "physical_damage", "magic_damage") else 4
+        negative_max = 2.5 if key in ("map_presence", "physical_damage", "magic_damage") else 2
+        if key in used or key in descriptive or negative_max < value < positive_min:
             continue
-        candidates.append({"key": key, "label": LABELS[key], "tone": "positive" if value >= 4 else "negative",
+        label = (f"{LABELS[key]} {profile['phase_details'][key]['delta']*100:+.1f}%"
+                 if key in profile.get("phase_details", {}) else LABELS[key])
+        candidates.append({"key": key, "label": label, "tone": "positive" if value >= positive_min else "negative",
                            "priority": abs(value-3),
                            "extreme": value >= 4.5 or value <= 1.5,
                            "score": value,
@@ -385,20 +464,25 @@ def recommendation_team_digest(library, picks, tier, distributions=None):
     summary = team_summary(profiles)
     candidates, used = [], set()
     for tag in result["tags"]:
-        candidates.append({"label": LABELS[tag["key"]] if not tag["descriptive"] else tag["label"],
+        candidates.append({"key": tag["key"], "label": tag["label"] if tag["descriptive"] or tag["key"] in ("early", "mid", "late") else LABELS[tag["key"]],
                            "tone": "descriptive" if tag["descriptive"] else
                                    "negative" if tag["direction"] == "low" else "positive",
                            "priority": 10 + tag["deviation"],
                            "score": tag["score"],
+                           "tooltip": tag.get("tooltip", ""),
                            "extreme": abs(tag["delta"]) >= 1 and tag["deviation"] >= 1.5})
         used.add(tag["key"])
     coverage = max(1, math.ceil(len(picks)*.6))
-    for key in ("frontline", "engage", "peel", "waveclear", "sustained", "team_sustain", "map_presence"):
+    for key in ("frontline", "engage", "peel", "waveclear", "sustained", "team_sustain", "map_presence", "physical_damage", "magic_damage", "early", "mid", "late"):
         score = summary[key]["score"]
         if summary[key]["known"] < coverage or score is None:
             continue
-        if key not in used and (score >= 4 or score <= 2):
-            candidates.append({"label": LABELS[key], "tone": "positive" if score >= 4 else "negative",
+        positive_min = 3.5 if key in ("map_presence", "frontline", "engage", "peel", "waveclear", "team_sustain", "physical_damage", "magic_damage") else 4
+        negative_max = 2.5 if key in ("map_presence", "physical_damage", "magic_damage") else 2
+        if key not in used and (score >= positive_min or score <= negative_max):
+            label = f"{LABELS[key]} {summary[key]['phase_delta']*100:+.1f}%" if "phase_delta" in summary[key] else LABELS[key]
+            candidates.append({"key": key, "label": label, "tone": "positive" if score >= positive_min else "negative",
+                               "tooltip": summary[key].get("detail", ""),
                                "score": score, "priority": abs(score-3), "extreme": score >= 4.5 or score <= 1.5})
     selected = _balanced_tags(candidates, team=True)
     return {"character": [tag["label"] for tag in selected if tag["tone"] != "negative"],

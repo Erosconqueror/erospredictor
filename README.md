@@ -634,7 +634,7 @@ A megmaradó ajánlások modellértéke és sorrendje változatlan; a kísérlet
 nem kerülnek be sem a winrate-modellbe, sem az ensemble-ba vagy kalibrációba.
 
 A kezdő hősprofilok a Riot Data Dragon osztálycímkéiből származó, **nem hitelesített
-heurisztikák**. A CC alkalmazhatósága, hard/soft CC, %-HP sebzés, early/mid/late
+heurisztikák**. A CC alkalmazhatósága, hard/soft CC, %-HP sebzés
 és több összetett tulajdonság kezdetben ismeretlen; a szerkesztőben külön megadható.
 A bizonytalan tulajdonság nem kap kitalált mérési értéket. A frontline profil
 alatt látszanak a HP-, növekedési és ellenállási alapadatok. Az alaptámadás
@@ -648,7 +648,8 @@ Az ismeretlen nem nulla. A közel/közép/távol arány külön látszik.
 A „Mért CC-kihasználás” legalább 30 érvényes megfigyeléstől számolható:
 az átlagos kontrollidő/perc 0–6 s/perc tartományát vetíti 1–5 közé, felül telítve.
 Ez kísérleti megjelenítési skála és nem CC-nehézség vagy megbízhatósági mérés.
-A mért sebzéstípus-arány csak elegendő mintánál jelenik meg, lefedettséggel.
+A sebzéskijelzés abszolút fizikai/mágikus sebzés/percet és átlagreferenciát
+mutat, lefedettséggel; az értékek nincsenek 100%-ra normalizálva.
 Ezek kísérleti értelmezési szabályok, nem validált győzelmiesély-becslések.
 
 A korábbi Mobilitás neve **Harci mobilitás**; a mentett `mobility` értékek
@@ -697,7 +698,11 @@ rögzített maggal mintázott, szerepkörhelyes csapat; a hősöket a mentett
 szerepkörgyakoriságuk súlyozza (legalább 5%-os szerepelőfordulás).
 Részleges draftnál azonos látható pozíciókkal készül a referencia.
 Legalább 60%-os profil-lefedettség, 32 használható referenciaminta,
-legalább 0,5 pont eltérés és egy szórásnyi hatás szükséges a címkéhez;
+alapesetben legalább 0,5 pont eltérés és egy szórásnyi hatás szükséges a címkéhez;
+map presence-nél és sebzéstípusoknál mindkét irányban, valamint frontline,
+engage, peel, waveclear és csapatfenntartás pozitív irányában 0,35 pont és
+0,75 szórás is elegendő. Referencia nélkül ezek pozitív küszöbe 3,5;
+map presence és sebzés negatív küszöbe 2,5.
 a szórás alsó korlátja 0,35. A harci táv / elérés címkéi leírók,
 nem automatikusan erősségek vagy gyengeségek. A pontos pontszámok,
 referenciaátlagok és lefedettség a súgóbuborékban látszanak.
@@ -707,7 +712,7 @@ Hiányzó adatból nem állít elő gyengeséget. Nincs extra modellinferencia,
 Az ajánlási sorban legfeljebb öt kísérleti címke szerepel: maximum 3/2 vagy
 2/3 arányban az erősségek/jellemzők és gyengeségek között. A hiányzó
 adat nem negatív tulajdonság. Elsőként a
-szerepköri referencia nagy eltéréseit mutatja, ennek hiányában a profil 4–5-ös
+szerepköri referencia nagy eltéréseit mutatja, ennek hiányában általában a profil 4–5-ös
 és 1–2-es ismert jellemzői közül választ. A harci táv továbbra is leíró címke.
 A lista alatt összesen legfeljebb nyolc csapatjellemző és lehetséges hiány
 látszik, 5/3, 3/5 vagy 4/4 felső korláttal. Általában legfeljebb három hős- és
@@ -725,7 +730,32 @@ a teljes updater és a scrape-only mód mind gyűjti az elérhető megfigyelése
 A már letöltött Match-v5 válaszból emeli ki a kontrollidőt, immobilizálást,
 képességhasználatot, sebzésarányokat, sebzés/enyhítés/gyógyítás/pajzs/arany
 időarányos értékeit. A rövid/közepes/hosszú meccsek eredményösszesítése is
-megmarad későbbi vizsgálathoz; ez önmagában nem early/late erősségi pontszám.
+megmarad későbbi vizsgálathoz; ez önmagában nem játékon belüli early/late erősségi pontszám.
+
+Az új meccsekhez külön fizikai/mágikus/true sebzés/perc átlag készül. Legalább
+30 mintánál a típusspecifikus DPM-et az adott rang összes szerepkört tartalmazó,
+mintaszámmal súlyozott típusspecifikus DPM-átlagához viszonyítjuk (legalább 100
+referenciaminta). Az 1–5 profilskála `1 + 2 × DPM / referencia`, felül telítve.
+Ez megőrzi a különbséget egy alacsony sebzésű tank és egy hasonló mágikus
+sebzésarányú mage között. Régi exportoknál a sebzés/perc × átlagos arány
+közelítést használjuk, külön jelölve; legalább 30 új közvetlen mintánál az
+új mérés kap elsőbbséget. A csapatsor a tényleges DPM-eket és a hozzájuk
+tartozó referenciákat összeadja; a hiányzó profil nem számít nullának.
+
+Az **Early WR / Mid WR / Late WR** címke a 23 perc előtt / 23–34 perc között /
+34 perctől véget ért meccsek winrate-jét hasonlítja a hős saját, ugyanebből az
+új mintából számolt alap-winrate-jéhez. Nem módosítja a predikciót. Legalább
+300 teljes minta, 100 szakaszbeli és 100 szakaszon kívüli minta, legalább
+3 százalékpont eltérés és egy konzervatív 1,96-os binomiális zajküszöb kell.
+A pontszám `3 + eltérés / 0,05`, 1–5 közé korlátozva; a tag a tényleges
+előjeles eltérést írja ki. Csapatszinten az ismert hősök saját alapjához
+viszonyított eltérések átlaga szerepel, nem közös csapat-winrate, legalább
+60%-os lefedettséggel. A régi 20/30 perces aggregátumot nem keverjük az új
+`endwin_23_34_*` adatokkal. Ezekhez új gyűjtés és utána export vagy tanítás kell.
+
+A címkék sorrendjében a fizikai/mágikus sebzés hiánya az első, utána a
+sebzéses erősségek és frontline/engage/peel/waveclear, majd a többi jellemző;
+a map presence kisebb prioritású. Az 5/3–4/4–3/5 és 3/2–2/3 korlátok megmaradnak.
 Nincs további Riot-kérés vagy timeline-letöltés. Hiányzó mező nem nulla minta.
 
 Az additív `champion_trait_aggregates` táblában verzió, patch, régió, rang,

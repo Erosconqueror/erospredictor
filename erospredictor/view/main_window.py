@@ -1042,7 +1042,7 @@ class MainWindow(QMainWindow):
                 from view.trait_summary import digest_html
                 self.lbl_recommend_team.setText(digest_html(digest))
                 self.lbl_recommend_team.setToolTip("\n".join([digest.get("note", "")] +
-                    [f"{tag['label']}: {tag['score']:.2f}/5 · kísérleti csapatprofil"
+                    [f"{tag['label']}: {tag['score']:.2f}/5 · {tag.get('tooltip', '')} · kísérleti csapatprofil"
                      for key in ("character_tags", "need_tags") for tag in digest.get(key, [])]))
                 self.lbl_recommend_team.show()
             if enabled:

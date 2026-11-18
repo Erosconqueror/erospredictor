@@ -66,11 +66,14 @@ class TraitDialog(QDialog):
             weak = [LABELS[key] for key in LABELS if summary[key]["score"] is not None and summary[key]["score"] < 2.5]
             caption = "Erősség: " + (", ".join(strengths[:2]) or "—") + "\nHiány: " + (", ".join(weak[:2]) or "—")
             grid.addWidget(QLabel(caption), len(LABELS)+2, col*2, 1, 2)
-            damage = summary["damage_mix"]
-            text = (f"Sebzésarány: fizikai {damage['physical']:.0%} · mágikus {damage['magic']:.0%} · true {damage['true']:.0%} ({summary['damage_known']}/5 ismert)"
-                    if damage else "Sebzésarány: még nincs elegendő minta")
+            damage = summary["damage_rates"]
+            text = " · ".join(f"{caption}: {'~' if damage[kind]['estimated'] else ''}{damage[kind]['dpm']:.0f}/perc "
+                f"(átlag {damage[kind]['baseline']:.0f}; {damage[kind]['known']}/{len(profiles)} ismert)"
+                for kind, caption in (("physical", "Fizikai"), ("magic", "Mágikus")) if kind in damage)
+            text = text or "Sebzés/perc: még nincs elegendő minta"
             damage_label = QLabel(text)
             damage_label.setWordWrap(True)
+            damage_label.setToolTip("Abszolút sebzés/perc és rangon belüli, minden szerepkört tartalmazó referencia. A ~ régi aggregátumokból becsült értéket jelöl; nem normalizáljuk 100%-ra.")
             grid.addWidget(damage_label, len(LABELS)+3, col*2, 1, 2)
         tabs.addTab(scroll(teams), "Csapatok")
         filters = QWidget()
