@@ -6,29 +6,30 @@ from functools import lru_cache
 
 @lru_cache(maxsize=512)
 def _chip_image(text, tone, score):
-    """Qt rich text has no rounded inline borders; use a cached, high-DPI chip."""
+    """Draw at the displayed size so rich-text image scaling cannot erase strokes."""
     from PyQt6.QtCore import QBuffer, QIODevice, QRectF, Qt
     from PyQt6.QtGui import QColor, QFont, QFontMetrics, QImage, QPainter, QPen
     level = max(0, min(1, ((3-score) if tone == "negative" else (score-3))/2))
     if tone == "descriptive":
         level = abs(score-3)/2
-    muted, vivid = {"positive": ("#769B80", "#9AF7AE"), "negative": ("#AF7B80", "#FF929D"),
-                    "descriptive": ("#719A9D", "#91E4E6")}[tone]
+    muted, vivid = {"positive": ("#ADD8B8", "#BDFFCC"), "negative": ("#F1B5BC", "#FF929D"),
+                    "descriptive": ("#ADDDE4", "#C0F6FF")}[tone]
     a, b = QColor(muted), QColor(vivid)
     tint = QColor(*(round(x+(y-x)*level) for x,y in zip(a.getRgb()[:3], b.getRgb()[:3])))
     font = QFont("Segoe UI")
-    font.setPixelSize(11)
-    font.setBold(level >= .75)
+    font.setPixelSize(13)
+    font.setWeight(QFont.Weight.Bold if level >= .75 else QFont.Weight.DemiBold)
     metrics = QFontMetrics(font)
-    width, height = metrics.horizontalAdvance(text)+14, metrics.height()+8
-    image = QImage(width*2, height*2, QImage.Format.Format_ARGB32_Premultiplied)
+    width, height = metrics.horizontalAdvance(text)+16, metrics.height()+8
+    image = QImage(width, height, QImage.Format.Format_ARGB32_Premultiplied)
     image.fill(Qt.GlobalColor.transparent)
     painter = QPainter(image)
-    painter.scale(2, 2)
     painter.setRenderHint(QPainter.RenderHint.Antialiasing)
+    painter.setRenderHint(QPainter.RenderHint.TextAntialiasing)
     painter.setPen(QPen(tint, 1.5 if level >= .75 else 1))
-    background = QColor(tint)
-    background.setAlpha(18 if level < .75 else 35)
+    background = QColor({"positive": "#23392D", "negative": "#402930", "descriptive": "#243B44"}[tone])
+    if level >= .75:
+        background = background.lighter(120)
     painter.setBrush(background)
     painter.drawRoundedRect(QRectF(1, 1, width-2, height-2), 4, 4)
     painter.setFont(font)
