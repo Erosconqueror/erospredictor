@@ -654,11 +654,25 @@ Ezek kísérleti értelmezési szabályok, nem validált győzelmiesély-becslé
 A korábbi Mobilitás neve **Harci mobilitás**; a mentett `mobility` értékek
 és szűrők megmaradnak. A külön **Map presence** tag a gyors rotációt,
 rejtett érkezést és távoli beavatkozást fogja össze, nem csak a globális ultikat.
-A felhasználó példái (Shen, Pantheon, Galio, Twitch, Quinn, Nunu, Nocturne,
-TF, Taliyah, GP, Karthus) egyelőre szerkeszthető 4/5 kezdőértéket kapnak;
-ez nem mért roam-hatékonyság. Katarina és Locke harci mobilitásának kezdőértéke
-5/5, Twitch és Pantheon értéke 2/5, ugyanígy kísérleti, kézzel felülírható.
-A nem besorolt hősök map presence értéke ismeretlen, nem automatikusan gyenge.
+Az összes telepített hős két értéke a `data/champion_mobility_profiles.json`
+fájlban szerepel, hősönként indoklással, Data Dragon 16.22.1 forráslinkkel és
+a vizsgált képességadatok hashével. Ezek kézi, kísérleti képességprofilok,
+nem mért roam-hatékonyságok vagy a Riot által kiadott pontszámok.
+Az alapkit, tanult képességek és szokásos formák/resetek számítanak;
+tárgyak, idézői varázslatok és társaktól kapott mozgás nem. A kizárólag
+egységre célzott dash általában legfeljebb 2-es harci mobilitást jelent,
+a felhasználó által pontosított resetes esetek külön értéket kapnak.
+Például Viego 4/2, Locke 5/2, Yuumi 2/1, Yunara 3/1, Zaahen 3,5/2.
+Sylas alap map presence-e 2; a látható ellenfelek ellopható **R** képessége
+emelheti. A külön `ultimate_map_presence` érték gondoskodik arról, hogy
+például Talon E-je vagy Twitch Q-ja ne számítson ellopható globális ultinak.
+Ez képességlehetőség, nem annak állítása, hogy az ulti éppen ellopott vagy kész.
+A helyi kézi felülírás elsőbbséget élvez. Új, még nem besorolt hős ismeretlen
+marad; az Assassin osztályból már nem következtetünk automatikus mobilitásra.
+Az összlista a **Csapatelemzés → Mobilitáslista** fülön rendezhető; a sorok
+súgója mutatja az indoklást és forrást. Dupla kattintással szerkeszthető
+a kiválasztott hős a Hősprofilok és adatok fülön. A lista a szerkesztőn
+kiválasztott szerepkör helyi felülírásait és a fókuszcsapat ellenfeleit használja.
 Csapatszinten a két legerősebb ismert érték számít 65/35 arányban;
 a megszokott lefedettség- és címkekorlátok érvényesek. A meccsvégi Match-v5
 statisztikából nem gyártunk mobilitás- vagy map presence-pontszámot.

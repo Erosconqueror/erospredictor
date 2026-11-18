@@ -26,13 +26,40 @@ class TraitTests(unittest.TestCase):
         twitch = library.profile("29", 3)["values"]
         self.assertEqual((twitch["mobility"], twitch["map_presence"]), (2, 4))
         self.assertEqual(library.profile("55", 2)["values"]["mobility"], 5)
-        self.assertNotIn("map_presence", library.profile("55", 2)["values"])
-        self.assertEqual(library.profile("30", 2)["values"]["map_presence"], 4)
+        self.assertEqual(library.profile("55", 2)["values"]["map_presence"], 2)
+        self.assertEqual(library.profile("30", 2)["values"]["map_presence"], 5)
         library.overrides = {"29": {"3": {"mobility": 3, "map_presence": None}}}
         self.assertEqual(library.profile("29", 3)["values"]["mobility"], 3)
         self.assertNotIn("map_presence", library.profile("29", 3)["values"])
         self.assertAlmostEqual(team_summary([{"values": {"map_presence": 5}},
             {"values": {"map_presence": 3}}, {"values": {}}])["map_presence"]["score"], 4.3)
+
+    def test_all_installed_champions_have_distinct_reviewed_mobility_profiles(self):
+        library = TraitLibrary(overrides={})
+        basics = library.basics["champions"]
+        reviews = library.capabilities["champions"]
+        self.assertEqual(set(basics), set(reviews))
+        for riot, base in basics.items():
+            self.assertEqual(reviews[riot]["name"], base["name"])
+            profile = library.profile(riot, 0)
+            for key in ("mobility", "map_presence"):
+                self.assertTrue(1 <= profile["values"][key] <= 5)
+                self.assertTrue(reviews[riot][key+"_reason"])
+            self.assertTrue(reviews[riot]["source"].startswith("https://ddragon.leagueoflegends.com/"))
+        # No automatic Assassin mobility and no guessed score for a new kit.
+        new = TraitLibrary({"champions": {"99999": {"name": "Future", "tags": ["Assassin"]}}}, {}, {})
+        self.assertNotIn("mobility", new.profile("99999", 0)["values"])
+        self.assertNotIn("map_presence", new.profile("99999", 0)["values"])
+
+    def test_sylas_uses_enemy_ultimate_only_and_context_copies_do_not_leak(self):
+        library = TraitLibrary(overrides={})
+        self.assertEqual(library.profile("517", 2)["values"]["map_presence"], 2)
+        self.assertEqual(library.for_opponents(["98"]).profile("517", 2)["values"]["map_presence"], 5)
+        # Twitch's camouflage and Talon's parkour are not their ultimates.
+        self.assertEqual(library.for_opponents(["29", "91"]).profile("517", 2)["values"]["map_presence"], 2)
+        self.assertEqual(library.profile("517", 2)["values"]["map_presence"], 2)
+        self.assertEqual(library.profile("234", 1)["values"]["mobility"], 4)
+        self.assertEqual(library.profile("234", 1)["values"]["map_presence"], 2)
 
     def sustain_library(self, heal=(9000, 30), shield=(4500, 30)):
         metrics = {key: list(value) for key, value in (
@@ -162,6 +189,31 @@ class TraitDatabaseTests(unittest.TestCase):
 
 
 class TraitUiTests(unittest.TestCase):
+    def test_sylas_recommendation_filter_uses_enemy_r_without_changing_probability(self):
+        from PyQt6.QtTest import QTest
+        library = TraitLibrary(overrides={})
+        self.window._pool_mapping = {"517": 0, "98": 1}
+        self.window.red_picks[0].setCurrentText("Ahri")  # Test ID 1 represents Shen here.
+        self.window.chk_traits.setChecked(True)
+        self.window._trait_filters = ["map_presence"]
+        self.window._trait_minimum = 5
+        controller = MagicMock()
+        controller.validate_draft.return_value = (True, "")
+        controller.recommend_champs.return_value = [dict(id=0, wr=53.25, display_color="#FFFFFF")]
+        self.window.controller = controller
+        with patch.object(self.window, "_get_trait_library", return_value=library):
+            self.window._on_recommend()
+            for _ in range(300):
+                if not self.window._busy:
+                    break
+                QTest.qWait(10)
+        self.assertFalse(self.window._busy)
+        self.assertIn(0, controller.recommend_champs.call_args.kwargs["candidate_ids"])
+        self.assertEqual(self.window._last_recommendations[0]["wr"], 53.25)
+        self.assertEqual(next(b for b in self.window._last_recommendations[0]["experimental_badges"]
+                              if b["key"] == "map_presence")["score"], 5)
+        controller.predict_match.assert_not_called()
+
     @classmethod
     def setUpClass(cls):
         os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
@@ -186,6 +238,8 @@ class TraitUiTests(unittest.TestCase):
         with patch.object(self.window, "_get_trait_library", return_value=TraitLibrary({}, {}, {})):
             dialog = TraitDialog(self.window)
             self.assertEqual(dialog.controls["frontline"].value(), 0)
+            self.assertEqual(dialog.mobility_table.rowCount(), 2)
+            self.assertIn("mobility", dialog.controls)
             dialog.close()
         self.window.controller.predict_match.assert_not_called()
         self.window.controller.recommend_champs.assert_not_called()

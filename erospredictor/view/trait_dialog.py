@@ -2,7 +2,9 @@
 
 from PyQt6.QtWidgets import (QDialog, QVBoxLayout, QHBoxLayout, QTabWidget, QWidget,
     QLabel, QGridLayout, QProgressBar, QComboBox, QPushButton, QScrollArea,
-    QDoubleSpinBox, QFormLayout, QCheckBox)
+    QDoubleSpinBox, QFormLayout, QCheckBox, QTableWidget, QTableWidgetItem,
+    QAbstractItemView, QHeaderView)
+from PyQt6.QtCore import Qt
 from services.champion_traits import LABELS, team_summary
 from services.update_progress import atomic_json
 
@@ -21,10 +23,13 @@ class TraitDialog(QDialog):
         super().__init__(window)
         self.window = window
         self.library = window._get_trait_library()
+        inverse = {cid: riot for riot, cid in window._pool_mapping.items()}
+        opposite = window.red_picks if window.grp_team.checkedId() == 0 else window.blue_picks
+        self.library = self.library.for_opponents([inverse[cid] for cid in window._get_ids(opposite) if cid in inverse])
         self.setWindowTitle("Kísérleti csapatelemzés · a winrate változatlan")
         self.resize(900, 720)
         layout = QVBoxLayout(self)
-        note = QLabel("Osztályalapú, szerkeszthető becslések • Ismeretlen ≠ gyenge • A winrate változatlan")
+        note = QLabel("Kísérleti profilok és mért adatok • Ismeretlen ≠ gyenge • A winrate változatlan")
         layout.addWidget(note)
         tabs = QTabWidget()
         layout.addWidget(tabs)
@@ -36,7 +41,9 @@ class TraitDialog(QDialog):
         inverse = {cid: riot for riot, cid in window._pool_mapping.items()}
         for col, (side, picks, color) in enumerate((("Kék", window.blue_picks, "#42A5F5"),
                                                    ("Piros", window.red_picks, "#EF8088"))):
-            profiles = [self.library.profile(inverse[cid], role, self.tier)
+            other = window.red_picks if side == "Kék" else window.blue_picks
+            contextual = self.library.for_opponents([inverse[cid] for cid in window._get_ids(other) if cid in inverse])
+            profiles = [contextual.profile(inverse[cid], role, self.tier)
                         for role, cid in enumerate(window._get_ids(picks)) if cid in inverse]
             summary = team_summary(profiles)
             summaries.append(summary)
@@ -96,6 +103,7 @@ class TraitDialog(QDialog):
                 self.champion.addItem(name, inverse[cid])
         self.role = QComboBox()
         self.role.addItems(window.roles)
+        self.role.setCurrentIndex(window.grp_role.checkedId())
         edit.addRow("Hős", self.champion)
         edit.addRow("Pozíció", self.role)
         self.controls = {}
@@ -118,6 +126,19 @@ class TraitDialog(QDialog):
         self.champion.currentIndexChanged.connect(self.load_profile)
         self.role.currentIndexChanged.connect(self.load_profile)
         tabs.addTab(scroll(editor), "Hősprofilok és adatok")
+        self.mobility_table = QTableWidget(0, 4)
+        self.mobility_table.setHorizontalHeaderLabels(["Hős", "Harci mobilitás", "Map presence", "Besorolás"])
+        self.mobility_table.setEditTriggers(QAbstractItemView.EditTrigger.NoEditTriggers)
+        self.mobility_table.setSelectionBehavior(QAbstractItemView.SelectionBehavior.SelectRows)
+        self.mobility_table.horizontalHeader().setSectionResizeMode(QHeaderView.ResizeMode.ResizeToContents)
+        self.mobility_table.horizontalHeader().setSectionResizeMode(3, QHeaderView.ResizeMode.Stretch)
+        self.mobility_table.setStyleSheet("QTableWidget { background:#20202A; color:#E0E0E0; gridline-color:#444450; } "
+            "QHeaderView::section { background:#343440; color:#E0E0E0; padding:6px; }")
+        self.mobility_table.setToolTip("Kísérleti képességprofilok, nem mért teljesítmény. Súgó: indoklás és forrás. Dupla kattintás: hősprofil szerkesztése.")
+        self.mobility_table.cellDoubleClicked.connect(lambda row, _col: self._edit_mobility_row(row, tabs))
+        tabs.addTab(self.mobility_table, "Mobilitáslista")
+        self.role.currentIndexChanged.connect(self.refresh_mobility_table)
+        self.refresh_mobility_table()
         self.load_profile()
         if champion_id in inverse:
             self.champion.setCurrentIndex(self.champion.findData(inverse[champion_id]))
@@ -126,6 +147,34 @@ class TraitDialog(QDialog):
         close = QPushButton("Bezárás")
         close.clicked.connect(self.accept)
         layout.addWidget(close)
+
+    def refresh_mobility_table(self):
+        table = self.mobility_table
+        table.setSortingEnabled(False)
+        table.setRowCount(self.champion.count())
+        for row in range(self.champion.count()):
+            riot = self.champion.itemData(row)
+            profile = self.library.profile(riot, self.role.currentIndex(), self.tier)
+            review = self.library.capabilities.get("champions", {}).get(str(riot), {})
+            values = [self.champion.itemText(row)] + [f"{profile['values'][key]:g}/5" if key in profile['values'] else "—"
+                      for key in ("mobility", "map_presence")]
+            values.append("Ellenfél ellopható R-jétől függ" if review.get("name") == "Sylas" else
+                          "Felhasználói pontosítás" if review.get("review") == "user_confirmed" else "Képességalapú, kísérleti")
+            if any(profile["sources"].get(key) == "kézzel megadott" for key in ("mobility", "map_presence")):
+                values[-1] = "Helyi felülírás"
+            for col, text in enumerate(values):
+                item = QTableWidgetItem(text)
+                item.setData(Qt.ItemDataRole.UserRole, riot)
+                item.setToolTip("Pozíció: " + self.role.currentText() + "\n" +
+                    "\n".join(profile["sources"].get(key, "Ismeretlen") for key in ("mobility", "map_presence")))
+                table.setItem(row, col, item)
+        table.setSortingEnabled(True)
+        table.sortItems(0)
+
+    def _edit_mobility_row(self, row, tabs):
+        riot = self.mobility_table.item(row, 0).data(Qt.ItemDataRole.UserRole)
+        self.champion.setCurrentIndex(self.champion.findData(riot))
+        tabs.setCurrentIndex(2)
 
     def load_profile(self):
         profile = self.library.profile(self.champion.currentData(), self.role.currentIndex(), self.tier)
@@ -177,6 +226,7 @@ class TraitDialog(QDialog):
             return
         self.window._trait_library_cache = None
         self.window._invalidate_recommendations()
+        self.refresh_mobility_table()
         self.evidence.setText("Profil elmentve. Új ajánláskor használja; a winrate-et nem módosítja.")
 
     def apply_filters(self):

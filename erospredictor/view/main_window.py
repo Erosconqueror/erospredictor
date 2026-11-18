@@ -662,7 +662,8 @@ class MainWindow(QMainWindow):
 
     def _get_trait_library(self):
         from services.champion_traits import TraitLibrary, DATA
-        paths = (DATA / "champion_trait_basics.json", DATA / "champion_trait_observations.json")
+        paths = (DATA / "champion_trait_basics.json", DATA / "champion_trait_observations.json",
+                 DATA / "champion_mobility_profiles.json")
         stamp = tuple(path.stat().st_mtime_ns if path.exists() else None for path in paths)
         cached = self._trait_library_cache
         if cached is None or cached[0] != stamp:
@@ -894,7 +895,8 @@ class MainWindow(QMainWindow):
                     from services.champion_traits import composition_summary
                     library = self._get_trait_library()
                     inverse = {cid: riot for riot, cid in self._pool_mapping.items()}
-                    traits = {side: composition_summary(library,
+                    traits = {side: composition_summary(library.for_opponents(
+                        [inverse[cid] for cid in (red if side == 'blue' else blue) if cid in inverse]),
                         [(inverse[cid], role) for role, cid in enumerate(picks) if cid in inverse],
                         div, trait_roles) for side, picks in (("blue", blue), ("red", red))}
                 except Exception:
@@ -976,6 +978,9 @@ class MainWindow(QMainWindow):
         trait_library = self._get_trait_library() if self.chk_traits.isChecked() else None
         trait_distributions = self._load_roles()[0] if trait_library else None
         inverse = {cid: riot for riot, cid in self._pool_mapping.items()} if trait_library else {}
+        if trait_library:
+            trait_library = trait_library.for_opponents(
+                [inverse[cid] for cid in (red if picking == 'blue' else blue) if cid in inverse])
         if trait_library and self._trait_filters:
             candidates = [cid for cid in (range(CHAMPION_COUNT) if candidates is None else candidates)
                           if cid in inverse and trait_library.accepts(inverse[cid], r_id, div,

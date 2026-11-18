@@ -23,19 +23,11 @@ LABELS = {"frontline": "Frontline", "engage": "Engage", "follow_up": "Follow-up"
 PRESETS = {
     "Tank": {"frontline": 4, "engage": 3, "peel": 3, "cc": 4, "range": 1},
     "Fighter": {"frontline": 3, "sustained": 4, "range": 1},
-    "Assassin": {"burst": 4, "mobility": 4, "range": 2, "frontline": 1},
+    "Assassin": {"burst": 4, "range": 2, "frontline": 1},
     "Mage": {"burst": 3, "waveclear": 4, "range": 4},
     "Marksman": {"sustained": 4, "range": 4, "frontline": 1},
     "Support": {"peel": 3},
 }
-
-
-# User-provided examples: conservative, editable capability estimates, not
-# observed roaming effectiveness. Unlisted champions remain unknown.
-MAP_PRESENCE_EXAMPLES = {name: 4 for name in (
-    "Shen", "Pantheon", "Galio", "Twitch", "Quinn", "Nunu & Willump",
-    "Nocturne", "Twisted Fate", "Taliyah", "Gangplank", "Karthus")}
-COMBAT_MOBILITY_EXAMPLES = {"Katarina": 5, "Locke": 5, "Twitch": 2, "Pantheon": 2}
 
 
 def read_document(path, default=None):
@@ -109,13 +101,16 @@ def export_observations(db, patches, path, tiers=None, region=None):
 
 
 class TraitLibrary:
-    def __init__(self, basics=None, observations=None, overrides=None):
+    def __init__(self, basics=None, observations=None, overrides=None, capabilities=None):
         self.basics = basics if basics is not None else read_document(DATA / "champion_trait_basics.json")
         self.observations = observations if observations is not None else read_document(DATA / "champion_trait_observations.json")
         if overrides is None:
             from services.client_settings import settings_path
             overrides = read_document(settings_path().with_name("champion_trait_profiles.json"))
         self.overrides = overrides
+        self.capabilities = capabilities if capabilities is not None else read_document(DATA / "champion_mobility_profiles.json")
+        self.enemy_riots = ()
+        self._reference_teams = {}
         self.patches = sorted(set(self.observations.get("patches", [])), key=lambda p: tuple(map(int, p.split("."))))[-5:]
         self._measured = {}
         for row in self.observations.get("rows", []):
@@ -127,6 +122,13 @@ class TraitLibrary:
 
     def measured(self, riot, role, tier):
         return self._measured.get((str(riot), role, tier), {})
+
+    def for_opponents(self, riots):
+        """Contextual descriptive copy; no inference model or shared mutation."""
+        from copy import copy
+        result = copy(self)
+        result.enemy_riots = tuple(sorted(set(map(str, riots))))
+        return result
 
     def profile(self, riot, role, tier="MIXED"):
         base = self.basics.get("champions", {}).get(str(riot), {})
@@ -140,12 +142,21 @@ class TraitLibrary:
             values["range"] = 2
             sources["range"] = "kísérleti harcitáv-korrekció"
         name = base.get("name")
-        for key, examples in (("map_presence", MAP_PRESENCE_EXAMPLES), ("mobility", COMBAT_MOBILITY_EXAMPLES)):
-            if name in examples:
-                values[key] = examples[name]
-                sources[key] = ("felhasználói példák alapján megadott, szerkeszthető kísérleti kezdőérték; "
-                    + ("gyors / rejtett érkezés vagy távoli beavatkozás, nem harci mobilitás"
-                       if key == "map_presence" else "harcon belüli helyváltoztatás, nem térképes jelenlét"))
+        review = self.capabilities.get("champions", {}).get(str(riot), {})
+        if name and review.get("name") == name:
+            for key in ("mobility", "map_presence"):
+                score = review.get(key)
+                if finite(score) and 1 <= score <= 5:
+                    values[key] = score
+                    sources[key] = (f"kísérleti képességprofil · {self.capabilities.get('patch', '?')} · "
+                        f"{review.get(key+'_reason', '')} · {review.get('source', '')}")
+            if name == "Sylas" and "map_presence" in values:
+                ultimates = self.capabilities.get("champions", {})
+                candidates = [(ultimates.get(enemy, {}).get("ultimate_map_presence", 1),
+                               ultimates.get(enemy, {}).get("name", enemy)) for enemy in self.enemy_riots]
+                score, enemy = max([(2, "alapkit")] + candidates)
+                values["map_presence"] = score
+                sources["map_presence"] += f" · aktuális ellopható R: {enemy}, {score}/5; lehetőség, nem ellopott/használatra kész ulti"
         measured = self.measured(riot, role, tier)
         cc_total, cc_samples = measured.get("cc_seconds_per_min", (0, 0))
         if cc_samples >= 30:
@@ -240,7 +251,7 @@ def composition_outliers(library, picks, tier="MIXED", distributions=None, limit
     if not picks:
         return {"tags": [], "picks": 0, "note": "Még nincs kiválasztott hős."}
     roles = tuple(sorted(role for _, role in picks))
-    key = (tier, roles, id(distributions))
+    key = (tier, roles, id(distributions), library.enemy_riots)
     if not hasattr(library, "_reference_teams"):
         library._reference_teams = {}
     if key not in library._reference_teams:
