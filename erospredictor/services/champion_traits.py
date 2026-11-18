@@ -15,10 +15,10 @@ LABELS = {"frontline": "Frontline", "engage": "Engage", "follow_up": "Follow-up"
           "hard_cc": "Hard CC", "soft_cc": "Soft CC",
           "cc_use": "Mért CC-kihasználás",
           "burst": "Burst", "sustained": "Folyamatos sebzés", "percent_health": "% HP sebzés",
-          "waveclear": "Waveclear", "poke": "Poke", "mobility": "Mobilitás",
+          "waveclear": "Waveclear", "poke": "Poke", "mobility": "Harci mobilitás",
           "early": "Early", "mid": "Mid game", "late": "Late game",
           "range": "Harci távolság", "reach": "Elérési távolság", "spacing": "Távolságtartás",
-          "team_sustain": "Csapatfenntartás"}
+          "team_sustain": "Csapatfenntartás", "map_presence": "Map presence"}
 # Reviewable starting points only. Empty fields remain unknown.
 PRESETS = {
     "Tank": {"frontline": 4, "engage": 3, "peel": 3, "cc": 4, "range": 1},
@@ -28,6 +28,14 @@ PRESETS = {
     "Marksman": {"sustained": 4, "range": 4, "frontline": 1},
     "Support": {"peel": 3},
 }
+
+
+# User-provided examples: conservative, editable capability estimates, not
+# observed roaming effectiveness. Unlisted champions remain unknown.
+MAP_PRESENCE_EXAMPLES = {name: 4 for name in (
+    "Shen", "Pantheon", "Galio", "Twitch", "Quinn", "Nunu & Willump",
+    "Nocturne", "Twisted Fate", "Taliyah", "Gangplank", "Karthus")}
+COMBAT_MOBILITY_EXAMPLES = {"Katarina": 5, "Locke": 5, "Twitch": 2, "Pantheon": 2}
 
 
 def read_document(path, default=None):
@@ -131,6 +139,13 @@ class TraitLibrary:
         if base.get("name") in ("Zed", "Urgot"):
             values["range"] = 2
             sources["range"] = "kísérleti harcitáv-korrekció"
+        name = base.get("name")
+        for key, examples in (("map_presence", MAP_PRESENCE_EXAMPLES), ("mobility", COMBAT_MOBILITY_EXAMPLES)):
+            if name in examples:
+                values[key] = examples[name]
+                sources[key] = ("felhasználói példák alapján megadott, szerkeszthető kísérleti kezdőérték; "
+                    + ("gyors / rejtett érkezés vagy távoli beavatkozás, nem harci mobilitás"
+                       if key == "map_presence" else "harcon belüli helyváltoztatás, nem térképes jelenlét"))
         measured = self.measured(riot, role, tier)
         cc_total, cc_samples = measured.get("cc_seconds_per_min", (0, 0))
         if cc_samples >= 30:
@@ -172,7 +187,7 @@ def team_summary(profiles):
         if not values:
             result[key] = {"score": None, "known": 0}
             continue
-        if key in ("frontline", "engage", "peel", "waveclear", "poke", "team_sustain"):
+        if key in ("frontline", "engage", "peel", "waveclear", "poke", "team_sustain", "map_presence"):
             score = values[0] if len(values) == 1 else .65 * values[0] + .35 * values[1]
         elif key == "cc":
             score = min(5, values[0] + .15 * sum(max(0, value - 1) for value in values[1:]))
@@ -367,7 +382,7 @@ def recommendation_team_digest(library, picks, tier, distributions=None):
                            "extreme": abs(tag["delta"]) >= 1 and tag["deviation"] >= 1.5})
         used.add(tag["key"])
     coverage = max(1, math.ceil(len(picks)*.6))
-    for key in ("frontline", "engage", "peel", "waveclear", "sustained", "team_sustain"):
+    for key in ("frontline", "engage", "peel", "waveclear", "sustained", "team_sustain", "map_presence"):
         score = summary[key]["score"]
         if summary[key]["known"] < coverage or score is None:
             continue

@@ -18,6 +18,22 @@ def sample():
 
 
 class TraitTests(unittest.TestCase):
+    def test_map_presence_is_separate_from_combat_mobility_and_editable(self):
+        basics = {"champions": {"29": {"name": "Twitch", "tags": ["Assassin"]},
+                                 "55": {"name": "Katarina", "tags": ["Assassin"]},
+                                 "30": {"name": "Karthus", "tags": ["Mage"]}}}
+        library = TraitLibrary(basics, {}, {})
+        twitch = library.profile("29", 3)["values"]
+        self.assertEqual((twitch["mobility"], twitch["map_presence"]), (2, 4))
+        self.assertEqual(library.profile("55", 2)["values"]["mobility"], 5)
+        self.assertNotIn("map_presence", library.profile("55", 2)["values"])
+        self.assertEqual(library.profile("30", 2)["values"]["map_presence"], 4)
+        library.overrides = {"29": {"3": {"mobility": 3, "map_presence": None}}}
+        self.assertEqual(library.profile("29", 3)["values"]["mobility"], 3)
+        self.assertNotIn("map_presence", library.profile("29", 3)["values"])
+        self.assertAlmostEqual(team_summary([{"values": {"map_presence": 5}},
+            {"values": {"map_presence": 3}}, {"values": {}}])["map_presence"]["score"], 4.3)
+
     def sustain_library(self, heal=(9000, 30), shield=(4500, 30)):
         metrics = {key: list(value) for key, value in (
             ("ally_heal_per_min", heal), ("ally_shield_per_min", shield)) if value is not None}

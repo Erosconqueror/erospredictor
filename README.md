@@ -651,6 +651,19 @@ Ez kísérleti megjelenítési skála és nem CC-nehézség vagy megbízhatósá
 A mért sebzéstípus-arány csak elegendő mintánál jelenik meg, lefedettséggel.
 Ezek kísérleti értelmezési szabályok, nem validált győzelmiesély-becslések.
 
+A korábbi Mobilitás neve **Harci mobilitás**; a mentett `mobility` értékek
+és szűrők megmaradnak. A külön **Map presence** tag a gyors rotációt,
+rejtett érkezést és távoli beavatkozást fogja össze, nem csak a globális ultikat.
+A felhasználó példái (Shen, Pantheon, Galio, Twitch, Quinn, Nunu, Nocturne,
+TF, Taliyah, GP, Karthus) egyelőre szerkeszthető 4/5 kezdőértéket kapnak;
+ez nem mért roam-hatékonyság. Katarina és Locke harci mobilitásának kezdőértéke
+5/5, Twitch és Pantheon értéke 2/5, ugyanígy kísérleti, kézzel felülírható.
+A nem besorolt hősök map presence értéke ismeretlen, nem automatikusan gyenge.
+Csapatszinten a két legerősebb ismert érték számít 65/35 arányban;
+a megszokott lefedettség- és címkekorlátok érvényesek. A meccsvégi Match-v5
+statisztikából nem gyártunk mobilitás- vagy map presence-pontszámot.
+A winrate és az ensemble változatlan.
+
 A **Csapatfenntartás** kísérleti tag a társak gyógyításának és pajzsolásának
 megfigyelt percenkénti átlagából készül. Mindkét mérőszámhoz külön legalább
 30 érvényes minta szükséges az adott hős/szerepkör/rang utolsó öt patchéből;
