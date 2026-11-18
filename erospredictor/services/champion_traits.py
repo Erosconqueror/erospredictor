@@ -8,7 +8,8 @@ import json
 import math
 from pathlib import Path
 from services.update_progress import atomic_json
-from services.trait_metrics import DAMAGE_KEYS, PHASE_PREFIX, damage_rate, phase_profiles, tag_priority
+from services.trait_metrics import (DAMAGE_KEYS, POSITIVE_DAMAGE_KEYS, PHASE_PREFIX,
+    damage_rate, phase_profiles, tag_priority, balanced_damage_score)
 
 DATA = Path(__file__).resolve().parents[1] / "data"
 LABELS = {"frontline": "Frontline", "engage": "Engage", "follow_up": "Follow-up",
@@ -20,7 +21,8 @@ LABELS = {"frontline": "Frontline", "engage": "Engage", "follow_up": "Follow-up"
           "early": "Early WR", "mid": "Mid WR", "late": "Late WR",
           "range": "Harci távolság", "reach": "Elérési távolság", "spacing": "Távolságtartás",
           "team_sustain": "Csapatfenntartás", "map_presence": "Map presence",
-          "physical_damage": "Fizikai sebzés", "magic_damage": "Mágikus sebzés"}
+          "physical_damage": "Fizikai sebzés", "magic_damage": "Mágikus sebzés",
+          "overall_damage": "Sok összsebzés", "balanced_damage": "Kiegyensúlyozott sebzés"}
 # Reviewable starting points only. Empty fields remain unknown.
 PRESETS = {
     "Tank": {"frontline": 4, "engage": 3, "peel": 3, "cc": 4, "range": 1},
@@ -126,7 +128,7 @@ class TraitLibrary:
                 self._measured[key] = merge_metrics(self._measured.get(key, {}), row.get("metrics", {}))
         self._damage_baselines = {}
         for (_, _, tier), metrics in self._measured.items():
-            for kind in ("physical", "magic", "true"):
+            for kind in ("physical", "magic", "true", "overall"):
                 value = damage_rate(metrics, kind)
                 if value:
                     rate, count, _ = value
@@ -172,7 +174,7 @@ class TraitLibrary:
                 sources["map_presence"] += f" · aktuális ellopható R: {enemy}, {score}/5; lehetőség, nem ellopott/használatra kész ulti"
         measured = self.measured(riot, role, tier)
         damage_details = {}
-        for key, kind in DAMAGE_KEYS.items():
+        for key, kind in dict(DAMAGE_KEYS, overall_damage="overall").items():
             rate = damage_rate(measured, kind)
             total, n = self._damage_baselines.get((tier, kind), (0, 0))
             if rate and n >= 100 and total > 0:
@@ -182,6 +184,12 @@ class TraitLibrary:
                 damage_details[kind] = dict(dpm=dpm, baseline=baseline, samples=samples, estimated=estimated)
                 sources[key] = (f"{dpm:.1f}/perc; rangon belüli összes szerepkör átlaga {baseline:.1f}/perc; "
                     f"n={samples}; " + ("régi arány × DPM becslés" if estimated else "mért típusonkénti sebzés/perc"))
+        balance = balanced_damage_score(damage_details)
+        if balance is not None:
+            values["balanced_damage"] = balance
+            sources["balanced_damage"] = ("Fizikai és mágikus DPM is legalább saját átlagának 75%-a, "
+                "mindkettő legalább az összsebzés 25%-a, össz-DPM legalább átlagos. "
+                + " · ".join(sources[key] for key in ("physical_damage", "magic_damage", "overall_damage")))
         phases = phase_profiles(measured)
         for key, detail in phases.items():
             values[key] = detail["score"]
@@ -259,17 +267,33 @@ def team_summary(profiles):
     result["damage_mix"] = {key: value/total for key, value in damage.items()} if total else {}
     result["damage_known"] = known
     result["damage_rates"] = {}
-    for kind in ("physical", "magic"):
+    for kind in ("physical", "magic", "overall"):
         details = [p.get("damage_details", {}).get(kind) for p in profiles]
         details = [detail for detail in details if detail]
         if details:
             result["damage_rates"][kind] = dict(dpm=sum(d["dpm"] for d in details),
                 baseline=sum(d["baseline"] for d in details), known=len(details),
                 estimated=any(d["estimated"] for d in details))
-            key = next(key for key, value in DAMAGE_KEYS.items() if value == kind)
+            key = "overall_damage" if kind == "overall" else next(key for key, value in DAMAGE_KEYS.items() if value == kind)
             info = result["damage_rates"][kind]
+            if kind == "overall":
+                result[key]["score"] = max(1, min(5, 1+2*info["dpm"]/info["baseline"]))
             result[key]["detail"] = (f"{info['dpm']:.1f}/perc; referencia {info['baseline']:.1f}/perc; "
                 f"{len(details)}/{len(profiles)} ismert; " + ("részben régi arány × DPM becslés" if info['estimated'] else "mért DPM"))
+    # Balance is a team property: a physical carry plus a mage can satisfy it
+    # even when neither champion has mixed damage individually. Use the same
+    # fully-known cohort for all three rates, never unmatched partial sums.
+    cohort = [p["damage_details"] for p in profiles
+              if all(kind in p.get("damage_details", {}) for kind in ("physical", "magic", "overall"))]
+    if cohort:
+        combined = {kind: {field: sum(d[kind][field] for d in cohort) for field in ("dpm", "baseline")}
+                    for kind in ("physical", "magic", "overall")}
+        balance = balanced_damage_score(combined)
+        result["balanced_damage"] = dict(score=balance, known=len(cohort) if balance is not None else 0,
+            detail="Az ismert hősök összeadott DPM-je alapján: " + "; ".join(
+                f"{kind}: {detail['dpm']:.1f}/perc, átlag {detail['baseline']:.1f}/perc" for kind, detail in combined.items())
+                + ("; részben régi arány × DPM becslés" if any(d[kind]["estimated"] for d in cohort
+                    for kind in ("physical", "magic", "overall")) else "; mért DPM"))
     for phase in ("early", "mid", "late"):
         details = [p.get("phase_details", {}).get(phase) for p in profiles]
         details = [detail for detail in details if detail]
@@ -343,6 +367,12 @@ def composition_outliers(library, picks, tier="MIXED", distributions=None, limit
                    "spacing": ("Erős távolságtartás", "Kevés távolságtartás")}
     for metric, caption in LABELS.items():
         value = summary[metric]
+        if metric in POSITIVE_DAMAGE_KEYS:
+            if value["known"] >= coverage and value["score"] is not None and value["score"] >= 3.5:
+                tags.append(dict(key=metric, label=caption, direction="high", descriptive=False,
+                    score=value["score"], mean=3, delta=value["score"]-3, deviation=(value["score"]-3)/.5,
+                    known=value["known"], tooltip=value.get("detail", "")))
+            continue
         if "phase_delta" in value:
             if value["phase_known"] < coverage:
                 continue
@@ -442,7 +472,9 @@ def recommendation_badges(library, riot, role, tier, distributions=None):
         used.add(key)
     extreme = sorted(profile["values"].items(), key=lambda item: abs(item[1]-3), reverse=True)
     for key, value in extreme:
-        positive_min = 3.5 if key in ("map_presence", "frontline", "engage", "peel", "waveclear", "team_sustain", "physical_damage", "magic_damage") else 4
+        if key in POSITIVE_DAMAGE_KEYS and value < 3.5:
+            continue
+        positive_min = 3.5 if key in POSITIVE_DAMAGE_KEYS or key in ("map_presence", "frontline", "engage", "peel", "waveclear", "team_sustain", "physical_damage", "magic_damage") else 4
         negative_max = 2.5 if key in ("map_presence", "physical_damage", "magic_damage") else 2
         if key in used or key in descriptive or negative_max < value < positive_min:
             continue

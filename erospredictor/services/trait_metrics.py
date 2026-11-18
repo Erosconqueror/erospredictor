@@ -4,9 +4,26 @@ import math
 PHASE_PREFIX = "endwin_23_34_"
 PHASES = ("early", "mid", "late")
 DAMAGE_KEYS = {"physical_damage": "physical", "magic_damage": "magic"}
+POSITIVE_DAMAGE_KEYS = {"overall_damage", "balanced_damage"}
+
+
+def balanced_damage_score(details):
+    if not all(kind in details for kind in ("physical", "magic", "overall")):
+        return None
+    physical, magic, total = (details[kind] for kind in ("physical", "magic", "overall"))
+    if min(physical["baseline"], magic["baseline"], total["baseline"], total["dpm"]) <= 0:
+        return None
+    ratio = min(physical["dpm"]/physical["baseline"], magic["dpm"]/magic["baseline"])
+    share = min(physical["dpm"], magic["dpm"])/total["dpm"]
+    if ratio < .75 or share < .25 or total["dpm"] < total["baseline"]:
+        return None
+    return min(5, 3.5+2*(ratio-.75))
 
 
 def damage_rate(metrics, kind):
+    if kind == "overall":
+        total, n = metrics.get("damage_per_min", (0, 0))
+        return (total/n, n, False) if n >= 30 else None
     total, n = metrics.get(kind+"_damage_per_min", (0, 0))
     if n >= 30:
         return total/n, n, False
@@ -47,6 +64,8 @@ def tag_priority(item):
     key = item.get("key")
     if key in DAMAGE_KEYS:
         return 100 if item.get("tone") == "negative" else 45
+    if key in POSITIVE_DAMAGE_KEYS:
+        return 50 if key == "balanced_damage" else 48
     if key in ("frontline", "engage", "peel", "waveclear"):
         return 25
     if key == "map_presence":

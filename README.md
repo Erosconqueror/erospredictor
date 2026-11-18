@@ -756,6 +756,16 @@ viszonyított eltérések átlaga szerepel, nem közös csapat-winrate, legaláb
 A címkék sorrendjében a fizikai/mágikus sebzés hiánya az első, utána a
 sebzéses erősségek és frontline/engage/peel/waveclear, majd a többi jellemző;
 a map presence kisebb prioritású. Az 5/3–4/4–3/5 és 3/2–2/3 korlátok megmaradnak.
+
+Pozitív címke lehet a **Sok összsebzés** is: a mért teljes hőssebzés/perc
+(a true damage-et is beleértve) legalább a rangon belüli átlag 125%-a.
+A **Kiegyensúlyozott sebzés** taghez a fizikai és mágikus DPM külön-külön
+legalább a típusspecifikus átlag 75%-a, mindkettő az össz-DPM legalább 25%-a,
+az össz-DPM pedig legalább átlagos kell legyen. Így a kevés, de 50/50 arányú
+sebzés nem kap pozitív balanced címkét. Csapatszinten ugyanazon teljesen ismert
+hősök DPM-jeit összeadva számolunk, így egy fizikai carry és egy mage együtt
+is kiegyensúlyozott lehet. Mindkét címke csak pozitívként jelenik meg; a
+sebzéstípus-hiányok prioritása továbbra is magasabb. Nem változtatnak winrate-et.
 Nincs további Riot-kérés vagy timeline-letöltés. Hiányzó mező nem nulla minta.
 
 Az additív `champion_trait_aggregates` táblában verzió, patch, régió, rang,

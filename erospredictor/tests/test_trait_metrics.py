@@ -4,6 +4,41 @@ from services.champion_traits import TraitLibrary, extract_observations, team_su
 
 
 class TraitMetricTests(unittest.TestCase):
+    def test_balanced_damage_requires_volume_and_complements_across_teammates(self):
+        from services.trait_metrics import balanced_damage_score
+        def details(p, m, total):
+            return {kind: dict(dpm=value, baseline=base, samples=100, estimated=False)
+                    for kind, value, base in (("physical", p, 200), ("magic", m, 200), ("overall", total, 500))}
+        self.assertIsNone(balanced_damage_score(details(10, 10, 20)))
+        self.assertIsNone(balanced_damage_score(details(900, 10, 910)))
+        self.assertIsNone(balanced_damage_score({}))
+        self.assertGreaterEqual(balanced_damage_score(details(300, 300, 600)), 3.5)
+        # Individually pure damage, collectively balanced and sufficiently high.
+        profiles = [dict(values={}, damage_details=details(600, 0, 600)),
+                    dict(values={}, damage_details=details(0, 600, 600))]
+        summary = team_summary(profiles)
+        self.assertGreaterEqual(summary["balanced_damage"]["score"], 3.5)
+        self.assertEqual(summary["balanced_damage"]["known"], 2)
+        partial = [dict(values={}, damage_details={"physical": details(600, 0, 600)["physical"]}),
+                   dict(values={}, damage_details={"magic": details(0, 600, 600)["magic"]})]
+        self.assertIsNone(team_summary(partial)["balanced_damage"]["score"])
+
+    def test_high_overall_and_balanced_damage_are_positive_only_tags(self):
+        rows = []
+        for riot, p, m, total in ((1, 400, 400, 900), (2, 50, 50, 100)):
+            rows.append(dict(patch="16.7", tier="GOLD", champion=riot, role=0, metrics={
+                "damage_per_min": [total*100, 100], "physical_damage_per_min": [p*100, 100],
+                "magic_damage_per_min": [m*100, 100]}))
+        library = TraitLibrary({}, {"patches": ["16.7"], "rows": rows}, {}, {})
+        badges = recommendation_badges(library, "1", 0, "GOLD")
+        keys = {tag["key"] for tag in badges}
+        self.assertIn("overall_damage", keys)
+        self.assertIn("balanced_damage", keys)
+        weak = recommendation_badges(library, "2", 0, "GOLD")
+        self.assertFalse(any(tag["key"] in ("overall_damage", "balanced_damage") for tag in weak))
+        team = composition_summary(library, [("1", 0)], "GOLD")
+        self.assertTrue(any(tag["key"] == "overall_damage" for tag in team["tags"]))
+
     def test_exact_damage_average_is_preferred_to_product_of_averages(self):
         metrics = {"magic_damage_per_min": [3000, 30], "damage_per_min": [30000, 30], "magic_share": [15, 30]}
         self.assertEqual(damage_rate(metrics, "magic"), (100, 30, False))
