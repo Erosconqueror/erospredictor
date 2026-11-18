@@ -283,6 +283,11 @@ def collect_matches(args, patches, riot, db, log=print, progress=None, *, target
                 state.update(done=True, exhausted=True)
                 save()
                 break
+            announcement = (args.region, tier)
+            if context.get("announced_collection") != announcement:
+                log(f"[Collection] {args.region.upper()} | {tier}: gyujtes indul/folytatodik "
+                    f"| {count}/{targets[tier]} meccs az aktualis korcelbol | {len(visited)} jatekos bejarva")
+                context["announced_collection"] = announcement
             if state["players"] is None:
                 division, page = divisions[state["division"]], state["page"]
                 fetch = lambda: riot.get_league_exp_players(tier, division, page=page)

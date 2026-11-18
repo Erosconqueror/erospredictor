@@ -94,10 +94,13 @@ class DayTests(unittest.TestCase):
                     [{"puuid": "one"}] if div == "I" and page == 1 else [], get_match_ids=ids, get_match_data=match)
                 args = pipeline.parser().parse_args(["--scrape-only", "--no-catalog", "--patches", "16.7",
                     "--tiers", "GOLD", "--tier-target", "GOLD=1000", "--matches-per-player", "2", "--history-pages", "3"])
+                messages = []
                 with patch.object(pipeline, "APP_DIR", root), patch.dict("sys.modules", {
                         "model.data_manager": SimpleNamespace(DataManager=lambda **kw: db),
                         "model.riot": SimpleNamespace(Riot=lambda **kw: riot)}):
-                    self.assertEqual(pipeline.run(args, log=lambda _: None), 0)
+                    self.assertEqual(pipeline.run(args, log=messages.append), 0)
+                self.assertTrue(any("[Collection]" in message and "GOLD" in message
+                                    and args.region.upper() in message for message in messages))
                 self.assertEqual(starts, expected_starts)
                 self.assertEqual(len(db.saved), expected_saved)
 

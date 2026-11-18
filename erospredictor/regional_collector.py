@@ -13,6 +13,7 @@ import threading
 import _thread
 
 from services.api_keys import get_api_key, PROFILES
+from services.collection_console import CollectionLogTail, ApiWatch
 import update_pipeline as pipeline
 
 ROUTES = {"euw1": "europe", "eun1": "europe", "kr": "asia", "jp1": "asia",
@@ -128,11 +129,18 @@ def supervise(regions, profile, extra, deadline=None):
     window = "patches-" + "_".join(patches)
     root = pipeline.APP_DIR / ".scrape_regions" / namespace
     workers, retry_at, finished = {}, {}, {}
+    console_tails = {}
+    api_watches = {}
     last_status = time.monotonic()
     patch_check = time.monotonic()
     try:
         with collector_lock(workers, profile):
             while len(finished) < len(groups):
+                for tail in console_tails.values():
+                    tail.drain(f"[{profile}] ")
+                for region, watch in api_watches.items():
+                    if region in workers and workers[region][0].poll() is None:
+                        watch.tick()
                 if deadline is not None and time.time() >= deadline:
                     print("Run deadline reached; stopping collectors with checkpoints kept.", flush=True)
                     return 0
@@ -174,6 +182,8 @@ def supervise(regions, profile, extra, deadline=None):
                     stream = (folder / "collector.log").open("a", encoding="utf-8")
                     stream.write(f"\n=== {datetime.now(timezone.utc).isoformat()} ===\n")
                     stream.flush()
+                    api_watches[region] = ApiWatch(f"{profile}/{region.upper()}")
+                    console_tails[region] = CollectionLogTail(folder / "collector.log", api_watches[region])
                     # Reuse each worker's journal-resolved window on later launches.
                     # The first launch gets the common window via a separate environment variable.
                     child_env = dict(env, ERO_COLLECT_PATCHES=json.dumps(patches), ERO_COLLECT_NAMESPACE=namespace,
@@ -203,6 +213,8 @@ def supervise(regions, profile, extra, deadline=None):
                 time.sleep(1)
         return max(finished.values(), default=0)
     finally:
+        for tail in console_tails.values():
+            tail.drain(f"[{profile}] ")
         stop_workers(workers)
 
 

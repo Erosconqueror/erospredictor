@@ -860,6 +860,19 @@ Az automatizált tesztek helyi fixture-ökkel és mockokkal működnek; nem ind�
 
 ## Négyprofilos, 24 órás gyűjtés
 
+A fő konzol élőben jelzi, melyik kulcsprofil melyik régióban melyik rang
+gyűjtését kezdi vagy folytatja, az aktuális kör céljával és bejárt játékosszámmal.
+A részletes naplók továbbra is megmaradnak; korábbi futások sorait nem játssza vissza.
+A workerek ritka, kulcsot és játékosazonosítót nem tartalmazó API-állapotjelzést
+adnak. Három perc válaszhiány után figyelmeztetést, tartós esetben legfeljebb
+ötpercenként emlékeztetőt ír ki. Az ismert rate-limit várakozást külön nevezi
+meg; a hálózati újrapróbálkozás nem rejti el a válaszhiányt. A 401/403/429 és
+5xx HTTP-válaszokat, illetve a válaszhiány utáni helyreállást is jelzi.
+Ez megfigyelés: helyi feldolgozás is okozhat API-csendet; a figyelmeztetés
+nem állítja le és nem indítja újra a gyűjtőt. Nincs új API-kérés, és a
+kéréskorlátok változatlanok. A már futó gyűjtő szabályos újraindítással
+veszi át a konzolfrissítést, a mentett pontok megmaradnak.
+
 Az alkalmazásindítók és az install.bat maradnak a projekt gyökerében;
 a fejlesztői indítók a dev-scripts mappába kerültek.
 Dupla kattintás: **dev-scripts/collect_24h.bat**. Terv ellenőrzése kulcsok,

@@ -13,6 +13,7 @@ import math
 import threading
 import time
 from services.update_retry import is_transient, retry_delay
+from services.collection_console import api_event
 
 
 def retry_after_seconds(value, wall_time=None):
@@ -77,6 +78,7 @@ class RiotRateLimiter:
         self._apps = {}
         self._methods = {}
         self._blocked_until = {}
+        self._blocked_reasons = {}
         self._lock = threading.RLock()
 
     @staticmethod
@@ -104,8 +106,10 @@ class RiotRateLimiter:
                 delay = max(delay, observed[1] - now)
         return delay
 
-    def _pause(self, seconds, cancelled=None):
+    def _pause(self, seconds, cancelled=None, region=None, reason="rate_limit"):
         deadline = self.clock() + seconds
+        if region is not None:
+            api_event(region, "wait", seconds=seconds, reason=reason)
         if self.logger and seconds >= 1:
             self.logger(f"[Riot API] Kéréskorlát: várakozás {seconds:.1f} másodpercig...")
         while True:
@@ -129,6 +133,7 @@ class RiotRateLimiter:
                 states = self._states(region, endpoint, method)
                 delay = max(0.0, self._blocked_until.get(region, 0) - now,
                             *(self._delay(state, now) for state in states))
+                reason = self._blocked_reasons.get(region, "rate_limit") if self._blocked_until.get(region, 0) > now else "rate_limit"
                 if delay <= 0:
                     for state in states:
                         state["attempts"].append(now)
@@ -136,7 +141,7 @@ class RiotRateLimiter:
                             if expiry > now:
                                 state["observed"][duration] = (count + 1, expiry)
                     return
-            self._pause(delay, cancelled)
+            self._pause(delay, cancelled, region, reason)
 
     def wait_until(self, region, endpoint_name, method_name):
         # Block here using the same injected monotonic clock as retry handling.
@@ -145,6 +150,7 @@ class RiotRateLimiter:
         return None
 
     def record_response(self, region, endpoint_name, method_name, status, headers):
+        api_event(region, "response", status=status)
         headers = {str(k).lower(): v for k, v in (headers or {}).items()}
         with self._lock:
             now = self.clock()
@@ -171,6 +177,7 @@ class RiotRateLimiter:
                 delay = retry_after_seconds(headers.get("retry-after"), self.wall_clock())
                 if delay is not None:
                     self._blocked_until[region] = max(self._blocked_until.get(region, 0), now + delay)
+                    self._blocked_reasons[region] = "rate_limit"
 
     def call(self, operation, region, max_retries=5, retry_transient=False):
         """Optionally keep retrying temporary network/server failures until cancelled."""
@@ -192,6 +199,7 @@ class RiotRateLimiter:
                     delay = retry_delay(attempt)
                 with self._lock:
                     self._blocked_until[region] = max(self._blocked_until.get(region, 0), self.clock() + delay)
+                    self._blocked_reasons[region] = "rate_limit" if status == 429 else "retry"
                 if self.logger:
                     limit = str(max_retries) if max_retries is not None else "folyamatos"
                     reason = str(status) if status is not None else "kapcsolati hiba"

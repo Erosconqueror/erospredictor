@@ -8,6 +8,7 @@ import sys
 import time
 
 from services.api_keys import PROFILES, get_api_key
+from services.collection_console import CollectionLogTail
 from regional_collector import ROUTES, PROFILE_REGIONS, stop_workers
 import update_pipeline as pipeline
 
@@ -56,11 +57,13 @@ def run(plan, hours, extra, dry_run=False):
             filename = ".model_update.lock" if profile == "default" else f".model_update.{profile}.lock"
             locks.enter_context(pipeline.UpdateLock(pipeline.APP_DIR / filename))
     workers = {}
+    console_tails = {}
     root = pipeline.APP_DIR / ".scrape_regions/day-logs"
     root.mkdir(parents=True, exist_ok=True)
     try:
         for profile, regions in plan.items():
             output = (root / f"{profile}.log").open("a", encoding="utf-8")
+            console_tails[profile] = CollectionLogTail(root / f"{profile}.log")
             command = [sys.executable, "-u", str(Path(__file__).with_name("regional_collector.py")),
                 "--key-profile", profile, "--regions", *regions, "--run-hours", str(hours),
                 "--matches-per-player", "100", "--history-pages", "10", *extra]
@@ -75,6 +78,8 @@ def run(plan, hours, extra, dry_run=False):
         deadline = time.monotonic() + hours * 3600
         warned = set()
         while time.monotonic() < deadline and any(p.poll() is None for p, _ in workers.values()):
+            for tail in console_tails.values():
+                tail.drain()
             for profile, (process, _) in workers.items():
                 if process.poll() not in (None, 0) and profile not in warned:
                     print(f"{profile} stopped with exit {process.returncode}; other profiles continue. See its log.", flush=True)
@@ -83,6 +88,8 @@ def run(plan, hours, extra, dry_run=False):
         return 2 if warned or any(p.poll() not in (None, 0) for p, _ in workers.values()) else 0
     finally:
         stop_workers(workers)
+        for tail in console_tails.values():
+            tail.drain()
 
 
 def main(argv=None):
