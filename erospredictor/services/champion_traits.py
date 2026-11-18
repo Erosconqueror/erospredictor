@@ -17,7 +17,8 @@ LABELS = {"frontline": "Frontline", "engage": "Engage", "follow_up": "Follow-up"
           "burst": "Burst", "sustained": "Folyamatos sebzés", "percent_health": "% HP sebzés",
           "waveclear": "Waveclear", "poke": "Poke", "mobility": "Mobilitás",
           "early": "Early", "mid": "Mid game", "late": "Late game",
-          "range": "Harci távolság", "reach": "Elérési távolság", "spacing": "Távolságtartás"}
+          "range": "Harci távolság", "reach": "Elérési távolság", "spacing": "Távolságtartás",
+          "team_sustain": "Csapatfenntartás"}
 # Reviewable starting points only. Empty fields remain unknown.
 PRESETS = {
     "Tank": {"frontline": 4, "engage": 3, "peel": 3, "cc": 4, "range": 1},
@@ -135,6 +136,15 @@ class TraitLibrary:
         if cc_samples >= 30:
             values["cc_use"] = 1 + 4 * min(1, cc_total / cc_samples / 6)
             sources["cc_use"] = f"megfigyelt kontroll/perc · n={cc_samples}; kísérleti 0–6 s/perc skála, nem CC-nehézség"
+        heal, heal_n = measured.get("ally_heal_per_min", (0, 0))
+        shield, shield_n = measured.get("ally_shield_per_min", (0, 0))
+        if heal_n >= 30 and shield_n >= 30:
+            # Sum the two observed mean rates, not self-healing or totalHeal.
+            rate = heal / heal_n + shield / shield_n
+            values["team_sustain"] = 1 + 4 * min(1, rate / 600)
+            sources["team_sustain"] = (f"társak gyógyítása {heal/heal_n:.1f}/perc (n={heal_n}) + "
+                f"pajzsolása {shield/shield_n:.1f}/perc (n={shield_n}); "
+                "kísérleti 0–600/perc skála, nem winrate vagy önfenntartás")
         manual = self.overrides.get(str(riot), {})
         for entry in (manual.get("all", {}), manual.get(str(role), {})):
             for key, value in entry.items():
@@ -162,7 +172,7 @@ def team_summary(profiles):
         if not values:
             result[key] = {"score": None, "known": 0}
             continue
-        if key in ("frontline", "engage", "peel", "waveclear", "poke"):
+        if key in ("frontline", "engage", "peel", "waveclear", "poke", "team_sustain"):
             score = values[0] if len(values) == 1 else .65 * values[0] + .35 * values[1]
         elif key == "cc":
             score = min(5, values[0] + .15 * sum(max(0, value - 1) for value in values[1:]))
@@ -194,7 +204,7 @@ def team_summary(profiles):
 
 def fit_notes(profile, allies):
     summary = team_summary(allies)
-    additions = [LABELS[key] for key in ("frontline", "engage", "peel", "waveclear")
+    additions = [LABELS[key] for key in ("frontline", "engage", "peel", "waveclear", "team_sustain")
                  if profile["values"].get(key, 0) >= 3 and
                  (summary[key]["score"] is None or summary[key]["score"] < 3)]
     if profile["values"].get("follow_up", 0) >= 3 and (summary["engage"]["score"] or 0) >= 3:
@@ -357,7 +367,7 @@ def recommendation_team_digest(library, picks, tier, distributions=None):
                            "extreme": abs(tag["delta"]) >= 1 and tag["deviation"] >= 1.5})
         used.add(tag["key"])
     coverage = max(1, math.ceil(len(picks)*.6))
-    for key in ("frontline", "engage", "peel", "waveclear", "sustained"):
+    for key in ("frontline", "engage", "peel", "waveclear", "sustained", "team_sustain"):
         score = summary[key]["score"]
         if summary[key]["known"] < coverage or score is None:
             continue

@@ -18,6 +18,38 @@ def sample():
 
 
 class TraitTests(unittest.TestCase):
+    def sustain_library(self, heal=(9000, 30), shield=(4500, 30)):
+        metrics = {key: list(value) for key, value in (
+            ("ally_heal_per_min", heal), ("ally_shield_per_min", shield)) if value is not None}
+        metrics["healing_per_min"] = [999999, 30]  # Self-healing must not contribute.
+        return TraitLibrary({}, {"patches": ["16.7"], "rows": [dict(patch="16.7", tier="GOLD",
+            champion=266, role=4, metrics=metrics)]}, {})
+
+    def test_sustain_uses_only_ally_healing_and_shielding_and_preserves_scope(self):
+        library = self.sustain_library()
+        profile = library.profile(266, 4, "GOLD")
+        self.assertEqual(profile["values"]["team_sustain"], 4)
+        self.assertIn("n=30", profile["sources"]["team_sustain"])
+        self.assertNotIn("team_sustain", library.profile(266, 0, "GOLD")["values"])
+        self.assertNotIn("team_sustain", library.profile(266, 4, "SILVER")["values"])
+        self.assertEqual(library.profile(266, 4, "MIXED")["values"]["team_sustain"], 4)
+        self.assertTrue(library.accepts(266, 4, "GOLD", ["team_sustain"], minimum=4))
+
+    def test_sustain_needs_both_sample_counts_and_distinguishes_zero_from_missing(self):
+        for heal, shield in (((0, 29), (0, 30)), ((0, 30), None), (None, (0, 30))):
+            self.assertNotIn("team_sustain", self.sustain_library(heal, shield).profile(266, 4, "GOLD")["values"])
+        self.assertEqual(self.sustain_library((0, 30), (0, 30)).profile(266, 4, "GOLD")["values"]["team_sustain"], 1)
+        self.assertEqual(self.sustain_library((90000, 30), (0, 30)).profile(266, 4, "GOLD")["values"]["team_sustain"], 5)
+
+    def test_sustain_team_summary_and_recommendation_badge(self):
+        from services.champion_traits import recommendation_badges, recommendation_team_digest
+        library = self.sustain_library((18000, 30), (0, 30))
+        profiles = [library.profile(266, 4, "GOLD"), {"values": {"team_sustain": 3}}, {"values": {}}]
+        self.assertAlmostEqual(team_summary(profiles)["team_sustain"]["score"], 4.3)
+        self.assertEqual(team_summary(profiles)["team_sustain"]["known"], 2)
+        self.assertIn("Csapatfenntartás", [b["label"] for b in recommendation_badges(library, "266", 4, "GOLD")])
+        self.assertIn("Csapatfenntartás", recommendation_team_digest(library, [("266", 4)], "GOLD")["character"])
+
     def test_missing_fields_are_not_zero_samples_and_no_identities_are_stored(self):
         info = sample()
         info["participants"][0]["puuid"] = "private"

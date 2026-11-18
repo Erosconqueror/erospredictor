@@ -651,6 +651,18 @@ Ez kísérleti megjelenítési skála és nem CC-nehézség vagy megbízhatósá
 A mért sebzéstípus-arány csak elegendő mintánál jelenik meg, lefedettséggel.
 Ezek kísérleti értelmezési szabályok, nem validált győzelmiesély-becslések.
 
+A **Csapatfenntartás** kísérleti tag a társak gyógyításának és pajzsolásának
+megfigyelt percenkénti átlagából készül. Mindkét mérőszámhoz külön legalább
+30 érvényes minta szükséges az adott hős/szerepkör/rang utolsó öt patchéből;
+hiányzó mező nem nulla. Az összeadott átlagok 0–600/perc tartományát
+1–5-re vetíti, felül telítve. Ez egyelőre kísérleti megjelenítési skála,
+nem képességerő vagy győzelmiesély-mérés. Az öngyógyítás nem számít bele.
+Csapatszinten a két legerősebb ismert érték 65/35 arányú összesítése szerepel,
+egyetlen ismert értéknél az az érték marad. A tag a meglévő kísérleti
+szűrőkben, címkékben és csapatelemzésben is elérhető; a winrate változatlan.
+Az adatokat minden scraper már a közös Match-v5 feldolgozásban gyűjti,
+új API-kérés nem szükséges. A profil súgója mutatja a két külön mintaszámot.
+
 Predikció után a százalékos kijelzés alatt két rövid címkecsoport mutatja a
 csapatok legnagyobb profil-eltéréseit, ugyanazzal a ritkán kitöltött nyolcas
 korláttal, mint az ajánló alatti csapatösszegzés. A referencia 128,
