@@ -3,7 +3,8 @@
 from services import client_settings
 
 BOOLEAN_KEYS = {"auto_draft", "off_meta", "simple_effects", "robust_roles",
-                "history_markers", "history_service", "pool_only", "auto_calculate", "compact_hud"}
+                "history_markers", "history_service", "pool_only", "auto_calculate", "compact_hud",
+                "experimental_traits", "trait_match_all"}
 
 
 def validated(values):
@@ -13,6 +14,11 @@ def validated(values):
     for key, value in values.items():
         if key in BOOLEAN_KEYS and isinstance(value, bool):
             result[key] = value
+        elif key == "trait_minimum" and type(value) is int and 1 <= value <= 5:
+            result[key] = value
+        elif key == "trait_filters" and isinstance(value, list):
+            from services.champion_traits import LABELS
+            result[key] = list(dict.fromkeys(item for item in value if isinstance(item, str) and item in LABELS))
         elif key == "history_limit" and type(value) is int and value in (100, 500, 1000):
             result[key] = value
         elif key == "sync_side" and value in (None, "blue", "red"):

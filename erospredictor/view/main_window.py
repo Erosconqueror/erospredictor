@@ -62,6 +62,10 @@ class MainWindow(QMainWindow):
         self._pending_ui_preferences = {}
         self._preferences_suspended = False
         self._pool_library = load_library()
+        self._trait_filters = []
+        self._trait_minimum = 3
+        self._trait_match_all = True
+        self._trait_library_cache = None
         try:
             self._pool_mapping = {riot: int(index) for riot, index in json.loads((Path(__file__).resolve().parents[1] / "data/champion_id.json").read_text()).items()}
         except (OSError, ValueError, TypeError):
@@ -83,12 +87,15 @@ class MainWindow(QMainWindow):
         self._preferences_timer.setInterval(250)
         self._preferences_timer.timeout.connect(self._flush_ui_preferences)
         values = load_ui_preferences()
+        self._trait_filters = values.get("trait_filters", [])
+        self._trait_minimum = values.get("trait_minimum", 3)
+        self._trait_match_all = values.get("trait_match_all", True)
         self._ban_role = values.get("ban_role")
         booleans = {"auto_draft": self.chk_follow, "off_meta": self.chk_meta,
             "simple_effects": self.chk_effects, "robust_roles": self.chk_robust,
             "history_markers": self.chk_personal, "history_service": self.chk_history_service,
             "pool_only": self.chk_pool_only, "auto_calculate": self.chk_auto_calculate,
-            "compact_hud": self.chk_compact_hud}
+            "compact_hud": self.chk_compact_hud, "experimental_traits": self.chk_traits}
         combos = {"history_limit": (self.cb_history_limit, True), "sync_side": (self.cb_sync_side, True),
                   "active_pool": (self.cb_pool, False), "tier": (self.cb_rank, False)}
         for key, control in booleans.items():
@@ -112,6 +119,7 @@ class MainWindow(QMainWindow):
         if self.chk_follow.isChecked():
             QTimer.singleShot(0, self._resume_saved_follow)
         self._set_compact_hud(self.chk_compact_hud.isChecked())
+        self._on_traits_toggled(self.chk_traits.isChecked(), invalidate=False)
 
     def _resume_saved_follow(self):
         if self.isVisible() and not self._preferences_suspended:
@@ -258,6 +266,10 @@ class MainWindow(QMainWindow):
         self.chk_follow.toggled.connect(self._on_follow_toggled)
         layout.addWidget(self.chk_follow)
         layout.addStretch()
+        self.btn_traits = QPushButton("Csapatelemzés")
+        self.btn_traits.clicked.connect(self._show_traits)
+        self.btn_traits.hide()
+        layout.addWidget(self.btn_traits)
         self.btn_drafts = QPushButton("Draftok")
         menu = QMenu(self.btn_drafts)
         self.action_save_draft = QAction("Draft mentése…", self)
@@ -613,6 +625,9 @@ class MainWindow(QMainWindow):
         self.chk_compact_hud = QCheckBox("Áttekinthető felület (kikapcsolva: klasszikus)")
         self.chk_compact_hud.setChecked(True)
         self.chk_compact_hud.toggled.connect(self._set_compact_hud)
+        self.chk_traits = QCheckBox("Kísérleti hősprofilok és csapatelemzés")
+        self.chk_traits.setToolTip("Vizuális profilok és tagszűrés; a winrate és az ensemble változatlan.")
+        self.chk_traits.toggled.connect(self._on_traits_toggled)
         from view.options_dialog import OptionsDialog
         self.options_dialog = OptionsDialog(self)
         return container
@@ -620,6 +635,26 @@ class MainWindow(QMainWindow):
     def _set_compact_hud(self, enabled):
         from view.hud_layout import apply_layout
         apply_layout(self, enabled)
+
+    def _on_traits_toggled(self, enabled, invalidate=True):
+        self.btn_traits.setVisible(enabled)
+        if invalidate:
+            self._invalidate_recommendations()
+
+    def _get_trait_library(self):
+        from services.champion_traits import TraitLibrary, DATA
+        paths = (DATA / "champion_trait_basics.json", DATA / "champion_trait_observations.json")
+        stamp = tuple(path.stat().st_mtime_ns if path.exists() else None for path in paths)
+        cached = self._trait_library_cache
+        if cached is None or cached[0] != stamp:
+            self._trait_library_cache = (stamp, TraitLibrary())
+        return self._trait_library_cache[1]
+
+    def _show_traits(self, checked=False, champion_id=None):
+        if not self.chk_traits.isChecked() or self._busy:
+            return
+        from view.trait_dialog import TraitDialog
+        TraitDialog(self, champion_id=champion_id).exec()
 
     def _on_auto_calculate_toggled(self, enabled):
         if not enabled:
@@ -894,8 +929,14 @@ class MainWindow(QMainWindow):
         history = self._personal_history if feature_flags.PERSONAL_HISTORY_ENABLED and self.chk_personal.isChecked() else None
 
         candidates = member_ids(self._pool_library, self._pool_mapping, self.cb_pool.currentText()) if self.chk_pool_only.isChecked() else None
+        trait_library = self._get_trait_library() if self.chk_traits.isChecked() else None
+        inverse = {cid: riot for riot, cid in self._pool_mapping.items()} if trait_library else {}
+        if trait_library and self._trait_filters:
+            candidates = [cid for cid in (range(CHAMPION_COUNT) if candidates is None else candidates)
+                          if cid in inverse and trait_library.accepts(inverse[cid], r_id, div,
+                              self._trait_filters, self._trait_minimum, self._trait_match_all)]
         if candidates is not None and not candidates:
-            self.lbl_dash_title.setText("A választott hőslista üres. Adj hozzá hősöket, vagy kapcsold ki a listaszűrést.")
+            self.lbl_dash_title.setText("A kijelölt lista / kísérleti tagszűrés eredménye üres.")
             return
         tags = internal_tags(self._pool_library, self._pool_mapping)
         robust = self._client_draft_loaded or self.chk_robust.isChecked()
@@ -919,6 +960,19 @@ class MainWindow(QMainWindow):
             recs = self.controller.recommend_champs(div, blue, red, bans, picking,
                                                      r_id, CHAMPION_COUNT, filter_meta,
                                                      **({"history": history} if history is not None else {}), **extra)
+            if trait_library:
+                from services.champion_traits import fit_notes, LABELS
+                own = blue if picking == "blue" else red
+                allies = [trait_library.profile(inverse[cid], role, div)
+                          for role, cid in enumerate(own) if cid in inverse and role != r_id]
+                recs = [dict(rec) for rec in recs]
+                for rec in recs:
+                    if rec['id'] in inverse:
+                        profile = trait_library.profile(inverse[rec['id']], r_id, div)
+                        notes = fit_notes(profile, allies)
+                        rec['experimental_fit'] = bool(notes)
+                        top = sorted(profile['values'], key=profile['values'].get, reverse=True)
+                        rec['experimental_tags'] = notes or [LABELS[key] for key in top[:2] if profile['values'][key] >= 3]
             focus = dict(context, champion_id=recs[0]['id']) if recs else None
             effects, error = self._optional_inline_effects(focus, enabled and bool(recs))
             return recs, effects, error
@@ -988,6 +1042,10 @@ class MainWindow(QMainWindow):
             html += (f"<td style='font-size: 18px; font-weight: bold; text-align: left; white-space: nowrap; {frame}'>"
                      f"<a href='champion:{cid}' style='color: {name_color}; text-decoration: none;'>{name}</a>")
             details = []
+            if rec.get("experimental_tags") and self.chk_traits.isChecked():
+                prefix = "Pótol / kiegészít: " if rec.get("experimental_fit") else "Kísérleti: "
+                details.append(f"<a href='traits:{cid}' style='color: #80CBC4; text-decoration: none;'>" +
+                               escape(prefix + " · ".join(rec["experimental_tags"][:2])) + "</a>")
             if tags:
                 details.extend(f"<span style='color: {tag_colors[tag]};'>{TAGS[tag]}</span>"
                                for tag in tags if tag in TAGS)
@@ -1144,6 +1202,14 @@ class MainWindow(QMainWindow):
                          lambda result: self._display_optional_effects(*result))
 
     def _on_recommendation_selected(self, link):
+        if link.startswith("traits:") and self.chk_traits.isChecked() and not self._busy:
+            try:
+                cid = int(link.split(":", 1)[1])
+                if cid in {item['id'] for item in self._last_recommendations}:
+                    self._show_traits(champion_id=cid)
+            except ValueError:
+                pass
+            return
         if link.startswith("layouts:") and not self._busy and self._recommendation_context:
             try:
                 self._show_layouts(int(link.split(":", 1)[1]))

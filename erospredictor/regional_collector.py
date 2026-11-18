@@ -1,4 +1,4 @@
-"""One supervisor, independent Match-v5 routing budgets, durable per-region cursors."""
+"""Multi-region supervisor; all workers collect champion traits through Riot/DataManager."""
 import argparse
 from contextlib import contextmanager
 from datetime import datetime, timezone

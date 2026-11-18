@@ -63,7 +63,10 @@ def merge_catalog(mapping, names, document):
         index = mapping[riot_id]
         names[str(index)] = name
         images.append({"index": index, "filename": filename})
-    return {"mapping": mapping, "names": names, "count": len(mapping), "images": images}
+    basics = {str(int(item["key"])): {"name": item["name"], "tags": item.get("tags", []),
+                                       "stats": item.get("stats", {})} for item in data.values()}
+    return {"mapping": mapping, "names": names, "count": len(mapping), "images": images,
+            "trait_basics": basics}
 
 
 def _write_bytes(path, payload):
@@ -133,6 +136,11 @@ def prepare_catalog(app_dir, progress, patches, refresh=True, include_icons=True
         progress.save()
     outputs = []
     if catalog["refresh"]:
+        if "trait_basics" in catalog:
+            relative = Path("data/champion_trait_basics.json")
+            atomic_json(progress.staging / relative, {"version": 1, "patch": patches[-1],
+                "source": "Riot Data Dragon", "champions": catalog["trait_basics"]})
+            outputs.append(relative)
         for name, value in (("champion_id.json", catalog["mapping"]), ("champion_names.json", catalog["names"])):
             relative = Path("data") / name
             atomic_json(progress.staging / relative, value)

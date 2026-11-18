@@ -16,6 +16,7 @@ class OptionsDialog(QDialog):
         rec.addWidget(window.chk_meta)
         rec.addWidget(window.chk_effects)
         rec.addWidget(window.chk_robust)
+        rec.addWidget(window.chk_traits)
         note = QLabel("Kliensdraftnál automatikus; kézi draftnál kapcsolható. Legfeljebb három felállást vizsgál az első öt ajánlásnál.")
         note.setWordWrap(True)
         rec.addWidget(note)

@@ -24,6 +24,7 @@ class DataManager:
     def _init_tables(self):
         """Creates the necessary schema if it does not exist."""
         with self.conn.cursor() as cur:
+            cur.execute("SELECT pg_advisory_xact_lock(1843271001)")
             cur.execute("""
                 CREATE TABLE IF NOT EXISTS matches (
                     match_id VARCHAR(50) PRIMARY KEY,
@@ -36,6 +37,8 @@ class DataManager:
                     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
                 );
             """)
+            from services.trait_store import SCHEMA
+            cur.execute(SCHEMA)
         self.conn.commit()
 
     def save_match(self, match_id: str, region: str, data: dict) -> bool:
@@ -43,7 +46,7 @@ class DataManager:
         if not data:
             return False
             
-        with self.conn.cursor() as cur:
+        with self.conn, self.conn.cursor() as cur:
             cur.execute("""
                 INSERT INTO matches (match_id, region, tier, patch, blue_win, blue_team, red_team)
                 VALUES (%s, %s, %s, %s, %s, %s, %s)
@@ -58,8 +61,14 @@ class DataManager:
                 data.get("red_team")
             ))
             inserted = cur.rowcount > 0
-        self.conn.commit()
+            if inserted:
+                from services.trait_store import save_observations
+                save_observations(cur, data, region)
         return inserted
+
+    def get_trait_aggregates(self, patches, tiers=None, region=None):
+        from services.trait_store import read_observations
+        return read_observations(self.conn, patches, tiers, region)
 
     def get_match(self, match_id: str) -> dict:
         """Retrieves a single match record by ID."""

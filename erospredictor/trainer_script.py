@@ -181,6 +181,8 @@ def interaction_artifacts(records, mapping, meta_data, *, patches, tiers, region
 def refresh_training_statistics(preprocessor, stat):
     """Interactive actions prepare all evidence from their frozen patch window."""
     records, mapping = preprocessor._get_matches(), preprocessor.c_map
+    from services.champion_traits import export_observations
+    export_observations(preprocessor.db, preprocessor.allowed_patches, "data/champion_trait_observations.json")
     stat.db = preprocessor.db
     stat.c_map = mapping
     stat.build_stats()

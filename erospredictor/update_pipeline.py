@@ -530,6 +530,10 @@ def train_outputs(args, patches, db, records, staging, log=print):
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     reports, outputs = {}, [Path("data/stats_cache.json"), Path("data/meta_champs.json"),
                            Path("data/interaction_stats.json"), Path("data/blind_profiles.json")]
+    from services.champion_traits import export_observations
+    trait_path = Path("data/champion_trait_observations.json")
+    if export_observations(db, patches, staging / trait_path, tiers=args.tiers, region=args.region):
+        outputs.append(trait_path)
 
     for tier in list(dict.fromkeys(args.tiers)) + ["MIXED"]:
         subset = records if tier == "MIXED" else [m for m in records if m["tier"] == tier]

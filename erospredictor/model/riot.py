@@ -109,6 +109,7 @@ class Riot:
         if not isinstance(outcomes.get(100), bool):
             return None
         blue_win = outcomes[100]
+        from services.champion_traits import extract_observations
         b_team, r_team = teams[100], teams[200]
         
         raw_patch = info.get("gameVersion", "UNKNOWN")
@@ -119,7 +120,8 @@ class Riot:
             "patch": patch,
             "blue_win": blue_win,
             "blue_team": b_team,
-            "red_team": r_team
+            "red_team": r_team,
+            "trait_observations": extract_observations(info)
         }
 
     def get_match_data(self, match_id: str, tier: str = "UNKNOWN") -> dict:

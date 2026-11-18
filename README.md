@@ -623,6 +623,62 @@ Az off-meta szűrő szigorú listáján a küszöb **0,5% pickarány vagy
 1500 előfordulás** szerepkörönként; All Ranks (MIXED) esetén az abszolút
 határ **3000**. A laza lista küszöbe továbbra is **0,05%**.
 
+## Kísérleti hősprofilok és csapatelemzés
+
+A **Beállítások → Ajánlás és elemzés → Kísérleti hősprofilok és csapatelemzés**
+alapból kikapcsolt, gépenként megjegyzett kapcsoló. Bekapcsoláskor a felső
+**Csapatelemzés** gomb nyitja a két csapat szegmentált, 1–5 skálájú sávjait,
+a hősprofil-szerkesztőt és az ajánlási tagszűrőket. A szűrőkhöz minimumérték
+és minden/bármelyik feltétel választható; saját hőslistával együtt metszetet képez.
+A megmaradó ajánlások modellértéke és sorrendje változatlan; a kísérleti címkék
+nem kerülnek be sem a winrate-modellbe, sem az ensemble-ba vagy kalibrációba.
+
+A kezdő hősprofilok a Riot Data Dragon osztálycímkéiből származó, **nem hitelesített
+heurisztikák**. A CC alkalmazhatósága, hard/soft CC, %-HP sebzés, early/mid/late
+és több összetett tulajdonság kezdetben ismeretlen; a szerkesztőben külön megadható.
+A bizonytalan tulajdonság nem kap kitalált mérési értéket. A frontline profil
+alatt látszanak a HP-, növekedési és ellenállási alapadatok. Az alaptámadás
+hatótávja külön adat a tényleges harci távolságtól; Zed és Urgot rövid harcitávú
+kísérleti korrekciót kapott. A kézi profilok és a tagszűrők helyi beállítások.
+
+A frontline/engage/peel/poke/waveclear csapatszintű pontját a két legerősebb
+ismert profil adja 65/35 arányban. A CC összegzése telítődik, a follow-upot
+az ismert engage korlátozza. A többi profilátlag; minden sáv jelzi a lefedettséget.
+Az ismeretlen nem nulla. A közel/közép/távol arány külön látszik.
+A „Mért CC-kihasználás” legalább 30 érvényes megfigyeléstől számolható:
+az átlagos kontrollidő/perc 0–6 s/perc tartományát vetíti 1–5 közé, felül telítve.
+Ez kísérleti megjelenítési skála és nem CC-nehézség vagy megbízhatósági mérés.
+A mért sebzéstípus-arány csak elegendő mintánál jelenik meg, lefedettséggel.
+Ezek kísérleti értelmezési szabályok, nem validált győzelmiesély-becslések.
+
+Minden gyűjtési indító közös adatútja a `model/riot.py` → `DataManager.save_match`:
+`collector_script.py`, `regional_collector.py`, `collection_day.py`, valamint
+a teljes updater és a scrape-only mód mind gyűjti az elérhető megfigyeléseket.
+A már letöltött Match-v5 válaszból emeli ki a kontrollidőt, immobilizálást,
+képességhasználatot, sebzésarányokat, sebzés/enyhítés/gyógyítás/pajzs/arany
+időarányos értékeit. A rövid/közepes/hosszú meccsek eredményösszesítése is
+megmarad későbbi vizsgálathoz; ez önmagában nem early/late erősségi pontszám.
+Nincs további Riot-kérés vagy timeline-letöltés. Hiányzó mező nem nulla minta.
+
+Az additív `champion_trait_aggregates` táblában verzió, patch, régió, rang,
+Riot-hősazonosító és szerepkör szerint csak összegek és érvényes mintaszámok
+maradnak, játékosazonosító és teljes válasz nélkül. A meccs és az összesítés
+egyetlen tranzakcióban íródik; a meglévő `match_id` elsődleges kulcsa biztosítja,
+hogy párhuzamos vagy újraindított gyűjtés sem dupláz. Új meccsletöltésekből
+épül, a korábbi minimális meccsrekordokból utólag nem nyerhetők ki ezek az adatok.
+Az új séma automatikusan létrejön az új kóddal induló fejlesztői adatkapcsolatnál.
+**A már futó gyűjtőket újra kell indítani; a meglévő folytatási pont használható.**
+
+Az updater és a régi interaktív tanító exportálja a kijelölt időszak legutóbbi
+öt patchének megfigyeléseit. Nincs patch-leértékelés: összegeket és mintaszámokat
+egyesít, nem átlagok egyszerű átlagát. A kísérleti adatok külön fájlba kerülnek:
+`data/champion_trait_observations.json`; a statikus alapadatok külön
+`data/champion_trait_basics.json` fájlba, a katalógusfrissítéssel együtt.
+Modelltanítás nélküli export: **`dev-scripts/export_champion_traits.bat`**;
+opcionálisan `--patches 16.18 16.19 16.20 16.21 16.22`. Az elemző ablak újranyitása
+vagy új ajánlás észleli a friss exportot. A meglévő modellek és winrate-adatok
+az önálló export során változatlanok.
+
 ## Fejlesztői adatbázis-karbantartás
 
 A normál alkalmazás nem takarítja az adatbázist. A fejlesztői eszköz a

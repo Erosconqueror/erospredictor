@@ -1,4 +1,4 @@
-"""A bounded four-profile run with nonoverlapping platforms and normal Riot budgets."""
+"""Four nonoverlapping collection profiles, including shared champion-trait metrics."""
 import argparse
 import json
 import math
